@@ -31,6 +31,9 @@ import formulairesRoutes from './routes/formulaires.js';
 import visitesRoutes from './routes/visites.js';
 import fileAttenteRoutes from './routes/file-attente.js';
 import listesPatientsRoutes from './routes/listes-patients.js';
+import litsRoutes from './routes/lits.js';
+import programmesRoutes from './routes/programmes.js';
+import facturationRoutes from './routes/facturation.js';
 
 const app = express();
 const PORT = process.env.PORT || 5000;
@@ -109,6 +112,9 @@ app.use('/api/formulaires', formulairesRoutes);
 app.use('/api/visites', visitesRoutes);
 app.use('/api/file-attente', fileAttenteRoutes);
 app.use('/api/listes-patients', listesPatientsRoutes);
+app.use('/api/lits', litsRoutes);
+app.use('/api/programmes', programmesRoutes);
+app.use('/api/facturation', facturationRoutes);
 
 app.get('/api/health', (req, res) => {
   res.json({ status: 'ok', timestamp: new Date().toISOString() });

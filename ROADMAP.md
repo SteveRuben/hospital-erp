@@ -3,68 +3,52 @@
 ## ✅ Implémenté
 
 ### Modules de base
-- Dashboard avec statistiques
-- Gestion des patients (CRUD, recherche, archivage, historique)
-- Gestion des médecins
-- Gestion des services hospitaliers
-- Consultations
-- Gestion financière (recettes, dépenses, caisse, bilan)
-- Laboratoire (examens avec workflow Kanban)
-- Rendez-vous (planification, statuts)
+- Dashboard, Patients (formulaire OpenMRS complet), Médecins, Services
+- Consultations, Finances (recettes, dépenses, caisse, bilan)
+- Laboratoire (Kanban), Rendez-vous
 
 ### Modules cliniques (dossier patient)
-- Signes vitaux (température, tension, pouls, SpO2, poids, taille, glycémie)
-- Allergies (type, sévérité, réaction)
-- Pathologies / Conditions (code CIM, statut)
-- Prescriptions / Médicaments (dosage, fréquence, voie d'administration)
-- Ordonnances
-- Vaccinations (carnet vaccinal, rappels)
-- Notes et commentaires (général, clinique, infirmier, administratif)
-- Alertes patient (sévérité, type, activation/désactivation)
-- Formulaires dynamiques (définition JSON, réponses)
+- Signes vitaux, Allergies, Pathologies, Prescriptions, Ordonnances
+- Vaccinations, Notes/commentaires, Alertes patient, Formulaires dynamiques
+
+### Gestion des flux
+- Visites actives, File d'attente (Kanban), Listes de patients (cohortes)
+
+### Hospitalisation
+- Pavillons, Gestion des lits (disponibilité, occupation)
+- Hospitalisations (admission, sortie, transfert)
+
+### Programmes de soins
+- Création de programmes (diabète, VIH, tuberculose, maternité...)
+- Inscription/sortie de patients
+
+### Facturation avancée
+- Grille tarifaire configurable (codes, catégories, montants)
+- Factures avec lignes détaillées et numérotation automatique
+- Paiements multiples (espèces, mobile money, carte, virement, assurance)
+- Statut automatique (en attente, partielle, payée)
 
 ### Infrastructure
-- Authentification JWT avec rôles (admin, médecin, comptable, laborantin, réception)
-- Monorepo TypeScript (Turbo)
-- CI/CD GitHub Actions
+- Auth JWT + rôles, OWASP Top 10, Monorepo TypeScript
+- CI/CD GitHub Actions, PostgreSQL Neon, Railway
+- Landing page, session timeout 3min
 - Design Carbon/OpenMRS
-- Base de données PostgreSQL (Neon)
 
-## 🔜 À faire (prochaines itérations)
+## 🔜 À faire
 
-### Itération 1 — Gestion des flux
-- [ ] Visites actives (suivi des patients présents dans l'hôpital)
-- [ ] File d'attente par service (priorité, numéro d'ordre, temps d'attente)
-- [ ] Gestion des lits / Bed management (occupation, disponibilité, affectation)
-
-### Itération 2 — Hospitalisation
-- [ ] Ward / Pavillon (vue par étage/pavillon, patients hospitalisés)
-- [ ] Transferts entre services
-- [ ] Suivi des séjours (date entrée/sortie, durée)
-
-### Itération 3 — Listes et cohortes
-- [ ] Listes de patients personnalisées (cohortes)
-- [ ] Filtres avancés (par pathologie, service, médecin, période)
-- [ ] Export des listes (CSV, PDF)
-
-### Itération 4 — Programmes de soins
-- [ ] Programmes de suivi (diabète, VIH, tuberculose, maternité)
-- [ ] Protocoles de soins standardisés
-- [ ] Suivi des indicateurs par programme
-
-### Itération 5 — Impression et documents
-- [ ] Impression d'étiquettes patient (Label printing)
-- [ ] Génération PDF (ordonnances, résultats labo, factures)
+### Itération 1 — Documents & Impression
+- [ ] Génération PDF (factures, ordonnances, résultats labo)
+- [ ] Impression d'étiquettes patient
 - [ ] Export Excel des rapports financiers
 
-### Itération 6 — Communication
+### Itération 2 — Communication
 - [ ] SMS aux patients (rappels RDV, résultats)
-- [ ] Prise de rendez-vous en ligne
-- [ ] Paiement mobile intégré
+- [ ] Prise de rendez-vous en ligne (portail patient)
+- [ ] Paiement mobile intégré (API Orange Money / M-Pesa)
 
-### Itération 7 — Avancé
+### Itération 3 — Avancé
 - [ ] Interconnexion assurance maladie
 - [ ] Dossier médical partagé inter-établissements
 - [ ] Imagerie médicale (DICOM viewer)
 - [ ] Pharmacie / Stock médicaments
-- [ ] Tableau de bord BI avancé
+- [ ] Tableau de bord BI avancé (graphiques, tendances)

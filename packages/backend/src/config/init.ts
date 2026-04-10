@@ -319,6 +319,110 @@ export const initDB = async (): Promise<void> => {
         UNIQUE(liste_id, patient_id)
       );
 
+      -- Lits / Bed management
+      CREATE TABLE IF NOT EXISTS pavillons (
+        id SERIAL PRIMARY KEY,
+        nom VARCHAR(100) NOT NULL,
+        etage VARCHAR(50),
+        service_id INTEGER REFERENCES services(id),
+        capacite INTEGER DEFAULT 0,
+        description TEXT,
+        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+      );
+
+      CREATE TABLE IF NOT EXISTS lits (
+        id SERIAL PRIMARY KEY,
+        pavillon_id INTEGER REFERENCES pavillons(id),
+        numero VARCHAR(20) NOT NULL,
+        type_lit VARCHAR(50) DEFAULT 'standard' CHECK (type_lit IN ('standard', 'soins_intensifs', 'pediatrique', 'maternite', 'isolement')),
+        statut VARCHAR(50) DEFAULT 'disponible' CHECK (statut IN ('disponible', 'occupe', 'maintenance', 'reserve')),
+        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+      );
+
+      CREATE TABLE IF NOT EXISTS hospitalisations (
+        id SERIAL PRIMARY KEY,
+        patient_id INTEGER REFERENCES patients(id),
+        lit_id INTEGER REFERENCES lits(id),
+        medecin_id INTEGER REFERENCES medecins(id),
+        service_id INTEGER REFERENCES services(id),
+        date_admission TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+        date_sortie TIMESTAMP,
+        motif TEXT,
+        statut VARCHAR(50) DEFAULT 'active' CHECK (statut IN ('active', 'sortie', 'transfere', 'deces')),
+        notes TEXT,
+        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+      );
+
+      -- Programmes de soins
+      CREATE TABLE IF NOT EXISTS programmes (
+        id SERIAL PRIMARY KEY,
+        nom VARCHAR(200) NOT NULL,
+        description TEXT,
+        type_programme VARCHAR(100),
+        actif BOOLEAN DEFAULT TRUE,
+        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+      );
+
+      CREATE TABLE IF NOT EXISTS programme_patients (
+        id SERIAL PRIMARY KEY,
+        programme_id INTEGER REFERENCES programmes(id) ON DELETE CASCADE,
+        patient_id INTEGER REFERENCES patients(id),
+        date_inscription DATE DEFAULT CURRENT_DATE,
+        date_sortie DATE,
+        statut VARCHAR(50) DEFAULT 'actif' CHECK (statut IN ('actif', 'termine', 'abandonne')),
+        notes TEXT,
+        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+      );
+
+      -- Tarification / Grille tarifaire
+      CREATE TABLE IF NOT EXISTS tarifs (
+        id SERIAL PRIMARY KEY,
+        code VARCHAR(50) UNIQUE NOT NULL,
+        libelle VARCHAR(200) NOT NULL,
+        categorie VARCHAR(100) NOT NULL,
+        montant DECIMAL(12,2) NOT NULL,
+        service_id INTEGER REFERENCES services(id),
+        actif BOOLEAN DEFAULT TRUE,
+        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+      );
+
+      -- Factures
+      CREATE TABLE IF NOT EXISTS factures (
+        id SERIAL PRIMARY KEY,
+        numero VARCHAR(50) UNIQUE NOT NULL,
+        patient_id INTEGER REFERENCES patients(id),
+        date_facture DATE DEFAULT CURRENT_DATE,
+        montant_total DECIMAL(12,2) DEFAULT 0,
+        montant_paye DECIMAL(12,2) DEFAULT 0,
+        statut VARCHAR(50) DEFAULT 'en_attente' CHECK (statut IN ('en_attente', 'partielle', 'payee', 'annulee')),
+        notes TEXT,
+        created_by INTEGER REFERENCES users(id),
+        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+      );
+
+      CREATE TABLE IF NOT EXISTS facture_lignes (
+        id SERIAL PRIMARY KEY,
+        facture_id INTEGER REFERENCES factures(id) ON DELETE CASCADE,
+        tarif_id INTEGER REFERENCES tarifs(id),
+        libelle VARCHAR(200) NOT NULL,
+        quantite INTEGER DEFAULT 1,
+        prix_unitaire DECIMAL(12,2) NOT NULL,
+        montant DECIMAL(12,2) NOT NULL,
+        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+      );
+
+      CREATE TABLE IF NOT EXISTS paiements (
+        id SERIAL PRIMARY KEY,
+        facture_id INTEGER REFERENCES factures(id),
+        montant DECIMAL(12,2) NOT NULL,
+        mode_paiement VARCHAR(50) CHECK (mode_paiement IN ('especes', 'mobile_money', 'carte', 'virement', 'assurance')),
+        reference VARCHAR(100),
+        date_paiement TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+        recu_par INTEGER REFERENCES users(id),
+        notes TEXT,
+        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+      );
+
       -- Journal d'audit
       CREATE TABLE IF NOT EXISTS audit_log (
         id SERIAL PRIMARY KEY,

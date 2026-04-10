@@ -144,3 +144,30 @@ export const createListePatients = (data: unknown) => api.post('/listes-patients
 export const deleteListePatients = (id: number) => api.delete(`/listes-patients/${id}`);
 export const addPatientToListe = (listeId: number, patient_id: number) => api.post(`/listes-patients/${listeId}/patients`, { patient_id });
 export const removePatientFromListe = (listeId: number, patientId: number) => api.delete(`/listes-patients/${listeId}/patients/${patientId}`);
+
+// Lits & Hospitalisations
+export const getPavillons = () => api.get('/lits/pavillons');
+export const createPavillon = (data: unknown) => api.post('/lits/pavillons', data);
+export const getLits = (params?: unknown) => api.get('/lits', { params });
+export const createLit = (data: unknown) => api.post('/lits', data);
+export const updateLitStatut = (id: number, statut: string) => api.put(`/lits/${id}/statut`, { statut });
+export const getHospitalisations = (params?: unknown) => api.get('/lits/hospitalisations', { params });
+export const createHospitalisation = (data: unknown) => api.post('/lits/hospitalisations', data);
+export const sortieHospitalisation = (id: number) => api.put(`/lits/hospitalisations/${id}/sortie`);
+export const getLitsStats = () => api.get('/lits/stats');
+
+// Programmes de soins
+export const getProgrammes = () => api.get('/programmes');
+export const getProgramme = (id: number) => api.get(`/programmes/${id}`);
+export const createProgramme = (data: unknown) => api.post('/programmes', data);
+export const addPatientToProgramme = (progId: number, patient_id: number) => api.post(`/programmes/${progId}/patients`, { patient_id });
+export const deleteProgramme = (id: number) => api.delete(`/programmes/${id}`);
+
+// Facturation
+export const getTarifs = (params?: unknown) => api.get('/facturation/tarifs', { params });
+export const createTarif = (data: unknown) => api.post('/facturation/tarifs', data);
+export const updateTarif = (id: number, data: unknown) => api.put(`/facturation/tarifs/${id}`, data);
+export const getFactures = (params?: unknown) => api.get('/facturation/factures', { params });
+export const getFacture = (id: number) => api.get(`/facturation/factures/${id}`);
+export const createFacture = (data: unknown) => api.post('/facturation/factures', data);
+export const createPaiement = (data: unknown) => api.post('/facturation/paiements', data);

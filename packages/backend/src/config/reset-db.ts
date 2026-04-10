@@ -11,6 +11,15 @@ const resetDB = async () => {
   try {
     console.log('Dropping all tables...');
     await client.query(`
+      DROP TABLE IF EXISTS paiements CASCADE;
+      DROP TABLE IF EXISTS facture_lignes CASCADE;
+      DROP TABLE IF EXISTS factures CASCADE;
+      DROP TABLE IF EXISTS tarifs CASCADE;
+      DROP TABLE IF EXISTS programme_patients CASCADE;
+      DROP TABLE IF EXISTS programmes CASCADE;
+      DROP TABLE IF EXISTS hospitalisations CASCADE;
+      DROP TABLE IF EXISTS lits CASCADE;
+      DROP TABLE IF EXISTS pavillons CASCADE;
       DROP TABLE IF EXISTS liste_patient_membres CASCADE;
       DROP TABLE IF EXISTS listes_patients CASCADE;
       DROP TABLE IF EXISTS formulaire_reponses CASCADE;
