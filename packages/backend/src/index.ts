@@ -1,7 +1,6 @@
 import express from 'express';
 import cors from 'cors';
 import helmet from 'helmet';
-import hpp from 'hpp';
 import dotenv from 'dotenv';
 import path from 'path';
 import { fileURLToPath } from 'url';
@@ -66,9 +65,6 @@ app.use(enforceHttps);
 // OWASP A04 - Rate limiting global
 app.use(globalRateLimit);
 
-// OWASP A06 - HTTP Parameter Pollution
-app.use(hpp() as express.RequestHandler);
-
 // Body parsing with size limit (OWASP A08)
 app.use(express.json({ limit: '1mb' }));
 app.use(express.urlencoded({ extended: false, limit: '1mb' }));
@@ -115,12 +111,12 @@ app.get('/api/health', (req, res) => {
 });
 
 // OWASP A05 - 404 handler
-app.use((_req: express.Request, res: express.Response) => {
+app.use(((_req: express.Request, res: express.Response) => {
   res.status(404).json({ error: 'Route non trouvée' });
-});
+}) as unknown as express.RequestHandler);
 
 // OWASP A09 - Global error handler (no stack trace leak)
-app.use(errorHandler as express.ErrorRequestHandler);
+app.use(errorHandler as unknown as express.ErrorRequestHandler);
 
 const start = async () => {
   try {
