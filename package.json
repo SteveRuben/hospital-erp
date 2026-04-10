@@ -8,7 +8,7 @@
   ],
   "scripts": {
     "dev": "turbo run dev",
-    "build": "npm run build --workspace=@hospital-erp/frontend && npm run build --workspace=@hospital-erp/backend",
+    "build": "npm run build --workspace=@hospital-erp/backend",
     "start": "node packages/backend/dist/index.js",
     "test": "turbo run test",
     "lint": "turbo run lint",
