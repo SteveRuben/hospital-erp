@@ -6,7 +6,7 @@
   "scripts": {
     "dev": "vite",
     "build": "tsc && vite build",
-    "start": "node server.cjs",
+    "start": "node -e \"const e=require('express'),p=require('path'),a=e();a.use(e.static(p.join(__dirname,'dist')));a.get('*',(q,r)=>r.sendFile(p.join(__dirname,'dist','index.html')));a.listen(process.env.PORT||3000,'0.0.0.0',()=>console.log('OK'))\"",
     "typecheck": "tsc --noEmit",
     "preview": "vite preview",
     "lint": "eslint src --ext ts,tsx"
