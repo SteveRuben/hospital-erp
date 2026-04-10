@@ -6,7 +6,7 @@
   "scripts": {
     "dev": "vite",
     "build": "tsc && vite build",
-    "start": "serve dist -s -l tcp://0.0.0.0:${PORT:-3000}",
+    "start": "node server.js",
     "typecheck": "tsc --noEmit",
     "preview": "vite preview",
     "lint": "eslint src --ext ts,tsx"
@@ -16,7 +16,7 @@
     "react-dom": "^18.2.0",
     "react-router-dom": "^6.20.0",
     "axios": "^1.6.2",
-    "serve": "^14.2.4",
+    "express": "^4.18.2",
     "@types/react": "^18.2.45",
     "@types/react-dom": "^18.2.18",
     "@vitejs/plugin-react": "^4.2.1",
