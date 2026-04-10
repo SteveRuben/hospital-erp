@@ -67,7 +67,7 @@ app.use(enforceHttps);
 app.use(globalRateLimit);
 
 // OWASP A06 - HTTP Parameter Pollution
-app.use(hpp());
+app.use(hpp() as express.RequestHandler);
 
 // Body parsing with size limit (OWASP A08)
 app.use(express.json({ limit: '1mb' }));
