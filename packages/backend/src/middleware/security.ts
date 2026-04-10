@@ -1,4 +1,4 @@
-import { Request, Response, NextFunction } from 'express';
+import { Request, Response, NextFunction, ErrorRequestHandler } from 'express';
 import rateLimit from 'express-rate-limit';
 
 // OWASP A01 - Broken Access Control: handled by auth.ts authorize()
@@ -104,7 +104,7 @@ export const auditLog = (req: Request, _res: Response, next: NextFunction): void
 // OWASP A10 - Server-Side Request Forgery: not applicable (no outbound requests)
 
 // Error handler that doesn't leak stack traces
-export const errorHandler = (err: Error, _req: Request, res: Response, _next: NextFunction): void => {
+export const errorHandler: ErrorRequestHandler = (err, _req, res, _next) => {
   console.error('[ERROR]', err.message);
   
   // Never expose internal error details in production
