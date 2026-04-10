@@ -33,7 +33,7 @@ export default function Consultations() {
     } catch (err) { alert('Erreur'); }
   };
 
-  const handleEdit = (c: Consultation) => { setEditing(c); setForm(c); setShowModal(true); };
+  const handleEdit = (c: Consultation) => { setEditing(c); setForm({ patient_id: String(c.patient_id), medecin_id: String(c.medecin_id), service_id: String(c.service_id), diagnostic: c.diagnostic || '', traitement: c.traitement || '', notes: c.notes || '' }); setShowModal(true); };
   const handleDelete = async (id: number) => { if (confirm('Supprimer ?')) { await deleteConsultation(id); loadData(); }};
 
   return (

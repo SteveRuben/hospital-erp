@@ -28,7 +28,7 @@ export default function Services() {
     } catch (err) { alert('Erreur'); }
   };
 
-  const handleEdit = (s: Service) => { setEditing(s); setForm(s); setShowModal(true); };
+  const handleEdit = (s: Service) => { setEditing(s); setForm({ nom: s.nom, description: s.description || '' }); setShowModal(true); };
   const handleDelete = async (id: number) => { if (confirm('Supprimer ?')) { await deleteService(id); loadServices(); }};
 
   return (

@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react';
-import { getFileAttente, getFileAttenteStats, addToFileAttente, updateFileAttenteStatut, removeFromFileAttente, getPatients, getServices } from '../services/api';
+import { getFileAttente, getFileAttenteStats, addToFileAttente, updateFileAttenteStatut, getPatients, getServices } from '../services/api';
 import type { Patient, Service } from '../types';
 
 const prioriteConfig: Record<string, { label: string; tag: string }> = {

@@ -28,7 +28,7 @@ export default function Medecins() {
     } catch (err) { alert('Erreur'); }
   };
 
-  const handleEdit = (m: Medecin) => { setEditing(m); setForm(m); setShowModal(true); };
+  const handleEdit = (m: Medecin) => { setEditing(m); setForm({ nom: m.nom, prenom: m.prenom, specialite: m.specialite || '', telephone: m.telephone || '' }); setShowModal(true); };
   const handleDelete = async (id: number) => { if (confirm('Supprimer ?')) { await deleteMedecin(id); loadMedecins(); }};
 
   return (
