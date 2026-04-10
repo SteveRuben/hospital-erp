@@ -111,13 +111,14 @@ app.get('/api/health', (req, res) => {
   res.json({ status: 'ok', timestamp: new Date().toISOString() });
 });
 
-// OWASP A05 - 404 handler
-app.use(((_req: express.Request, res: express.Response) => {
-  res.status(404).json({ error: 'Route non trouvée' });
-}) as unknown as express.RequestHandler);
+// Serve frontend static files in production
+const frontendPath = path.resolve(__dirname, '../../frontend/dist');
+app.use(express.static(frontendPath));
 
-// OWASP A09 - Global error handler (no stack trace leak)
-app.use(errorHandler as unknown as express.ErrorRequestHandler);
+// SPA fallback — all non-API routes serve index.html
+app.get('*', (req, res) => {
+  res.sendFile(path.join(frontendPath, 'index.html'));
+});
 
 const start = async () => {
   try {
