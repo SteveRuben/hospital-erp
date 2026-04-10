@@ -2,10 +2,10 @@
 nixPkgs = ["nodejs_20"]
 
 [phases.install]
-cmds = ["npm ci"]
+cmds = ["npm ci --include=dev"]
 
 [phases.build]
-cmds = ["npm run build"]
+cmds = ["npm run build --workspace=@hospital-erp/frontend", "npm run build --workspace=@hospital-erp/backend"]
 
 [start]
 cmd = "node packages/backend/dist/index.js"

@@ -35,6 +35,9 @@ import listesPatientsRoutes from './routes/listes-patients.js';
 const app = express();
 const PORT = process.env.PORT || 5000;
 
+// Trust Railway reverse proxy
+app.set('trust proxy', 1);
+
 // OWASP A05 - CORS (must be BEFORE helmet)
 const allowedOrigins = (process.env.FRONTEND_URL || 'http://localhost:3000').split(',').map(s => s.trim());
 app.use(cors({
