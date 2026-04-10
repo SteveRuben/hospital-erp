@@ -1,7 +1,9 @@
 import axios from 'axios';
 import type { User, Patient, Medecin, Service, Consultation, Recette, Depense, Examen, DashboardStats, Bilan, RendezVous } from '../types';
 
-const api = axios.create({ baseURL: '/api', headers: { 'Content-Type': 'application/json' } });
+const API_URL = import.meta.env.VITE_API_URL || '/api';
+
+const api = axios.create({ baseURL: API_URL, headers: { 'Content-Type': 'application/json' } });
 
 api.interceptors.request.use((config) => {
   const token = localStorage.getItem('token');
