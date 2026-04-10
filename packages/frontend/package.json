@@ -6,7 +6,7 @@
   "scripts": {
     "dev": "vite",
     "build": "tsc && vite build",
-    "start": "npx serve dist -s -l ${PORT:-3000}",
+    "start": "serve dist -s -l tcp://0.0.0.0:${PORT:-3000}",
     "typecheck": "tsc --noEmit",
     "preview": "vite preview",
     "lint": "eslint src --ext ts,tsx"
