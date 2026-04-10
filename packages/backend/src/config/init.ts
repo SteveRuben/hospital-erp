@@ -423,6 +423,17 @@ export const initDB = async (): Promise<void> => {
         created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
       );
 
+      -- Notifications log
+      CREATE TABLE IF NOT EXISTS notifications_log (
+        id SERIAL PRIMARY KEY,
+        patient_id INTEGER REFERENCES patients(id),
+        channel VARCHAR(20) NOT NULL,
+        subject VARCHAR(200),
+        message TEXT,
+        success BOOLEAN DEFAULT FALSE,
+        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+      );
+
       -- Journal d'audit
       CREATE TABLE IF NOT EXISTS audit_log (
         id SERIAL PRIMARY KEY,

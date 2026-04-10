@@ -25,6 +25,7 @@ const menuGroups = [
       { path: '/app/finances', icon: 'bi-cash-coin', label: 'Finances' },
       { path: '/app/services', icon: 'bi-building', label: 'Services' },
       { path: '/app/listes-patients', icon: 'bi-list-ul', label: 'Listes patients' },
+      { path: '/app/documentation', icon: 'bi-book', label: 'Documentation' },
     ],
   },
 ];

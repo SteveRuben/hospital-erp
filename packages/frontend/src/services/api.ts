@@ -171,3 +171,14 @@ export const getFactures = (params?: unknown) => api.get('/facturation/factures'
 export const getFacture = (id: number) => api.get(`/facturation/factures/${id}`);
 export const createFacture = (data: unknown) => api.post('/facturation/factures', data);
 export const createPaiement = (data: unknown) => api.post('/facturation/paiements', data);
+
+// Notifications
+export const sendNotificationToPatient = (data: { patient_id: number; subject: string; message: string }) => api.post('/notifications/send', data);
+export const sendRappelRdv = (rdvId: number) => api.post(`/notifications/rappel-rdv/${rdvId}`);
+export const sendResultatLabo = (examenId: number) => api.post(`/notifications/resultat-labo/${examenId}`);
+export const getNotificationLog = (patientId: number) => api.get(`/notifications/log/${patientId}`);
+
+// Print (returns HTML)
+export const printFacture = (id: number) => window.open(`${API_URL}/print/facture/${id}?token=${localStorage.getItem('token')}`, '_blank');
+export const printOrdonnance = (patientId: number, medecinId?: number) => window.open(`${API_URL}/print/ordonnance/${patientId}?medecin_id=${medecinId || ''}&token=${localStorage.getItem('token')}`, '_blank');
+export const printResultatLabo = (patientId: number) => window.open(`${API_URL}/print/labo/${patientId}?token=${localStorage.getItem('token')}`, '_blank');

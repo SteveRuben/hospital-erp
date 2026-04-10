@@ -18,15 +18,23 @@ export interface AuthRequest extends Request {
 // OWASP A01 - Authentication
 export const authenticate = (req: AuthRequest, res: Response, next: NextFunction): void => {
   const authHeader = req.headers.authorization;
+  // Support token in query string for print routes (opened in new tab)
+  const queryToken = req.query.token as string | undefined;
   
-  if (!authHeader || !authHeader.startsWith('Bearer ')) {
+  let token: string | undefined;
+  
+  if (authHeader?.startsWith('Bearer ')) {
+    token = authHeader.substring(7);
+  } else if (queryToken) {
+    token = queryToken;
+  }
+  
+  if (!token) {
     res.status(401).json({ error: 'Token requis' });
     return;
   }
-
-  const token = authHeader.substring(7);
   
-  if (!token || token.split('.').length !== 3) {
+  if (token.split('.').length !== 3) {
     res.status(401).json({ error: 'Format de token invalide' });
     return;
   }
