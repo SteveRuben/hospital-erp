@@ -115,12 +115,12 @@ app.get('/api/health', (req, res) => {
 });
 
 // OWASP A05 - 404 handler
-app.use((_req, res) => {
+app.use((_req: express.Request, res: express.Response) => {
   res.status(404).json({ error: 'Route non trouvée' });
 });
 
 // OWASP A09 - Global error handler (no stack trace leak)
-app.use(errorHandler);
+app.use(errorHandler as express.ErrorRequestHandler);
 
 const start = async () => {
   try {
