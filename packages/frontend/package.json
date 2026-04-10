@@ -6,6 +6,7 @@
   "scripts": {
     "dev": "vite",
     "build": "tsc && vite build",
+    "start": "npx serve dist -s -l ${PORT:-3000}",
     "typecheck": "tsc --noEmit",
     "preview": "vite preview",
     "lint": "eslint src --ext ts,tsx"
@@ -14,14 +15,15 @@
     "react": "^18.2.0",
     "react-dom": "^18.2.0",
     "react-router-dom": "^6.20.0",
-    "axios": "^1.6.2"
-  },
-  "devDependencies": {
+    "axios": "^1.6.2",
+    "serve": "^14.2.4",
     "@types/react": "^18.2.45",
     "@types/react-dom": "^18.2.18",
     "@vitejs/plugin-react": "^4.2.1",
     "typescript": "^5.7.2",
-    "vite": "^5.0.8",
+    "vite": "^5.0.8"
+  },
+  "devDependencies": {
     "@typescript-eslint/eslint-plugin": "^6.18.0",
     "@typescript-eslint/parser": "^6.18.0",
     "eslint": "^8.56.0",
