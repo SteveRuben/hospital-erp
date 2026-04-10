@@ -1,0 +1,22 @@
+{
+  "name": "hospital-erp",
+  "version": "1.0.0",
+  "private": true,
+  "description": "Hospital ERP - Application de gestion hospitalière",
+  "workspaces": [
+    "packages/*"
+  ],
+  "scripts": {
+    "dev": "turbo run dev",
+    "build": "turbo run build",
+    "test": "turbo run test",
+    "lint": "turbo run lint",
+    "typecheck": "turbo run typecheck",
+    "clean": "turbo run clean"
+  },
+  "devDependencies": {
+    "turbo": "^2.5.2",
+    "typescript": "^5.7.2"
+  },
+  "packageManager": "yarn@1.22.22"
+}
