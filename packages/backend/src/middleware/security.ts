@@ -73,8 +73,8 @@ export const validateContentType = (req: Request, res: Response, next: NextFunct
   if (['POST', 'PUT', 'PATCH'].includes(req.method)) {
     const contentType = req.headers['content-type'] || '';
     const hasBody = req.headers['content-length'] && parseInt(req.headers['content-length']) > 0;
-    if (hasBody && !contentType.includes('application/json')) {
-      res.status(415).json({ error: 'Content-Type doit être application/json' });
+    if (hasBody && !contentType.includes('application/json') && !contentType.includes('multipart/form-data')) {
+      res.status(415).json({ error: 'Content-Type doit être application/json ou multipart/form-data' });
       return;
     }
   }

@@ -27,6 +27,7 @@ const menuGroups = [
       { path: '/app/listes-patients', icon: 'bi-list-ul', label: 'Listes patients' },
       { path: '/app/documentation', icon: 'bi-book', label: 'Documentation' },
       { path: '/app/utilisateurs', icon: 'bi-person-gear', label: 'Utilisateurs' },
+      { path: '/app/import', icon: 'bi-cloud-upload', label: 'Import données' },
     ],
   },
 ];

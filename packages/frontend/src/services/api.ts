@@ -186,3 +186,11 @@ export const printResultatLabo = (patientId: number) => window.open(`${API_URL}/
 // Impersonation
 export const impersonateUser = (userId: number) => api.post(`/auth/impersonate/${userId}`);
 export const stopImpersonate = (adminId: number) => api.post('/auth/stop-impersonate', { admin_id: adminId });
+
+// Import
+export const importFile = (type: string, file: File) => {
+  const formData = new FormData();
+  formData.append('file', file);
+  return api.post(`/import/${type}`, formData, { headers: { 'Content-Type': 'multipart/form-data' } });
+};
+export const downloadTemplate = (type: string) => window.open(`${API_URL}/import/template/${type}?token=${localStorage.getItem('token')}`, '_blank');

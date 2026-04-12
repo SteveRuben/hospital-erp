@@ -18,6 +18,7 @@ import FileAttente from './pages/FileAttente';
 import ListesPatients from './pages/ListesPatients';
 import Documentation from './pages/Documentation';
 import Utilisateurs from './pages/Utilisateurs';
+import Import from './pages/Import';
 import Layout from './components/Layout';
 
 interface AuthContextType {
@@ -154,6 +155,7 @@ function App() {
                     <Route path="/listes-patients" element={<ListesPatients />} />
                     <Route path="/documentation" element={<Documentation />} />
                     <Route path="/utilisateurs" element={<Utilisateurs />} />
+                    <Route path="/import" element={<Import />} />
                   </Routes>
                 </Layout>
               </ProtectedRoute>
