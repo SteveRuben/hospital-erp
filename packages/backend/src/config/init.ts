@@ -446,13 +446,21 @@ export const initDB = async (): Promise<void> => {
       );
     `);
 
-    // Insert default admin user (password: admin123)
+    // Insert default users (one per role)
     const hashedPassword = await bcrypt.hash('admin123', 10);
-    await client.query(`
-      INSERT INTO users (username, password, role, nom, prenom)
-      VALUES ('admin', $1, 'admin', 'Administrateur', 'Système')
-      ON CONFLICT (username) DO NOTHING
-    `, [hashedPassword]);
+    const defaultUsers = [
+      ['admin', hashedPassword, 'admin', 'Administrateur', 'Système'],
+      ['dr.martin', hashedPassword, 'medecin', 'Martin', 'Jean'],
+      ['comptable1', hashedPassword, 'comptable', 'Dubois', 'Marie'],
+      ['labo1', hashedPassword, 'laborantin', 'Petit', 'Paul'],
+      ['reception1', hashedPassword, 'reception', 'Leroy', 'Sophie'],
+    ];
+    for (const [username, pwd, role, nom, prenom] of defaultUsers) {
+      await client.query(
+        `INSERT INTO users (username, password, role, nom, prenom) VALUES ($1, $2, $3, $4, $5) ON CONFLICT (username) DO NOTHING`,
+        [username, pwd, role, nom, prenom]
+      );
+    }
 
     console.log('Database initialized successfully');
   } catch (err) {
