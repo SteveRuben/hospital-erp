@@ -2,7 +2,7 @@
 nixPkgs = ["nodejs_20"]
 
 [phases.install]
-cmds = ["npm install --include=dev"]
+cmds = ["npm install --include=dev && npm install @rollup/rollup-linux-x64-gnu --no-save"]
 
 [phases.build]
 cmds = ["npm run build"]
