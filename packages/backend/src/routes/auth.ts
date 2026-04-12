@@ -145,18 +145,56 @@ router.put('/users/:id', authenticate, authorize('admin'), async (req: Request, 
 router.delete('/users/:id', authenticate, authorize('admin'), async (req: Request, res: Response): Promise<void> => {
   try {
     const { id } = req.params;
-    
     const result = await query('DELETE FROM users WHERE id = $1 RETURNING id', [id]);
-    
-    if (result.rows.length === 0) {
-      res.status(404).json({ error: 'Utilisateur non trouvé' });
-      return;
-    }
-    
+    if (result.rows.length === 0) { res.status(404).json({ error: 'Utilisateur non trouvé' }); return; }
     res.json({ message: 'Utilisateur supprimé' });
-  } catch (err) {
-    res.status(500).json({ error: 'Erreur serveur' });
-  }
+  } catch (err) { res.status(500).json({ error: 'Erreur serveur' }); }
+});
+
+// Impersonate user (admin only) — switch to another user's profile
+router.post('/impersonate/:id', authenticate, authorize('admin'), async (req: AuthRequest, res: Response): Promise<void> => {
+  try {
+    const targetUser = await query('SELECT id, username, role, nom, prenom FROM users WHERE id = $1', [req.params.id]);
+    if (targetUser.rows.length === 0) { res.status(404).json({ error: 'Utilisateur non trouvé' }); return; }
+
+    const target = targetUser.rows[0];
+    const token = generateToken(target);
+
+    // OWASP A09 — Audit log impersonation
+    console.warn(`[AUDIT][IMPERSONATE] Admin ${req.user!.username} (id:${req.user!.id}) switched to ${target.username} (id:${target.id}) from IP: ${req.ip}`);
+    await query(
+      `INSERT INTO audit_log (user_id, action, table_name, record_id, details) VALUES ($1, $2, $3, $4, $5)`,
+      [req.user!.id, 'impersonate', 'users', target.id, `Admin ${req.user!.username} impersonated ${target.username} (${target.role})`]
+    );
+
+    res.json({
+      token,
+      user: { id: target.id, username: target.username, role: target.role, nom: target.nom, prenom: target.prenom },
+      impersonatedBy: { id: req.user!.id, username: req.user!.username },
+    });
+  } catch (err) { console.error(err); res.status(500).json({ error: 'Erreur serveur' }); }
+});
+
+// Stop impersonation — switch back to admin
+router.post('/stop-impersonate', authenticate, async (req: AuthRequest, res: Response): Promise<void> => {
+  try {
+    const { admin_id } = req.body;
+    if (!admin_id) { res.status(400).json({ error: 'admin_id requis' }); return; }
+
+    const adminUser = await query('SELECT id, username, role, nom, prenom FROM users WHERE id = $1 AND role = $2', [admin_id, 'admin']);
+    if (adminUser.rows.length === 0) { res.status(403).json({ error: 'Utilisateur admin non trouvé' }); return; }
+
+    const admin = adminUser.rows[0];
+    const token = generateToken(admin);
+
+    console.log(`[AUDIT][IMPERSONATE] Admin ${admin.username} stopped impersonation, back to admin`);
+    await query(
+      `INSERT INTO audit_log (user_id, action, table_name, record_id, details) VALUES ($1, $2, $3, $4, $5)`,
+      [admin.id, 'stop_impersonate', 'users', admin.id, `Admin ${admin.username} stopped impersonation`]
+    );
+
+    res.json({ token, user: { id: admin.id, username: admin.username, role: admin.role, nom: admin.nom, prenom: admin.prenom } });
+  } catch (err) { res.status(500).json({ error: 'Erreur serveur' }); }
 });
 
 export default router;

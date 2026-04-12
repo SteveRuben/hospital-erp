@@ -1,5 +1,6 @@
-import { useState, useEffect } from 'react';
-import { getUsers, createUser } from '../services/api';
+import { useState, useEffect, useContext } from 'react';
+import { getUsers, createUser, impersonateUser } from '../services/api';
+import { AuthContext } from '../App';
 import type { User } from '../types';
 
 const roleConfig: Record<string, { label: string; tag: string; desc: string }> = {
@@ -18,6 +19,7 @@ export default function Utilisateurs() {
   const [showModal, setShowModal] = useState(false);
   const [form, setForm] = useState(emptyForm);
   const [error, setError] = useState('');
+  const { user: currentUser, startImpersonate } = useContext(AuthContext);
 
   useEffect(() => { loadUsers(); }, []);
 
@@ -42,6 +44,14 @@ export default function Utilisateurs() {
 
   const countByRole = (role: string) => users.filter(u => u.role === role).length;
 
+  const handleImpersonate = async (userId: number) => {
+    if (!currentUser) return;
+    try {
+      const { data } = await impersonateUser(userId);
+      startImpersonate(data.user, data.token, currentUser.id);
+    } catch (err: any) { alert(err.response?.data?.error || 'Erreur'); }
+  };
+
   if (loading) return <div className="loading"><div className="spinner"></div></div>;
 
   return (
@@ -65,7 +75,7 @@ export default function Utilisateurs() {
 
       {/* Table */}
       <table className="data-table">
-        <thead><tr><th>Nom d'utilisateur</th><th>Nom</th><th>Prénom</th><th>Rôle</th><th>Téléphone</th><th>Créé le</th></tr></thead>
+        <thead><tr><th>Nom d'utilisateur</th><th>Nom</th><th>Prénom</th><th>Rôle</th><th>Téléphone</th><th>Créé le</th><th>Actions</th></tr></thead>
         <tbody>
           {users.map(u => (
             <tr key={u.id}>
@@ -75,9 +85,16 @@ export default function Utilisateurs() {
               <td><span className={`tag ${roleConfig[u.role]?.tag || 'tag-gray'}`}>{roleConfig[u.role]?.label || u.role}</span></td>
               <td>{u.telephone || '-'}</td>
               <td>{(u as any).created_at ? new Date((u as any).created_at).toLocaleDateString('fr-FR') : '-'}</td>
+              <td>
+                {u.id !== currentUser?.id && (
+                  <button className="btn-ghost btn-sm" onClick={() => handleImpersonate(u.id)} title="Voir en tant que cet utilisateur">
+                    <i className="bi bi-eye"></i> Voir en tant que
+                  </button>
+                )}
+              </td>
             </tr>
           ))}
-          {users.length === 0 && <tr><td colSpan={6} className="table-empty">Aucun utilisateur</td></tr>}
+          {users.length === 0 && <tr><td colSpan={7} className="table-empty">Aucun utilisateur</td></tr>}
         </tbody>
       </table>
 

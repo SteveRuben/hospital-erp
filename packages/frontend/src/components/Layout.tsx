@@ -32,15 +32,31 @@ const menuGroups = [
 ];
 
 export default function Layout({ children }: { children: React.ReactNode }) {
-  const { user, logout } = useContext(AuthContext);
+  const { user, logout, impersonating, stopImpersonate } = useContext(AuthContext);
   const navigate = useNavigate();
 
   const handleLogout = () => { logout(); navigate('/login'); };
 
   return (
     <>
+      {/* Impersonation banner */}
+      {impersonating && (
+        <div style={{
+          position: 'fixed', top: 0, left: 0, right: 0, zIndex: 200,
+          background: '#da1e28', color: '#fff', padding: '0.5rem 1.5rem',
+          display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '1rem',
+          fontSize: '0.8125rem', fontWeight: 500,
+        }}>
+          <i className="bi bi-eye"></i>
+          Vous visualisez l'application en tant que <strong>{user?.prenom} {user?.nom}</strong> ({user?.role})
+          <button onClick={stopImpersonate} style={{ background: '#fff', color: '#da1e28', border: 'none', padding: '0.25rem 0.75rem', fontSize: '0.75rem', cursor: 'pointer', fontWeight: 600 }}>
+            ← Revenir admin
+          </button>
+        </div>
+      )}
+
       {/* Header */}
-      <header className="header">
+      <header className="header" style={impersonating ? { top: '36px' } : {}}>
         <div className="header-logo">
           <i className="bi bi-hospital"></i>
           <span>Hospital ERP</span>
@@ -59,7 +75,7 @@ export default function Layout({ children }: { children: React.ReactNode }) {
       </header>
 
       {/* Sidebar */}
-      <nav className="sidebar">
+      <nav className="sidebar" style={impersonating ? { top: `calc(var(--cds-header-height) + 36px)` } : {}}>
         {menuGroups.map((group, gi) => (
           <div className="sidebar-group" key={gi}>
             <div className="sidebar-group-label">{group.label}</div>
@@ -89,7 +105,7 @@ export default function Layout({ children }: { children: React.ReactNode }) {
       </nav>
 
       {/* Main Content */}
-      <main className="main-content">
+      <main className="main-content" style={impersonating ? { marginTop: `calc(var(--cds-header-height) + 36px)` } : {}}>
         {children}
       </main>
     </>

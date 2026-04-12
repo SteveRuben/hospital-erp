@@ -182,3 +182,7 @@ export const getNotificationLog = (patientId: number) => api.get(`/notifications
 export const printFacture = (id: number) => window.open(`${API_URL}/print/facture/${id}?token=${localStorage.getItem('token')}`, '_blank');
 export const printOrdonnance = (patientId: number, medecinId?: number) => window.open(`${API_URL}/print/ordonnance/${patientId}?medecin_id=${medecinId || ''}&token=${localStorage.getItem('token')}`, '_blank');
 export const printResultatLabo = (patientId: number) => window.open(`${API_URL}/print/labo/${patientId}?token=${localStorage.getItem('token')}`, '_blank');
+
+// Impersonation
+export const impersonateUser = (userId: number) => api.post(`/auth/impersonate/${userId}`);
+export const stopImpersonate = (adminId: number) => api.post('/auth/stop-impersonate', { admin_id: adminId });

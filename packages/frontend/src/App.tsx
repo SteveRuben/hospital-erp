@@ -25,10 +25,15 @@ interface AuthContextType {
   login: (user: User, token: string) => void;
   logout: () => void;
   loading: boolean;
+  impersonating: boolean;
+  originalAdminId: number | null;
+  startImpersonate: (user: User, token: string, adminId: number) => void;
+  stopImpersonate: () => void;
 }
 
 export const AuthContext = createContext<AuthContextType>({
-  user: null, login: () => {}, logout: () => {}, loading: true
+  user: null, login: () => {}, logout: () => {}, loading: true,
+  impersonating: false, originalAdminId: null, startImpersonate: () => {}, stopImpersonate: () => {},
 });
 
 function ProtectedRoute({ children }: { children: React.ReactNode }) {
@@ -74,11 +79,15 @@ function SessionManager({ children }: { children: React.ReactNode }) {
 function App() {
   const [user, setUser] = useState<User | null>(null);
   const [loading, setLoading] = useState(true);
+  const [impersonating, setImpersonating] = useState(false);
+  const [originalAdminId, setOriginalAdminId] = useState<number | null>(null);
 
   useEffect(() => {
     const storedUser = localStorage.getItem('user');
     const token = localStorage.getItem('token');
+    const adminId = localStorage.getItem('impersonating_admin_id');
     if (storedUser && token) setUser(JSON.parse(storedUser));
+    if (adminId) { setImpersonating(true); setOriginalAdminId(Number(adminId)); }
     setLoading(false);
   }, []);
 
@@ -91,11 +100,37 @@ function App() {
   const logout = useCallback(() => {
     localStorage.removeItem('token');
     localStorage.removeItem('user');
+    localStorage.removeItem('impersonating_admin_id');
     setUser(null);
+    setImpersonating(false);
+    setOriginalAdminId(null);
   }, []);
 
+  const startImpersonate = (userData: User, token: string, adminId: number) => {
+    localStorage.setItem('token', token);
+    localStorage.setItem('user', JSON.stringify(userData));
+    localStorage.setItem('impersonating_admin_id', String(adminId));
+    setUser(userData);
+    setImpersonating(true);
+    setOriginalAdminId(adminId);
+  };
+
+  const stopImpersonateFn = useCallback(async () => {
+    if (!originalAdminId) return;
+    try {
+      const { stopImpersonate: stopApi } = await import('./services/api');
+      const { data } = await stopApi(originalAdminId);
+      localStorage.setItem('token', data.token);
+      localStorage.setItem('user', JSON.stringify(data.user));
+      localStorage.removeItem('impersonating_admin_id');
+      setUser(data.user);
+      setImpersonating(false);
+      setOriginalAdminId(null);
+    } catch (err) { console.error(err); }
+  }, [originalAdminId]);
+
   return (
-    <AuthContext.Provider value={{ user, login, logout, loading }}>
+    <AuthContext.Provider value={{ user, login, logout, loading, impersonating, originalAdminId, startImpersonate, stopImpersonate: stopImpersonateFn }}>
       <BrowserRouter>
         <SessionManager>
           <Routes>
