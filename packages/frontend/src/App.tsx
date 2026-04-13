@@ -19,7 +19,9 @@ import ListesPatients from './pages/ListesPatients';
 import Documentation from './pages/Documentation';
 import Utilisateurs from './pages/Utilisateurs';
 import Import from './pages/Import';
+import Habilitations from './pages/Habilitations';
 import Layout from './components/Layout';
+import RoleGuard from './components/RoleGuard';
 
 interface AuthContextType {
   user: User | null;
@@ -142,20 +144,21 @@ function App() {
                 <Layout>
                   <Routes>
                     <Route path="/" element={<Dashboard />} />
-                    <Route path="/patients" element={<Patients />} />
-                    <Route path="/patients/:id" element={<PatientDetail />} />
-                    <Route path="/medecins" element={<Medecins />} />
-                    <Route path="/services" element={<Services />} />
-                    <Route path="/consultations" element={<Consultations />} />
-                    <Route path="/finances" element={<Finances />} />
-                    <Route path="/laboratoire" element={<Laboratoire />} />
-                    <Route path="/rendezvous" element={<RendezVous />} />
-                    <Route path="/visites" element={<Visites />} />
-                    <Route path="/file-attente" element={<FileAttente />} />
-                    <Route path="/listes-patients" element={<ListesPatients />} />
+                    <Route path="/patients" element={<RoleGuard roles={['admin','medecin','reception']}><Patients /></RoleGuard>} />
+                    <Route path="/patients/:id" element={<RoleGuard roles={['admin','medecin','reception']}><PatientDetail /></RoleGuard>} />
+                    <Route path="/medecins" element={<RoleGuard roles={['admin','medecin']}><Medecins /></RoleGuard>} />
+                    <Route path="/services" element={<RoleGuard roles={['admin']}><Services /></RoleGuard>} />
+                    <Route path="/consultations" element={<RoleGuard roles={['admin','medecin']}><Consultations /></RoleGuard>} />
+                    <Route path="/finances" element={<RoleGuard roles={['admin','comptable']}><Finances /></RoleGuard>} />
+                    <Route path="/laboratoire" element={<RoleGuard roles={['admin','laborantin']}><Laboratoire /></RoleGuard>} />
+                    <Route path="/rendezvous" element={<RoleGuard roles={['admin','medecin','reception']}><RendezVous /></RoleGuard>} />
+                    <Route path="/visites" element={<RoleGuard roles={['admin','medecin','reception']}><Visites /></RoleGuard>} />
+                    <Route path="/file-attente" element={<RoleGuard roles={['admin','medecin','reception']}><FileAttente /></RoleGuard>} />
+                    <Route path="/listes-patients" element={<RoleGuard roles={['admin','medecin']}><ListesPatients /></RoleGuard>} />
                     <Route path="/documentation" element={<Documentation />} />
-                    <Route path="/utilisateurs" element={<Utilisateurs />} />
-                    <Route path="/import" element={<Import />} />
+                    <Route path="/utilisateurs" element={<RoleGuard roles={['admin']}><Utilisateurs /></RoleGuard>} />
+                    <Route path="/habilitations" element={<RoleGuard roles={['admin']}><Habilitations /></RoleGuard>} />
+                    <Route path="/import" element={<RoleGuard roles={['admin']}><Import /></RoleGuard>} />
                   </Routes>
                 </Layout>
               </ProtectedRoute>

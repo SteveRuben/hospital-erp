@@ -1,42 +1,15 @@
 import { NavLink, useNavigate } from 'react-router-dom';
 import { useContext } from 'react';
 import { AuthContext } from '../App';
-
-const menuGroups = [
-  {
-    label: 'Accueil',
-    items: [{ path: '/app', icon: 'bi-speedometer2', label: 'Dashboard' }],
-  },
-  {
-    label: 'Clinique',
-    items: [
-      { path: '/app/patients', icon: 'bi-people', label: 'Patients' },
-      { path: '/app/medecins', icon: 'bi-person-badge', label: 'Médecins' },
-      { path: '/app/consultations', icon: 'bi-clipboard-pulse', label: 'Consultations' },
-      { path: '/app/rendezvous', icon: 'bi-calendar-event', label: 'Rendez-vous' },
-      { path: '/app/laboratoire', icon: 'bi-flask', label: 'Laboratoire' },
-      { path: '/app/visites', icon: 'bi-door-open', label: 'Visites actives' },
-      { path: '/app/file-attente', icon: 'bi-hourglass-split', label: "File d'attente" },
-    ],
-  },
-  {
-    label: 'Administration',
-    items: [
-      { path: '/app/finances', icon: 'bi-cash-coin', label: 'Finances' },
-      { path: '/app/services', icon: 'bi-building', label: 'Services' },
-      { path: '/app/listes-patients', icon: 'bi-list-ul', label: 'Listes patients' },
-      { path: '/app/documentation', icon: 'bi-book', label: 'Documentation' },
-      { path: '/app/utilisateurs', icon: 'bi-person-gear', label: 'Utilisateurs' },
-      { path: '/app/import', icon: 'bi-cloud-upload', label: 'Import données' },
-    ],
-  },
-];
+import { getMenuForRole } from '../config/permissions';
 
 export default function Layout({ children }: { children: React.ReactNode }) {
   const { user, logout, impersonating, stopImpersonate } = useContext(AuthContext);
   const navigate = useNavigate();
 
   const handleLogout = () => { logout(); navigate('/login'); };
+
+  const menuGroups = user ? getMenuForRole(user.role) : [];
 
   return (
     <>
