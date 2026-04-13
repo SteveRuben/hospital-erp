@@ -495,7 +495,7 @@ export const initDB = async (): Promise<void> => {
     };
     for (const [role, mods] of Object.entries(roleAccess)) {
       for (const mod of modules) {
-        await client.query('INSERT INTO habilitations (role, module, acces) VALUES ($1,$2,$3) ON CONFLICT (role, module) DO NOTHING', [role, mod, mods.includes(mod)]);
+        await client.query('INSERT INTO habilitations (role, module, acces) VALUES ($1,$2,$3::boolean) ON CONFLICT (role, module) DO NOTHING', [role, mod, mods.includes(mod)]);
       }
     }
 
