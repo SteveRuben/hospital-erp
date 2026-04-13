@@ -495,7 +495,7 @@ export const initDB = async (): Promise<void> => {
     };
     for (const [role, mods] of Object.entries(roleAccess)) {
       for (const mod of modules) {
-        await client.query('INSERT INTO habilitations (role, module, acces) VALUES ($1,$2,$3::boolean) ON CONFLICT (role, module) DO NOTHING', [role, mod, mods.includes(mod)]);
+        await client.query('INSERT INTO habilitations (role, module, acces) VALUES ($1::varchar, $2::varchar, $3::boolean) ON CONFLICT (role, module) DO NOTHING', [role, mod, mods.includes(mod)]);
       }
     }
 
@@ -518,7 +518,7 @@ export const initDB = async (): Promise<void> => {
       ['Administration', 2, 'import', 'Import données', 'bi-cloud-upload', '/app/import', 6],
     ];
     for (const [groupe, groupe_ordre, module, label, icon, path, ordre] of menuItems) {
-      await client.query('INSERT INTO menu_config (groupe, groupe_ordre, module, label, icon, path, ordre) SELECT $1,$2,$3,$4,$5,$6,$7 WHERE NOT EXISTS (SELECT 1 FROM menu_config WHERE module = $3)', [groupe, groupe_ordre, module, label, icon, path, ordre]);
+      await client.query('INSERT INTO menu_config (groupe, groupe_ordre, module, label, icon, path, ordre) SELECT $1::varchar, $2::int, $3::varchar, $4::varchar, $5::varchar, $6::varchar, $7::int WHERE NOT EXISTS (SELECT 1 FROM menu_config WHERE module = $3::varchar)', [groupe, groupe_ordre, module, label, icon, path, ordre]);
     }
 
     console.log('Database initialized successfully');
