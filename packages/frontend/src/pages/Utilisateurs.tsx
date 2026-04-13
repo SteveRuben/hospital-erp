@@ -108,7 +108,27 @@ export default function Utilisateurs() {
                 {error && <div className="notification notification-error mb-2"><i className="bi bi-exclamation-circle"></i><span>{error}</span></div>}
                 <div className="grid-2">
                   <div className="form-group"><label className="form-label">Nom d'utilisateur *</label><input type="text" className="form-input" value={form.username} onChange={e => setForm({...form, username: e.target.value})} required placeholder="ex: dr.dupont" /></div>
-                  <div className="form-group"><label className="form-label">Mot de passe *</label><input type="password" className="form-input" value={form.password} onChange={e => setForm({...form, password: e.target.value})} required placeholder="Min 8 chars, 1 maj, 1 min, 1 chiffre" /></div>
+                  <div className="form-group">
+                    <label className="form-label">Mot de passe *</label>
+                    <input type="password" className="form-input" value={form.password} onChange={e => setForm({...form, password: e.target.value})} required placeholder="Ex: Hospital1" />
+                    <div style={{ marginTop: '0.5rem', fontSize: '0.75rem', color: 'var(--cds-text-secondary)', background: 'var(--cds-field-01)', padding: '0.5rem 0.75rem' }}>
+                      <strong>Règles du mot de passe :</strong>
+                      <ul style={{ margin: '0.25rem 0 0 1rem', padding: 0 }}>
+                        <li style={{ color: form.password.length >= 8 ? 'var(--cds-support-success)' : 'inherit' }}>
+                          {form.password.length >= 8 ? '✓' : '○'} Minimum 8 caractères
+                        </li>
+                        <li style={{ color: /[A-Z]/.test(form.password) ? 'var(--cds-support-success)' : 'inherit' }}>
+                          {/[A-Z]/.test(form.password) ? '✓' : '○'} Au moins 1 majuscule (A-Z)
+                        </li>
+                        <li style={{ color: /[a-z]/.test(form.password) ? 'var(--cds-support-success)' : 'inherit' }}>
+                          {/[a-z]/.test(form.password) ? '✓' : '○'} Au moins 1 minuscule (a-z)
+                        </li>
+                        <li style={{ color: /[0-9]/.test(form.password) ? 'var(--cds-support-success)' : 'inherit' }}>
+                          {/[0-9]/.test(form.password) ? '✓' : '○'} Au moins 1 chiffre (0-9)
+                        </li>
+                      </ul>
+                    </div>
+                  </div>
                 </div>
                 <div className="grid-3">
                   <div className="form-group"><label className="form-label">Nom</label><input type="text" className="form-input" value={form.nom} onChange={e => setForm({...form, nom: e.target.value})} /></div>
