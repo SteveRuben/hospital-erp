@@ -194,3 +194,11 @@ export const importFile = (type: string, file: File) => {
   return api.post(`/import/${type}`, formData, { headers: { 'Content-Type': 'multipart/form-data' } });
 };
 export const downloadTemplate = (type: string) => window.open(`${API_URL}/import/template/${type}?token=${localStorage.getItem('token')}`, '_blank');
+
+// Habilitations
+export const getHabilitations = () => api.get('/habilitations');
+export const getMyHabilitations = () => api.get('/habilitations/me');
+export const updateHabilitation = (data: { role: string; module: string; acces: boolean }) => api.put('/habilitations', data);
+export const getMenuConfig = () => api.get('/habilitations/menu');
+export const updateMenuItem = (id: number, data: unknown) => api.put(`/habilitations/menu/${id}`, data);
+export const updateMenuOrder = (items: Array<{ id: number; groupe: string; groupe_ordre: number; ordre: number }>) => api.put('/habilitations/menu-order', { items });

@@ -423,6 +423,28 @@ export const initDB = async (): Promise<void> => {
         created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
       );
 
+      -- Habilitations (permissions par rôle)
+      CREATE TABLE IF NOT EXISTS habilitations (
+        id SERIAL PRIMARY KEY,
+        role VARCHAR(50) NOT NULL,
+        module VARCHAR(100) NOT NULL,
+        acces BOOLEAN DEFAULT TRUE,
+        UNIQUE(role, module)
+      );
+
+      -- Menu configuration
+      CREATE TABLE IF NOT EXISTS menu_config (
+        id SERIAL PRIMARY KEY,
+        groupe VARCHAR(100) NOT NULL,
+        groupe_ordre INTEGER DEFAULT 0,
+        module VARCHAR(100) NOT NULL,
+        label VARCHAR(100) NOT NULL,
+        icon VARCHAR(50) NOT NULL,
+        path VARCHAR(200) NOT NULL,
+        ordre INTEGER DEFAULT 0,
+        actif BOOLEAN DEFAULT TRUE
+      );
+
       -- Notifications log
       CREATE TABLE IF NOT EXISTS notifications_log (
         id SERIAL PRIMARY KEY,
@@ -460,6 +482,43 @@ export const initDB = async (): Promise<void> => {
         `INSERT INTO users (username, password, role, nom, prenom) VALUES ($1, $2, $3, $4, $5) ON CONFLICT (username) DO NOTHING`,
         [username, pwd, role, nom, prenom]
       );
+    }
+
+    // Seed default habilitations
+    const modules = ['dashboard','patients','medecins','consultations','rendezvous','laboratoire','visites','file-attente','finances','services','listes-patients','documentation','utilisateurs','habilitations','import'];
+    const roleAccess: Record<string, string[]> = {
+      admin: modules,
+      medecin: ['dashboard','patients','medecins','consultations','rendezvous','visites','file-attente','listes-patients','documentation'],
+      comptable: ['dashboard','finances','documentation'],
+      laborantin: ['dashboard','laboratoire','documentation'],
+      reception: ['dashboard','patients','rendezvous','visites','file-attente','documentation'],
+    };
+    for (const [role, mods] of Object.entries(roleAccess)) {
+      for (const mod of modules) {
+        await client.query('INSERT INTO habilitations (role, module, acces) VALUES ($1,$2,$3) ON CONFLICT (role, module) DO NOTHING', [role, mod, mods.includes(mod)]);
+      }
+    }
+
+    // Seed default menu config
+    const menuItems = [
+      ['Accueil', 0, 'dashboard', 'Dashboard', 'bi-speedometer2', '/app', 0],
+      ['Clinique', 1, 'patients', 'Patients', 'bi-people', '/app/patients', 0],
+      ['Clinique', 1, 'medecins', 'Médecins', 'bi-person-badge', '/app/medecins', 1],
+      ['Clinique', 1, 'consultations', 'Consultations', 'bi-clipboard-pulse', '/app/consultations', 2],
+      ['Clinique', 1, 'rendezvous', 'Rendez-vous', 'bi-calendar-event', '/app/rendezvous', 3],
+      ['Clinique', 1, 'laboratoire', 'Laboratoire', 'bi-flask', '/app/laboratoire', 4],
+      ['Clinique', 1, 'visites', 'Visites actives', 'bi-door-open', '/app/visites', 5],
+      ['Clinique', 1, 'file-attente', "File d'attente", 'bi-hourglass-split', '/app/file-attente', 6],
+      ['Administration', 2, 'finances', 'Finances', 'bi-cash-coin', '/app/finances', 0],
+      ['Administration', 2, 'services', 'Services', 'bi-building', '/app/services', 1],
+      ['Administration', 2, 'listes-patients', 'Listes patients', 'bi-list-ul', '/app/listes-patients', 2],
+      ['Administration', 2, 'documentation', 'Documentation', 'bi-book', '/app/documentation', 3],
+      ['Administration', 2, 'utilisateurs', 'Utilisateurs', 'bi-person-gear', '/app/utilisateurs', 4],
+      ['Administration', 2, 'habilitations', 'Habilitations', 'bi-shield-lock', '/app/habilitations', 5],
+      ['Administration', 2, 'import', 'Import données', 'bi-cloud-upload', '/app/import', 6],
+    ];
+    for (const [groupe, groupe_ordre, module, label, icon, path, ordre] of menuItems) {
+      await client.query('INSERT INTO menu_config (groupe, groupe_ordre, module, label, icon, path, ordre) SELECT $1,$2,$3,$4,$5,$6,$7 WHERE NOT EXISTS (SELECT 1 FROM menu_config WHERE module = $3)', [groupe, groupe_ordre, module, label, icon, path, ordre]);
     }
 
     console.log('Database initialized successfully');
