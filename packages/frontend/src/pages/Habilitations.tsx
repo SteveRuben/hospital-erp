@@ -13,7 +13,7 @@ interface Hab { id: number; role: string; module: string; acces: boolean }
 interface MenuItem { id: number; groupe: string; groupe_ordre: number; module: string; label: string; icon: string; path: string; ordre: number; actif: boolean }
 
 export default function Habilitations() {
-  const [tab, setTab] = useState<'permissions' | 'menu'>('permissions');
+  const [tab, setTab] = useState<'permissions' | 'menu' | 'resume'>('permissions');
   const [habs, setHabs] = useState<Hab[]>([]);
   const [menuItems, setMenuItems] = useState<MenuItem[]>([]);
   const [loading, setLoading] = useState(true);
@@ -91,6 +91,7 @@ export default function Habilitations() {
       <div className="tabs mb-2">
         <button className={`tab-item ${tab === 'permissions' ? 'active' : ''}`} onClick={() => setTab('permissions')}>Permissions par rôle</button>
         <button className={`tab-item ${tab === 'menu' ? 'active' : ''}`} onClick={() => setTab('menu')}>Organisation du menu</button>
+        <button className={`tab-item ${tab === 'resume' ? 'active' : ''}`} onClick={() => setTab('resume')}>Résumé par rôle</button>
       </div>
 
       {tab === 'permissions' && (
@@ -158,6 +159,37 @@ export default function Habilitations() {
               ))}
             </div>
           ))}
+        </div>
+      )}
+
+      {tab === 'resume' && (
+        <div>
+          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(250px, 1fr))', gap: '1rem' }}>
+            {allRoles.map(r => {
+              const roleModules = modules.filter(m => getAccess(r.role, m));
+              const apiDesc: Record<string, string> = {
+                admin: 'Toutes les routes API sans restriction',
+                medecin: 'CRUD patients, consultations, prescriptions, vitaux, allergies, pathologies, vaccinations, RDV',
+                comptable: 'Recettes, dépenses, factures, tarifs, paiements, bilan',
+                laborantin: 'CRUD examens, résultats labo, workflow Kanban',
+                reception: 'Création patients, RDV, file d\'attente, visites',
+              };
+              return (
+                <div className="tile" key={r.role} style={{ padding: '1.25rem' }}>
+                  <div className="d-flex align-center gap-1 mb-1">
+                    <span className={`tag ${r.tag}`}>{r.label}</span>
+                    <span className="text-muted" style={{ fontSize: '0.75rem' }}>{roleModules.length} modules</span>
+                  </div>
+                  <ul style={{ margin: '0.5rem 0', paddingLeft: '1.25rem', fontSize: '0.8125rem' }}>
+                    {roleModules.map(m => <li key={m} style={{ marginBottom: '0.25rem' }}>{m}</li>)}
+                  </ul>
+                  <div style={{ marginTop: '0.75rem', fontSize: '0.75rem', color: 'var(--cds-text-secondary)', borderTop: '1px solid var(--cds-ui-03)', paddingTop: '0.5rem' }}>
+                    <strong>Accès API :</strong> {apiDesc[r.role] || 'Non défini'}
+                  </div>
+                </div>
+              );
+            })}
+          </div>
         </div>
       )}
     </div>
