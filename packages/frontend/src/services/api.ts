@@ -202,3 +202,10 @@ export const updateHabilitation = (data: { role: string; module: string; acces: 
 export const getMenuConfig = () => api.get('/habilitations/menu');
 export const updateMenuItem = (id: number, data: unknown) => api.put(`/habilitations/menu/${id}`, data);
 export const updateMenuOrder = (items: Array<{ id: number; groupe: string; groupe_ordre: number; ordre: number }>) => api.put('/habilitations/menu-order', { items });
+
+// Quick search
+export const quickSearchPatients = (q: string) => api.get('/patients/search/quick', { params: { q } });
+export const advancedSearchPatients = (params: unknown) => api.get('/patients/search/advanced', { params });
+
+// Change password
+export const changePassword = (data: { old_password: string; new_password: string }) => api.post('/auth/change-password', data);

@@ -7,6 +7,7 @@ export interface User {
   nom: string;
   prenom: string;
   telephone?: string;
+  must_change_password?: boolean;
 }
 
 export interface Patient {

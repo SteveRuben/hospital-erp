@@ -23,6 +23,8 @@ import Habilitations from './pages/Habilitations';
 import Lits from './pages/Lits';
 import Programmes from './pages/Programmes';
 import Facturation from './pages/Facturation';
+import ChangePassword from './pages/ChangePassword';
+import Recherche from './pages/Recherche';
 import Layout from './components/Layout';
 import RoleGuard from './components/RoleGuard';
 
@@ -142,11 +144,13 @@ function App() {
           <Routes>
             <Route path="/" element={user ? <Navigate to="/app" /> : <Landing />} />
             <Route path="/login" element={<Login />} />
+            <Route path="/change-password" element={<ChangePassword />} />
             <Route path="/app/*" element={
               <ProtectedRoute>
                 <Layout>
                   <Routes>
                     <Route path="/" element={<Dashboard />} />
+                    <Route path="/recherche" element={<Recherche />} />
                     <Route path="/patients" element={<RoleGuard roles={['admin','medecin','reception']}><Patients /></RoleGuard>} />
                     <Route path="/patients/:id" element={<RoleGuard roles={['admin','medecin','reception']}><PatientDetail /></RoleGuard>} />
                     <Route path="/medecins" element={<RoleGuard roles={['admin','medecin']}><Medecins /></RoleGuard>} />

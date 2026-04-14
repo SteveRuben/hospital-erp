@@ -20,7 +20,11 @@ export default function Login() {
     try {
       const { data } = await loginApi({ username, password });
       login(data.user, data.token);
-      navigate('/app');
+      if (data.user.must_change_password) {
+        navigate('/change-password');
+      } else {
+        navigate('/app');
+      }
     } catch (err: unknown) {
       setError((err as { response?: { data?: { error?: string } } })?.response?.data?.error || 'Erreur de connexion');
     } finally {

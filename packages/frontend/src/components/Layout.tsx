@@ -2,6 +2,7 @@ import { NavLink, useNavigate } from 'react-router-dom';
 import { useContext, useEffect, useState } from 'react';
 import { AuthContext } from '../App';
 import { getMyHabilitations, getMenuConfig } from '../services/api';
+import PatientSearch from './PatientSearch';
 
 interface MenuItemDB { id: number; groupe: string; groupe_ordre: number; module: string; label: string; icon: string; path: string; ordre: number }
 
@@ -55,7 +56,7 @@ export default function Layout({ children }: { children: React.ReactNode }) {
 
       <header className="header" style={impersonating ? { top: '36px' } : {}}>
         <div className="header-logo"><i className="bi bi-hospital"></i><span>Hospital ERP</span></div>
-        <div className="header-search"><i className="bi bi-search"></i><input type="text" placeholder="Rechercher un patient..." /></div>
+        <PatientSearch />
         <div className="header-actions">
           <button title="Notifications"><i className="bi bi-bell"></i></button>
           <div className="header-user"><i className="bi bi-person-circle"></i><span>{user?.prenom} {user?.nom}</span></div>

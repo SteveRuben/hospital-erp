@@ -7,7 +7,7 @@ const router = Router();
 // Get all patients (with optional search)
 router.get('/', authenticate, async (req: AuthRequest, res: Response): Promise<void> => {
   try {
-    const { search, archived = 'false' } = req.query;
+    const { search, archived = 'false', page = '1', limit = '20' } = req.query;
     let sql = 'SELECT * FROM patients WHERE archived = $1';
     const params: unknown[] = [archived === 'true'];
     
@@ -15,14 +15,69 @@ router.get('/', authenticate, async (req: AuthRequest, res: Response): Promise<v
       params.push(`%${search}%`);
       sql += ` AND (nom ILIKE $2 OR prenom ILIKE $2 OR telephone ILIKE $2 OR CAST(id AS TEXT) ILIKE $2)`;
     }
+
+    // Count
+    const countResult = await query(`SELECT COUNT(*) as total FROM (${sql}) sub`, params);
+    const total = parseInt(countResult.rows[0].total as string);
+
+    const pg = Math.max(1, Number(page));
+    const lim = Math.min(100, Math.max(1, Number(limit)));
+    params.push(lim); sql += ` ORDER BY created_at DESC LIMIT $${params.length}`;
+    params.push((pg - 1) * lim); sql += ` OFFSET $${params.length}`;
     
-    sql += ' ORDER BY created_at DESC';
     const result = await query(sql, params);
-    res.json(result.rows);
+    res.json({ data: result.rows, total, page: pg, limit: lim, totalPages: Math.ceil(total / lim) });
   } catch (err) {
     console.error('[ERROR] Get patients:', err);
     res.status(500).json({ error: 'Erreur serveur' });
   }
+});
+
+// Quick search (for header autocomplete)
+router.get('/search/quick', authenticate, async (req: AuthRequest, res: Response): Promise<void> => {
+  try {
+    const { q } = req.query;
+    if (!q || String(q).length < 2) { res.json([]); return; }
+    const term = `%${q}%`;
+    const result = await query(
+      `SELECT id, nom, prenom, sexe, telephone, ville, date_naissance FROM patients WHERE archived = FALSE AND (nom ILIKE $1 OR prenom ILIKE $1 OR telephone ILIKE $1 OR email ILIKE $1 OR numero_identite ILIKE $1 OR CAST(id AS TEXT) = $2) ORDER BY nom LIMIT 10`,
+      [term, String(q)]
+    );
+    res.json(result.rows);
+  } catch (err) { res.status(500).json({ error: 'Erreur serveur' }); }
+});
+
+// Advanced search
+router.get('/search/advanced', authenticate, async (req: AuthRequest, res: Response): Promise<void> => {
+  try {
+    const { nom, prenom, telephone, ville, sexe, age_min, age_max, medecin_id, reference, contact_urgence, page = '1', limit = '20' } = req.query;
+    let sql = 'SELECT p.* FROM patients p WHERE p.archived = FALSE';
+    const params: unknown[] = [];
+
+    if (nom) { params.push(`%${nom}%`); sql += ` AND p.nom ILIKE $${params.length}`; }
+    if (prenom) { params.push(`%${prenom}%`); sql += ` AND p.prenom ILIKE $${params.length}`; }
+    if (telephone) { params.push(`%${telephone}%`); sql += ` AND p.telephone ILIKE $${params.length}`; }
+    if (ville) { params.push(`%${ville}%`); sql += ` AND p.ville ILIKE $${params.length}`; }
+    if (sexe) { params.push(sexe); sql += ` AND p.sexe = $${params.length}`; }
+    if (age_min) { params.push(Number(age_min)); sql += ` AND EXTRACT(YEAR FROM AGE(COALESCE(p.date_naissance, CURRENT_DATE))) >= $${params.length}`; }
+    if (age_max) { params.push(Number(age_max)); sql += ` AND EXTRACT(YEAR FROM AGE(COALESCE(p.date_naissance, CURRENT_DATE))) <= $${params.length}`; }
+    if (contact_urgence) { params.push(`%${contact_urgence}%`); sql += ` AND (p.contact_urgence_nom ILIKE $${params.length} OR p.contact_urgence_telephone ILIKE $${params.length})`; }
+    if (reference) { params.push(`%${reference}%`); sql += ` AND p.id IN (SELECT patient_id FROM consultations WHERE reference ILIKE $${params.length})`; }
+    if (medecin_id) { params.push(Number(medecin_id)); sql += ` AND p.id IN (SELECT patient_id FROM consultations WHERE medecin_id = $${params.length})`; }
+
+    // Count total
+    const countResult = await query(`SELECT COUNT(*) as total FROM (${sql}) sub`, params);
+    const total = parseInt(countResult.rows[0].total as string);
+
+    // Paginate
+    const pg = Math.max(1, Number(page));
+    const lim = Math.min(100, Math.max(1, Number(limit)));
+    params.push(lim); sql += ` ORDER BY p.created_at DESC LIMIT $${params.length}`;
+    params.push((pg - 1) * lim); sql += ` OFFSET $${params.length}`;
+
+    const result = await query(sql, params);
+    res.json({ data: result.rows, total, page: pg, limit: lim, totalPages: Math.ceil(total / lim) });
+  } catch (err) { console.error('[ERROR] Advanced search:', err); res.status(500).json({ error: 'Erreur serveur' }); }
 });
 
 // Get single patient

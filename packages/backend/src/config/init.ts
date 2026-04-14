@@ -14,6 +14,7 @@ export const initDB = async (): Promise<void> => {
         nom VARCHAR(100),
         prenom VARCHAR(100),
         telephone VARCHAR(20),
+        must_change_password BOOLEAN DEFAULT TRUE,
         created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
       );
 
@@ -69,6 +70,7 @@ export const initDB = async (): Promise<void> => {
       -- Consultations
       CREATE TABLE IF NOT EXISTS consultations (
         id SERIAL PRIMARY KEY,
+        reference VARCHAR(20) UNIQUE,
         patient_id INTEGER REFERENCES patients(id),
         medecin_id INTEGER REFERENCES medecins(id),
         service_id INTEGER REFERENCES services(id),
@@ -109,6 +111,7 @@ export const initDB = async (): Promise<void> => {
       -- Laboratoire
       CREATE TABLE IF NOT EXISTS examens (
         id SERIAL PRIMARY KEY,
+        reference VARCHAR(20) UNIQUE,
         patient_id INTEGER REFERENCES patients(id),
         type_examen VARCHAR(100) NOT NULL,
         resultat TEXT,

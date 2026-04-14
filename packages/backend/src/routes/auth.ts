@@ -47,7 +47,8 @@ router.post('/login', validate(loginSchema), async (req: Request, res: Response)
         username: user.username, 
         role: user.role, 
         nom: user.nom, 
-        prenom: user.prenom 
+        prenom: user.prenom,
+        must_change_password: user.must_change_password ?? false,
       } 
     });
   } catch (err) {
@@ -194,6 +195,29 @@ router.post('/stop-impersonate', authenticate, async (req: AuthRequest, res: Res
     );
 
     res.json({ token, user: { id: admin.id, username: admin.username, role: admin.role, nom: admin.nom, prenom: admin.prenom } });
+  } catch (err) { res.status(500).json({ error: 'Erreur serveur' }); }
+});
+
+// Change password
+router.post('/change-password', authenticate, async (req: AuthRequest, res: Response): Promise<void> => {
+  try {
+    const { old_password, new_password } = req.body;
+    if (!old_password || !new_password) { res.status(400).json({ error: 'Ancien et nouveau mot de passe requis' }); return; }
+
+    const result = await query('SELECT password FROM users WHERE id = $1', [req.user!.id]);
+    if (result.rows.length === 0) { res.status(404).json({ error: 'Utilisateur non trouvé' }); return; }
+
+    const valid = await bcrypt.compare(old_password, result.rows[0].password);
+    if (!valid) { res.status(401).json({ error: 'Ancien mot de passe incorrect' }); return; }
+
+    const passwordCheck = validatePassword(new_password);
+    if (!passwordCheck.valid) { res.status(400).json({ error: passwordCheck.message }); return; }
+
+    const hashed = await bcrypt.hash(new_password, BCRYPT_ROUNDS);
+    await query('UPDATE users SET password = $1, must_change_password = FALSE WHERE id = $2', [hashed, req.user!.id]);
+
+    console.log(`[AUDIT] Password changed: user=${req.user!.username}`);
+    res.json({ message: 'Mot de passe modifié' });
   } catch (err) { res.status(500).json({ error: 'Erreur serveur' }); }
 });
 

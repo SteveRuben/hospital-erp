@@ -33,7 +33,7 @@ export default function Patients() {
   useEffect(() => { loadPatients(); }, [search]);
 
   const loadPatients = async () => {
-    try { const { data } = await getPatients({ search }); setPatients(data); }
+    try { const { data } = await getPatients({ search }); setPatients(data.data || data); }
     catch (err) { console.error(err); }
     finally { setLoading(false); }
   };
