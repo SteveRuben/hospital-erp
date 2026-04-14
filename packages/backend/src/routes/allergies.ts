@@ -14,9 +14,10 @@ router.get('/:patientId', authenticate, async (req: AuthRequest, res: Response):
 router.post('/', authenticate, authorize('admin', 'medecin'), async (req: AuthRequest, res: Response): Promise<void> => {
   try {
     const { patient_id, allergene, type_allergie, severite, reaction, date_debut } = req.body;
-    const result = await query(`INSERT INTO allergies (patient_id, allergene, type_allergie, severite, reaction, date_debut) VALUES ($1,$2,$3,$4,$5,$6) RETURNING *`, [patient_id, allergene, type_allergie, severite, reaction, date_debut]);
+    const n = (v: unknown) => (v === '' || v === undefined) ? null : v;
+    const result = await query(`INSERT INTO allergies (patient_id, allergene, type_allergie, severite, reaction, date_debut) VALUES ($1,$2,$3,$4,$5,$6) RETURNING *`, [patient_id, allergene, n(type_allergie), n(severite), n(reaction), n(date_debut)]);
     res.status(201).json(result.rows[0]);
-  } catch (err) { res.status(500).json({ error: 'Erreur serveur' }); }
+  } catch (err) { console.error('[ERROR] Create allergie:', err); res.status(500).json({ error: 'Erreur serveur' }); }
 });
 
 router.put('/:id', authenticate, authorize('admin', 'medecin'), async (req: AuthRequest, res: Response): Promise<void> => {

@@ -64,17 +64,19 @@ export default function Layout({ children }: { children: React.ReactNode }) {
       </header>
 
       <nav className="sidebar" style={impersonating ? { top: `calc(var(--cds-header-height) + 36px)` } : {}}>
-        {menuGroups.map((group, gi) => (
-          <div className="sidebar-group" key={gi}>
-            <div className="sidebar-group-label">{group.label}</div>
-            {group.items.map(item => (
-              <NavLink key={item.path} to={item.path} className={({ isActive }) => `nav-link ${isActive ? 'active' : ''}`} end={item.path === '/app'}>
-                <i className={`bi ${item.icon}`}></i>{item.label}
-              </NavLink>
-            ))}
-            {gi < menuGroups.length - 1 && <div className="sidebar-divider"></div>}
-          </div>
-        ))}
+        <div style={{ flex: 1, overflowY: 'auto' }}>
+          {menuGroups.map((group, gi) => (
+            <div className="sidebar-group" key={gi}>
+              <div className="sidebar-group-label">{group.label}</div>
+              {group.items.map(item => (
+                <NavLink key={item.path} to={item.path} className={({ isActive }) => `nav-link ${isActive ? 'active' : ''}`} end={item.path === '/app'}>
+                  <i className={`bi ${item.icon}`}></i>{item.label}
+                </NavLink>
+              ))}
+              {gi < menuGroups.length - 1 && <div className="sidebar-divider"></div>}
+            </div>
+          ))}
+        </div>
         <div className="sidebar-footer">
           <div className="user-info"><div>{user?.prenom} {user?.nom}</div><div><span className="tag tag-blue">{user?.role}</span></div></div>
           <button className="btn-secondary" style={{ width: '100%', fontSize: '0.75rem' }} onClick={handleLogout}><i className="bi bi-box-arrow-right"></i> Déconnexion</button>

@@ -39,6 +39,8 @@ import printRoutes from './routes/print.js';
 import importRoutes from './routes/import.js';
 import habilitationsRoutes from './routes/habilitations.js';
 import exportRoutes from './routes/export.js';
+import portailRoutes from './routes/portail.js';
+import imagerieRoutes from './routes/imagerie.js';
 
 const app = express();
 const PORT = process.env.PORT || 5000;
@@ -125,6 +127,14 @@ app.use('/api/print', printRoutes);
 app.use('/api/import', importRoutes);
 app.use('/api/habilitations', habilitationsRoutes);
 app.use('/api/export', exportRoutes);
+app.use('/api/portail', portailRoutes);
+app.use('/api/imagerie', imagerieRoutes);
+
+// Serve uploaded files
+import { fileURLToPath as fu } from 'url';
+import { dirname as dn } from 'path';
+const __dir = dn(fu(import.meta.url));
+app.use('/uploads', express.static(path.resolve(__dir, '../uploads')));
 
 app.get('/api/health', (req, res) => {
   res.json({ status: 'ok', timestamp: new Date().toISOString() });

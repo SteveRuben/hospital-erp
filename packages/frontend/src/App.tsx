@@ -26,6 +26,8 @@ import Facturation from './pages/Facturation';
 import ChangePassword from './pages/ChangePassword';
 import Recherche from './pages/Recherche';
 import PaiementMobile from './pages/PaiementMobile';
+import Portail from './pages/Portail';
+import Imagerie from './pages/Imagerie';
 import Layout from './components/Layout';
 import RoleGuard from './components/RoleGuard';
 
@@ -146,6 +148,7 @@ function App() {
             <Route path="/" element={user ? <Navigate to="/app" /> : <Landing />} />
             <Route path="/login" element={<Login />} />
             <Route path="/change-password" element={<ChangePassword />} />
+            <Route path="/portail" element={<Portail />} />
             <Route path="/app/*" element={
               <ProtectedRoute>
                 <Layout>
@@ -171,6 +174,7 @@ function App() {
                     <Route path="/programmes" element={<RoleGuard roles={['admin','medecin']}><Programmes /></RoleGuard>} />
                     <Route path="/facturation" element={<RoleGuard roles={['admin','comptable']}><Facturation /></RoleGuard>} />
                     <Route path="/paiement-mobile" element={<RoleGuard roles={['admin','comptable']}><PaiementMobile /></RoleGuard>} />
+                    <Route path="/imagerie" element={<RoleGuard roles={['admin','medecin']}><Imagerie /></RoleGuard>} />
                   </Routes>
                 </Layout>
               </ProtectedRoute>
