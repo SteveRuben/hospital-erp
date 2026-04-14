@@ -59,7 +59,7 @@ export default function Login() {
         </form>
 
         <p style={{ textAlign: 'center', marginTop: '1.5rem', fontSize: '0.75rem', color: 'var(--cds-text-secondary)' }}>
-          Compte par défaut: admin / admin123
+          {/* Compte par défaut: admin / admin123 */}
         </p>
       </div>
     </div>
