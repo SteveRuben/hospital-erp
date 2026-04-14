@@ -25,7 +25,7 @@ export default function RendezVous() {
   const loadData = async () => {
     try {
       const [r, p, m, s] = await Promise.all([getRendezVous(), getPatients({ archived: 'false' }), getMedecins(), getServices()]);
-      setRdvs(r.data); setPatients(p.data); setMedecins(m.data); setServices(s.data);
+      setRdvs(r.data); setPatients(p.data.data); setMedecins(m.data); setServices(s.data);
     } catch (err) { console.error(err); }
     finally { setLoading(false); }
   };

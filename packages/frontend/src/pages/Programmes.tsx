@@ -19,7 +19,7 @@ export default function Programmes() {
   const loadData = async () => {
     try {
       const [p, pat] = await Promise.all([getProgrammes(), getPatients({ archived: 'false' })]);
-      setProgrammes(p.data); setPatients(pat.data);
+      setProgrammes(p.data); setPatients(pat.data.data);
     } catch (err) { console.error(err); }
     finally { setLoading(false); }
   };

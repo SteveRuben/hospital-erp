@@ -19,7 +19,7 @@ export default function ListesPatients() {
   const loadData = async () => {
     try {
       const [l, p] = await Promise.all([getListesPatients(), getPatients({ archived: 'false' })]);
-      setListes(l.data); setPatients(p.data);
+      setListes(l.data); setPatients(p.data.data);
     } catch (err) { console.error(err); }
     finally { setLoading(false); }
   };

@@ -26,7 +26,7 @@ export default function Laboratoire() {
   const loadData = async () => {
     try {
       const [e, p] = await Promise.all([getExamens(), getPatients({ archived: 'false' })]);
-      setExamens(e.data); setPatients(p.data);
+      setExamens(e.data); setPatients(p.data.data);
     } catch (err) { console.error(err); }
     finally { setLoading(false); }
   };

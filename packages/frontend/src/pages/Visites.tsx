@@ -22,7 +22,7 @@ export default function Visites() {
   const loadData = async () => {
     try {
       const [v, s, p, sv] = await Promise.all([getVisites(), getVisitesStats(), getPatients({ archived: 'false' }), getServices()]);
-      setVisites(v.data); setStats(s.data); setPatients(p.data); setServices(sv.data);
+      setVisites(v.data); setStats(s.data); setPatients(p.data.data); setServices(sv.data);
     } catch (err) { console.error(err); }
     finally { setLoading(false); }
   };

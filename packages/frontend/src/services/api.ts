@@ -28,7 +28,7 @@ export const getMe = () => api.get<User>('/auth/me');
 export const getUsers = () => api.get<User[]>('/auth/users');
 export const createUser = (data: unknown) => api.post('/auth/users', data);
 
-export const getPatients = (params?: { search?: string; archived?: string }) => api.get<Patient[]>('/patients', { params });
+export const getPatients = (params?: { search?: string; archived?: string; page?: string; limit?: string }) => api.get<{ data: Patient[]; total: number; page: number; limit: number; totalPages: number }>('/patients', { params });
 export const getPatient = (id: number) => api.get<Patient>(`/patients/${id}`);
 export const createPatient = (data: unknown) => api.post<Patient>('/patients', data);
 export const updatePatient = (id: number, data: unknown) => api.put<Patient>(`/patients/${id}`, data);
@@ -209,3 +209,11 @@ export const advancedSearchPatients = (params: unknown) => api.get('/patients/se
 
 // Change password
 export const changePassword = (data: { old_password: string; new_password: string }) => api.post('/auth/change-password', data);
+
+// Export CSV
+export const exportRecettes = (params?: { debut?: string; fin?: string }) => window.open(`${API_URL}/export/recettes?debut=${params?.debut || ''}&fin=${params?.fin || ''}&token=${localStorage.getItem('token')}`, '_blank');
+export const exportDepenses = (params?: { debut?: string; fin?: string }) => window.open(`${API_URL}/export/depenses?debut=${params?.debut || ''}&fin=${params?.fin || ''}&token=${localStorage.getItem('token')}`, '_blank');
+export const exportPatients = () => window.open(`${API_URL}/export/patients?token=${localStorage.getItem('token')}`, '_blank');
+
+// Étiquette patient
+export const printEtiquette = (patientId: number) => window.open(`${API_URL}/export/etiquette/${patientId}?token=${localStorage.getItem('token')}`, '_blank');

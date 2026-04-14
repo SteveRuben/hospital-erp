@@ -23,7 +23,7 @@ export default function Finances() {
   const loadData = async () => {
     try {
       const [r, d, c, p, s] = await Promise.all([getRecettes(), getDepenses(), getCaisse(), getPatients({ archived: 'false' }), getServices()]);
-      setRecettes(r.data); setDepenses(d.data); setCaisse(c.data); setPatients(p.data); setServices(s.data);
+      setRecettes(r.data); setDepenses(d.data); setCaisse(c.data); setPatients(p.data.data); setServices(s.data);
     } catch (err) { console.error(err); }
     finally { setLoading(false); }
   };

@@ -19,7 +19,7 @@ export default function Facturation() {
   const loadAll = async () => {
     try {
       const [t, f, p] = await Promise.all([getTarifs(), getFactures(), getPatients({ archived: 'false' })]);
-      setTarifs(t.data); setFactures(f.data); setPatients(p.data);
+      setTarifs(t.data); setFactures(f.data); setPatients(p.data.data);
     } catch (err) { console.error(err); }
     finally { setLoading(false); }
   };

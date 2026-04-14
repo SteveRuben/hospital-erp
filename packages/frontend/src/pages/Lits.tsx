@@ -25,7 +25,7 @@ export default function Lits() {
   const loadAll = async () => {
     try {
       const [p, l, h, s, pat, med, srv] = await Promise.all([getPavillons(), getLits(), getHospitalisations(), getLitsStats(), getPatients({ archived: 'false' }), getMedecins(), getServices()]);
-      setPavillons(p.data); setLits(l.data); setHosps(h.data); setStats(s.data); setPatients(pat.data); setMedecins(med.data); setServices(srv.data);
+      setPavillons(p.data); setLits(l.data); setHosps(h.data); setStats(s.data); setPatients(pat.data.data); setMedecins(med.data); setServices(srv.data);
     } catch (err) { console.error(err); }
     finally { setLoading(false); }
   };

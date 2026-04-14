@@ -25,6 +25,7 @@ import Programmes from './pages/Programmes';
 import Facturation from './pages/Facturation';
 import ChangePassword from './pages/ChangePassword';
 import Recherche from './pages/Recherche';
+import PaiementMobile from './pages/PaiementMobile';
 import Layout from './components/Layout';
 import RoleGuard from './components/RoleGuard';
 
@@ -169,6 +170,7 @@ function App() {
                     <Route path="/lits" element={<RoleGuard roles={['admin','medecin']}><Lits /></RoleGuard>} />
                     <Route path="/programmes" element={<RoleGuard roles={['admin','medecin']}><Programmes /></RoleGuard>} />
                     <Route path="/facturation" element={<RoleGuard roles={['admin','comptable']}><Facturation /></RoleGuard>} />
+                    <Route path="/paiement-mobile" element={<RoleGuard roles={['admin','comptable']}><PaiementMobile /></RoleGuard>} />
                   </Routes>
                 </Layout>
               </ProtectedRoute>

@@ -38,6 +38,7 @@ import notificationsRoutes from './routes/notifications.js';
 import printRoutes from './routes/print.js';
 import importRoutes from './routes/import.js';
 import habilitationsRoutes from './routes/habilitations.js';
+import exportRoutes from './routes/export.js';
 
 const app = express();
 const PORT = process.env.PORT || 5000;
@@ -123,6 +124,7 @@ app.use('/api/notifications', notificationsRoutes);
 app.use('/api/print', printRoutes);
 app.use('/api/import', importRoutes);
 app.use('/api/habilitations', habilitationsRoutes);
+app.use('/api/export', exportRoutes);
 
 app.get('/api/health', (req, res) => {
   res.json({ status: 'ok', timestamp: new Date().toISOString() });

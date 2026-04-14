@@ -17,7 +17,7 @@ export default function Consultations() {
   const loadData = async () => {
     try {
       const [c, p, m, s] = await Promise.all([getConsultations(), getPatients({ archived: 'false' }), getMedecins(), getServices()]);
-      setConsultations(c.data); setPatients(p.data); setMedecins(m.data); setServices(s.data);
+      setConsultations(c.data); setPatients(p.data.data); setMedecins(m.data); setServices(s.data);
     } catch (err) { console.error(err); } 
     finally { setLoading(false); }
   };

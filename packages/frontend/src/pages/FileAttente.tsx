@@ -31,7 +31,7 @@ export default function FileAttente() {
       const params: any = {};
       if (filterService) params.service_id = filterService;
       const [q, s, p, sv] = await Promise.all([getFileAttente(params), getFileAttenteStats(), getPatients({ archived: 'false' }), getServices()]);
-      setQueue(q.data); setStats(s.data); setPatients(p.data); setServices(sv.data);
+      setQueue(q.data); setStats(s.data); setPatients(p.data.data); setServices(sv.data);
     } catch (err) { console.error(err); }
     finally { setLoading(false); }
   };
