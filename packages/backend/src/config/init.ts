@@ -485,11 +485,11 @@ export const initDB = async (): Promise<void> => {
     }
 
     // Seed default habilitations
-    const modules = ['dashboard','patients','medecins','consultations','rendezvous','laboratoire','visites','file-attente','finances','services','listes-patients','documentation','utilisateurs','habilitations','import'];
+    const modules = ['dashboard','patients','medecins','consultations','rendezvous','laboratoire','visites','file-attente','finances','services','listes-patients','documentation','utilisateurs','habilitations','import','lits','programmes','facturation'];
     const roleAccess: Record<string, string[]> = {
       admin: modules,
-      medecin: ['dashboard','patients','medecins','consultations','rendezvous','visites','file-attente','listes-patients','documentation'],
-      comptable: ['dashboard','finances','documentation'],
+      medecin: ['dashboard','patients','medecins','consultations','rendezvous','visites','file-attente','listes-patients','documentation','lits','programmes'],
+      comptable: ['dashboard','finances','documentation','facturation'],
       laborantin: ['dashboard','laboratoire','documentation'],
       reception: ['dashboard','patients','rendezvous','visites','file-attente','documentation'],
     };
@@ -516,6 +516,9 @@ export const initDB = async (): Promise<void> => {
       ['Administration', 2, 'utilisateurs', 'Utilisateurs', 'bi-person-gear', '/app/utilisateurs', 4],
       ['Administration', 2, 'habilitations', 'Habilitations', 'bi-shield-lock', '/app/habilitations', 5],
       ['Administration', 2, 'import', 'Import données', 'bi-cloud-upload', '/app/import', 6],
+      ['Clinique', 1, 'lits', 'Lits & Hospitalisation', 'bi-hospital', '/app/lits', 7],
+      ['Clinique', 1, 'programmes', 'Programmes de soins', 'bi-heart-pulse', '/app/programmes', 8],
+      ['Administration', 2, 'facturation', 'Facturation', 'bi-receipt', '/app/facturation', 7],
     ];
     for (const [groupe, groupe_ordre, module, label, icon, path, ordre] of menuItems) {
       await client.query('INSERT INTO menu_config (groupe, groupe_ordre, module, label, icon, path, ordre) SELECT $1::varchar, $2::int, $3::varchar, $4::varchar, $5::varchar, $6::varchar, $7::int WHERE NOT EXISTS (SELECT 1 FROM menu_config WHERE module = $3::varchar)', [groupe, groupe_ordre, module, label, icon, path, ordre]);

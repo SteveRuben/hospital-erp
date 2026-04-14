@@ -20,6 +20,9 @@ import Documentation from './pages/Documentation';
 import Utilisateurs from './pages/Utilisateurs';
 import Import from './pages/Import';
 import Habilitations from './pages/Habilitations';
+import Lits from './pages/Lits';
+import Programmes from './pages/Programmes';
+import Facturation from './pages/Facturation';
 import Layout from './components/Layout';
 import RoleGuard from './components/RoleGuard';
 
@@ -159,6 +162,9 @@ function App() {
                     <Route path="/utilisateurs" element={<RoleGuard roles={['admin']}><Utilisateurs /></RoleGuard>} />
                     <Route path="/habilitations" element={<RoleGuard roles={['admin']}><Habilitations /></RoleGuard>} />
                     <Route path="/import" element={<RoleGuard roles={['admin']}><Import /></RoleGuard>} />
+                    <Route path="/lits" element={<RoleGuard roles={['admin','medecin']}><Lits /></RoleGuard>} />
+                    <Route path="/programmes" element={<RoleGuard roles={['admin','medecin']}><Programmes /></RoleGuard>} />
+                    <Route path="/facturation" element={<RoleGuard roles={['admin','comptable']}><Facturation /></RoleGuard>} />
                   </Routes>
                 </Layout>
               </ProtectedRoute>
