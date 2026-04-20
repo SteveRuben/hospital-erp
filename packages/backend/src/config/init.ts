@@ -462,6 +462,116 @@ export const initDB = async (): Promise<void> => {
         created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
       );
 
+      -- ===== OPENMRS CORE CONCEPTS =====
+
+      -- Concept Dictionary
+      CREATE TABLE IF NOT EXISTS concepts (
+        id SERIAL PRIMARY KEY,
+        nom VARCHAR(200) NOT NULL,
+        code VARCHAR(50) UNIQUE,
+        datatype VARCHAR(30) NOT NULL CHECK (datatype IN ('numeric', 'coded', 'text', 'date', 'boolean', 'datetime', 'document')),
+        classe VARCHAR(50) NOT NULL CHECK (classe IN ('diagnostic', 'symptome', 'test', 'medicament', 'procedure', 'finding', 'question', 'reponse', 'misc')),
+        description TEXT,
+        unite VARCHAR(50),
+        valeur_min DECIMAL(10,2),
+        valeur_max DECIMAL(10,2),
+        actif BOOLEAN DEFAULT TRUE,
+        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+      );
+
+      -- Concept names (multilingual)
+      CREATE TABLE IF NOT EXISTS concept_noms (
+        id SERIAL PRIMARY KEY,
+        concept_id INTEGER REFERENCES concepts(id) ON DELETE CASCADE,
+        nom VARCHAR(200) NOT NULL,
+        langue VARCHAR(10) DEFAULT 'fr',
+        type_nom VARCHAR(20) DEFAULT 'complet' CHECK (type_nom IN ('complet', 'court', 'synonyme')),
+        UNIQUE(concept_id, nom, langue)
+      );
+
+      -- Concept answers (for coded concepts)
+      CREATE TABLE IF NOT EXISTS concept_reponses (
+        id SERIAL PRIMARY KEY,
+        concept_id INTEGER REFERENCES concepts(id) ON DELETE CASCADE,
+        reponse_concept_id INTEGER REFERENCES concepts(id),
+        ordre INTEGER DEFAULT 0
+      );
+
+      -- Concept mappings to external terminologies
+      CREATE TABLE IF NOT EXISTS concept_mappings (
+        id SERIAL PRIMARY KEY,
+        concept_id INTEGER REFERENCES concepts(id) ON DELETE CASCADE,
+        source VARCHAR(50) NOT NULL,
+        code_externe VARCHAR(50) NOT NULL,
+        UNIQUE(concept_id, source, code_externe)
+      );
+
+      -- Encounter types
+      CREATE TABLE IF NOT EXISTS encounter_types (
+        id SERIAL PRIMARY KEY,
+        nom VARCHAR(100) NOT NULL,
+        description TEXT,
+        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+      );
+
+      -- Encounters (clinical visits/interactions)
+      CREATE TABLE IF NOT EXISTS encounters (
+        id SERIAL PRIMARY KEY,
+        reference VARCHAR(20) UNIQUE,
+        patient_id INTEGER REFERENCES patients(id),
+        encounter_type_id INTEGER REFERENCES encounter_types(id),
+        visite_id INTEGER REFERENCES visites(id),
+        provider_id INTEGER REFERENCES users(id),
+        service_id INTEGER REFERENCES services(id),
+        date_encounter TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+        notes TEXT,
+        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+      );
+
+      -- Observations (EAV clinical data)
+      CREATE TABLE IF NOT EXISTS observations (
+        id SERIAL PRIMARY KEY,
+        encounter_id INTEGER REFERENCES encounters(id) ON DELETE CASCADE,
+        patient_id INTEGER REFERENCES patients(id),
+        concept_id INTEGER REFERENCES concepts(id),
+        valeur_numerique DECIMAL(12,4),
+        valeur_texte TEXT,
+        valeur_date TIMESTAMP,
+        valeur_coded INTEGER REFERENCES concepts(id),
+        valeur_boolean BOOLEAN,
+        commentaire TEXT,
+        provider_id INTEGER REFERENCES users(id),
+        date_obs TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+        voided BOOLEAN DEFAULT FALSE,
+        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+      );
+
+      -- Orders (unified medical orders)
+      CREATE TABLE IF NOT EXISTS orders (
+        id SERIAL PRIMARY KEY,
+        reference VARCHAR(20) UNIQUE,
+        patient_id INTEGER REFERENCES patients(id),
+        encounter_id INTEGER REFERENCES encounters(id),
+        concept_id INTEGER REFERENCES concepts(id),
+        type_order VARCHAR(30) NOT NULL CHECK (type_order IN ('prescription', 'test_labo', 'imagerie', 'procedure', 'referral')),
+        orderer_id INTEGER REFERENCES users(id),
+        urgence VARCHAR(20) DEFAULT 'routine' CHECK (urgence IN ('routine', 'urgent', 'stat')),
+        instructions TEXT,
+        date_debut TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+        date_fin TIMESTAMP,
+        statut VARCHAR(30) DEFAULT 'actif' CHECK (statut IN ('nouveau', 'actif', 'complete', 'annule', 'expire')),
+        -- Prescription fields
+        dosage VARCHAR(100),
+        frequence VARCHAR(100),
+        duree VARCHAR(100),
+        voie VARCHAR(50),
+        quantite INTEGER,
+        -- Lab/Imaging fields
+        resultat TEXT,
+        date_resultat TIMESTAMP,
+        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+      );
+
       -- Notifications log
       CREATE TABLE IF NOT EXISTS notifications_log (
         id SERIAL PRIMARY KEY,
@@ -502,12 +612,12 @@ export const initDB = async (): Promise<void> => {
     }
 
     // Seed default habilitations
-    const modules = ['dashboard','patients','medecins','consultations','rendezvous','laboratoire','visites','file-attente','finances','services','listes-patients','documentation','utilisateurs','habilitations','import','lits','programmes','facturation','paiement-mobile','imagerie'];
+    const modules = ['dashboard','patients','medecins','consultations','rendezvous','laboratoire','visites','file-attente','finances','services','listes-patients','documentation','utilisateurs','habilitations','import','lits','programmes','facturation','paiement-mobile','imagerie','orders','concepts'];
     const roleAccess: Record<string, string[]> = {
       admin: modules,
-      medecin: ['dashboard','patients','medecins','consultations','rendezvous','visites','file-attente','listes-patients','documentation','lits','programmes','imagerie'],
+      medecin: ['dashboard','patients','medecins','consultations','rendezvous','visites','file-attente','listes-patients','documentation','lits','programmes','imagerie','orders'],
       comptable: ['dashboard','finances','documentation','facturation','paiement-mobile'],
-      laborantin: ['dashboard','laboratoire','documentation'],
+      laborantin: ['dashboard','laboratoire','documentation','orders'],
       reception: ['dashboard','patients','rendezvous','visites','file-attente','documentation'],
     };
     for (const [role, mods] of Object.entries(roleAccess)) {
@@ -538,9 +648,37 @@ export const initDB = async (): Promise<void> => {
       ['Administration', 2, 'facturation', 'Facturation', 'bi-receipt', '/app/facturation', 7],
       ['Administration', 2, 'paiement-mobile', 'Paiement mobile', 'bi-phone', '/app/paiement-mobile', 8],
       ['Clinique', 1, 'imagerie', 'Imagerie médicale', 'bi-image', '/app/imagerie', 9],
+      ['Clinique', 1, 'orders', 'Ordres médicaux', 'bi-clipboard2-data', '/app/orders', 10],
+      ['Administration', 2, 'concepts', 'Dictionnaire concepts', 'bi-book-half', '/app/concepts', 9],
     ];
     for (const [groupe, groupe_ordre, module, label, icon, path, ordre] of menuItems) {
       await client.query('INSERT INTO menu_config (groupe, groupe_ordre, module, label, icon, path, ordre) SELECT $1::varchar, $2::int, $3::varchar, $4::varchar, $5::varchar, $6::varchar, $7::int WHERE NOT EXISTS (SELECT 1 FROM menu_config WHERE module = $3::varchar)', [groupe, groupe_ordre, module, label, icon, path, ordre]);
+    }
+
+    // Seed default encounter types
+    const encounterTypes = ['Triage', 'Consultation', 'Laboratoire', 'Pharmacie', 'Imagerie', 'Hospitalisation', 'Urgence', 'Suivi'];
+    for (const et of encounterTypes) {
+      await client.query('INSERT INTO encounter_types (nom) SELECT $1::varchar WHERE NOT EXISTS (SELECT 1 FROM encounter_types WHERE nom = $1::varchar)', [et]);
+    }
+
+    // Seed starter concepts
+    const starterConcepts = [
+      ['TEMP', 'Température', 'numeric', 'finding', '°C', 35, 42],
+      ['TA_SYS', 'Tension artérielle systolique', 'numeric', 'finding', 'mmHg', 60, 250],
+      ['TA_DIA', 'Tension artérielle diastolique', 'numeric', 'finding', 'mmHg', 30, 150],
+      ['POULS', 'Pouls', 'numeric', 'finding', 'bpm', 30, 200],
+      ['SPO2', 'Saturation en oxygène', 'numeric', 'finding', '%', 50, 100],
+      ['POIDS', 'Poids', 'numeric', 'finding', 'kg', 0.5, 300],
+      ['TAILLE', 'Taille', 'numeric', 'finding', 'cm', 20, 250],
+      ['GLYC', 'Glycémie', 'numeric', 'test', 'g/L', 0.3, 5],
+      ['DIAG', 'Diagnostic', 'text', 'diagnostic', null, null, null],
+      ['MOTIF', 'Motif de consultation', 'text', 'question', null, null, null],
+      ['PALUDISME', 'Paludisme', 'boolean', 'diagnostic', null, null, null],
+      ['RESULTAT_POS', 'Positif', 'text', 'reponse', null, null, null],
+      ['RESULTAT_NEG', 'Négatif', 'text', 'reponse', null, null, null],
+    ];
+    for (const [code, nom, datatype, classe, unite, vmin, vmax] of starterConcepts) {
+      await client.query('INSERT INTO concepts (code, nom, datatype, classe, unite, valeur_min, valeur_max) SELECT $1::varchar,$2::varchar,$3::varchar,$4::varchar,$5::varchar,$6::decimal,$7::decimal WHERE NOT EXISTS (SELECT 1 FROM concepts WHERE code = $1::varchar)', [code, nom, datatype, classe, unite, vmin, vmax]);
     }
 
     console.log('Database initialized successfully');

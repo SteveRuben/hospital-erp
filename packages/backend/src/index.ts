@@ -41,6 +41,9 @@ import habilitationsRoutes from './routes/habilitations.js';
 import exportRoutes from './routes/export.js';
 import portailRoutes from './routes/portail.js';
 import imagerieRoutes from './routes/imagerie.js';
+import conceptsRoutes from './routes/concepts.js';
+import encountersRoutes from './routes/encounters.js';
+import ordersRoutes from './routes/orders.js';
 
 const app = express();
 const PORT = process.env.PORT || 5000;
@@ -129,6 +132,9 @@ app.use('/api/habilitations', habilitationsRoutes);
 app.use('/api/export', exportRoutes);
 app.use('/api/portail', portailRoutes);
 app.use('/api/imagerie', imagerieRoutes);
+app.use('/api/concepts', conceptsRoutes);
+app.use('/api/encounters', encountersRoutes);
+app.use('/api/orders', ordersRoutes);
 
 // Serve uploaded files
 import { fileURLToPath as fu } from 'url';

@@ -28,6 +28,8 @@ import Recherche from './pages/Recherche';
 import PaiementMobile from './pages/PaiementMobile';
 import Portail from './pages/Portail';
 import Imagerie from './pages/Imagerie';
+import Concepts from './pages/Concepts';
+import Orders from './pages/Orders';
 import Layout from './components/Layout';
 import RoleGuard from './components/RoleGuard';
 
@@ -175,6 +177,8 @@ function App() {
                     <Route path="/facturation" element={<RoleGuard roles={['admin','comptable']}><Facturation /></RoleGuard>} />
                     <Route path="/paiement-mobile" element={<RoleGuard roles={['admin','comptable']}><PaiementMobile /></RoleGuard>} />
                     <Route path="/imagerie" element={<RoleGuard roles={['admin','medecin']}><Imagerie /></RoleGuard>} />
+                    <Route path="/concepts" element={<RoleGuard roles={['admin']}><Concepts /></RoleGuard>} />
+                    <Route path="/orders" element={<RoleGuard roles={['admin','medecin','laborantin']}><Orders /></RoleGuard>} />
                   </Routes>
                 </Layout>
               </ProtectedRoute>

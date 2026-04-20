@@ -217,3 +217,23 @@ export const exportPatients = () => window.open(`${API_URL}/export/patients?toke
 
 // Étiquette patient
 export const printEtiquette = (patientId: number) => window.open(`${API_URL}/export/etiquette/${patientId}?token=${localStorage.getItem('token')}`, '_blank');
+
+// Concepts
+export const getConcepts = (params?: unknown) => api.get('/concepts', { params });
+export const getConcept = (id: number) => api.get(`/concepts/${id}`);
+export const createConcept = (data: unknown) => api.post('/concepts', data);
+export const updateConcept = (id: number, data: unknown) => api.put(`/concepts/${id}`, data);
+export const addConceptMapping = (id: number, data: unknown) => api.post(`/concepts/${id}/mappings`, data);
+
+// Encounters
+export const getEncounterTypes = () => api.get('/encounters/types');
+export const getPatientEncounters = (patientId: number) => api.get(`/encounters/patient/${patientId}`);
+export const getEncounter = (id: number) => api.get(`/encounters/${id}`);
+export const createEncounter = (data: unknown) => api.post('/encounters', data);
+export const addObservation = (encounterId: number, data: unknown) => api.post(`/encounters/${encounterId}/observations`, data);
+
+// Orders
+export const getPatientOrders = (patientId: number, params?: unknown) => api.get(`/orders/patient/${patientId}`, { params });
+export const getOrders = (params?: unknown) => api.get('/orders', { params });
+export const createOrder = (data: unknown) => api.post('/orders', data);
+export const updateOrderStatut = (id: number, data: { statut: string; resultat?: string }) => api.put(`/orders/${id}/statut`, data);
