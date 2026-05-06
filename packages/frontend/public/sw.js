@@ -24,10 +24,18 @@ self.addEventListener('fetch', (event) => {
   const { request } = event;
   const url = new URL(request.url);
 
-  // API calls — network first, no cache
-  if (url.pathname.startsWith('/api') || url.pathname.startsWith('/fhir')) {
+  // API calls — network only
+  if (url.pathname.startsWith('/api') || url.pathname.startsWith('/fhir') || url.pathname.startsWith('/uploads')) {
     event.respondWith(
       fetch(request).catch(() => new Response(JSON.stringify({ error: 'Offline' }), { status: 503, headers: { 'Content-Type': 'application/json' } }))
+    );
+    return;
+  }
+
+  // Navigation requests (HTML pages) — network first, fallback to cache
+  if (request.mode === 'navigate') {
+    event.respondWith(
+      fetch(request).catch(() => caches.match('/index.html').then(r => r || new Response('Offline', { status: 503 })))
     );
     return;
   }
@@ -42,11 +50,7 @@ self.addEventListener('fetch', (event) => {
           caches.open(CACHE_NAME).then((cache) => cache.put(request, clone));
         }
         return response;
-      }).catch(() => {
-        // Fallback for navigation requests
-        if (request.mode === 'navigate') return caches.match('/index.html');
-        return new Response('Offline', { status: 503 });
-      });
+      }).catch(() => new Response('Offline', { status: 503 }));
     })
   );
 });

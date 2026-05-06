@@ -8,6 +8,7 @@ export default function ChangePassword() {
   const [newPwd, setNewPwd] = useState('');
   const [confirmPwd, setConfirmPwd] = useState('');
   const [error, setError] = useState('');
+  const [success, setSuccess] = useState(false);
   const [loading, setLoading] = useState(false);
   const { user, login } = useContext(AuthContext);
   const navigate = useNavigate();
@@ -27,14 +28,15 @@ export default function ChangePassword() {
     setError(''); setLoading(true);
     try {
       await api.post('/auth/change-password', { old_password: oldPwd, new_password: newPwd });
+      setSuccess(true);
       // Update user in context to remove must_change_password
       if (user) {
         const token = localStorage.getItem('token') || '';
         login({ ...user, must_change_password: false } as any, token);
       }
-      navigate('/app');
+      setTimeout(() => navigate('/app'), 2000);
     } catch (err: any) {
-      setError(err.response?.data?.error || 'Erreur');
+      setError(err.response?.data?.error || 'Erreur lors du changement de mot de passe');
     } finally { setLoading(false); }
   };
 
@@ -48,6 +50,7 @@ export default function ChangePassword() {
         </div>
 
         {error && <div className="notification notification-error mb-2"><i className="bi bi-exclamation-circle"></i><span>{error}</span></div>}
+        {success && <div className="notification notification-success mb-2"><i className="bi bi-check-circle"></i><span>Mot de passe modifié avec succès ! Redirection...</span></div>}
 
         <form onSubmit={handleSubmit}>
           <div className="form-group"><label className="form-label">Mot de passe actuel</label><input type="password" className="form-input" value={oldPwd} onChange={e => setOldPwd(e.target.value)} required /></div>
