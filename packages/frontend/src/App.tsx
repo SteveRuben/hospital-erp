@@ -32,6 +32,7 @@ import Concepts from './pages/Concepts';
 import Orders from './pages/Orders';
 import Pharmacie from './pages/Pharmacie';
 import PatientMerge from './pages/PatientMerge';
+import Rapports from './pages/Rapports';
 import Layout from './components/Layout';
 import RoleGuard from './components/RoleGuard';
 
@@ -183,6 +184,7 @@ function App() {
                     <Route path="/orders" element={<RoleGuard roles={['admin','medecin','laborantin']}><Orders /></RoleGuard>} />
                     <Route path="/pharmacie" element={<RoleGuard roles={['admin','medecin']}><Pharmacie /></RoleGuard>} />
                     <Route path="/patient-merge" element={<RoleGuard roles={['admin']}><PatientMerge /></RoleGuard>} />
+                    <Route path="/rapports" element={<RoleGuard roles={['admin','comptable']}><Rapports /></RoleGuard>} />
                   </Routes>
                 </Layout>
               </ProtectedRoute>
