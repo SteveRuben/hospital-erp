@@ -39,6 +39,7 @@ const PatientMerge = lazy(() => import('./pages/PatientMerge'));
 const Rapports = lazy(() => import('./pages/Rapports'));
 const FormBuilder = lazy(() => import('./pages/FormBuilder'));
 const CohortBuilder = lazy(() => import('./pages/CohortBuilder'));
+const ContentPackages = lazy(() => import('./pages/ContentPackages'));
 
 const PageLoader = () => <div className="loading"><div className="spinner"></div></div>;
 
@@ -147,6 +148,7 @@ function App() {
                         <Route path="/rapports" element={<RoleGuard roles={['admin','comptable']}><Rapports /></RoleGuard>} />
                         <Route path="/formulaires" element={<RoleGuard roles={['admin']}><FormBuilder /></RoleGuard>} />
                         <Route path="/cohort-builder" element={<RoleGuard roles={['admin','medecin']}><CohortBuilder /></RoleGuard>} />
+                        <Route path="/content-packages" element={<RoleGuard roles={['admin']}><ContentPackages /></RoleGuard>} />
                       </Routes>
                     </Suspense>
                   </Layout>

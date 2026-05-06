@@ -50,6 +50,7 @@ import patientMergeRoutes from './routes/patient-merge.js';
 import reportsRoutes from './routes/reports.js';
 import planningRoutes from './routes/planning.js';
 import facilitiesRoutes from './routes/facilities.js';
+import contentPackagesRoutes from './routes/content-packages.js';
 
 const app = express();
 const PORT = process.env.PORT || 5000;
@@ -147,6 +148,7 @@ app.use('/api/patients', patientMergeRoutes);
 app.use('/api/reports', reportsRoutes);
 app.use('/api/planning', planningRoutes);
 app.use('/api/facilities', facilitiesRoutes);
+app.use('/api/content-packages', contentPackagesRoutes);
 
 // Serve uploaded files
 import { fileURLToPath as fu } from 'url';

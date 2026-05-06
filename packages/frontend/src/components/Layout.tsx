@@ -3,6 +3,7 @@ import { useContext, useEffect, useState } from 'react';
 import { AuthContext } from '../App';
 import { getMyHabilitations, getMenuConfig } from '../services/api';
 import PatientSearch from './PatientSearch';
+import LocaleSelector from './LocaleSelector';
 
 interface MenuItemDB { id: number; groupe: string; groupe_ordre: number; module: string; label: string; icon: string; path: string; ordre: number }
 
@@ -58,6 +59,7 @@ export default function Layout({ children }: { children: React.ReactNode }) {
         <div className="header-logo"><i className="bi bi-hospital"></i><span>Hospital ERP</span></div>
         <PatientSearch />
         <div className="header-actions">
+          <LocaleSelector />
           <button title="Notifications"><i className="bi bi-bell"></i></button>
           <div className="header-user"><i className="bi bi-person-circle"></i><span>{user?.prenom} {user?.nom}</span></div>
         </div>
