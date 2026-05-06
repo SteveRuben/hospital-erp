@@ -48,6 +48,7 @@ import pharmacieRoutes from './routes/pharmacie.js';
 import fhirRoutes from './routes/fhir.js';
 import patientMergeRoutes from './routes/patient-merge.js';
 import reportsRoutes from './routes/reports.js';
+import planningRoutes from './routes/planning.js';
 
 const app = express();
 const PORT = process.env.PORT || 5000;
@@ -143,6 +144,7 @@ app.use('/api/pharmacie', pharmacieRoutes);
 app.use('/fhir', fhirRoutes);
 app.use('/api/patients', patientMergeRoutes);
 app.use('/api/reports', reportsRoutes);
+app.use('/api/planning', planningRoutes);
 
 // Serve uploaded files
 import { fileURLToPath as fu } from 'url';

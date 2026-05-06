@@ -511,6 +511,29 @@ export const initDB = async (): Promise<void> => {
         created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
       );
 
+      -- Planning médecins (créneaux récurrents)
+      CREATE TABLE IF NOT EXISTS planning_medecins (
+        id SERIAL PRIMARY KEY,
+        medecin_id INTEGER REFERENCES medecins(id),
+        service_id INTEGER REFERENCES services(id),
+        jour_semaine INTEGER NOT NULL CHECK (jour_semaine BETWEEN 0 AND 6),
+        heure_debut TIME NOT NULL,
+        heure_fin TIME NOT NULL,
+        duree_creneau INTEGER DEFAULT 30,
+        actif BOOLEAN DEFAULT TRUE,
+        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+      );
+
+      -- Blocages de créneaux (congés, réunions)
+      CREATE TABLE IF NOT EXISTS planning_blocages (
+        id SERIAL PRIMARY KEY,
+        medecin_id INTEGER REFERENCES medecins(id),
+        date_debut TIMESTAMP NOT NULL,
+        date_fin TIMESTAMP NOT NULL,
+        motif VARCHAR(200),
+        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+      );
+
       -- Imagerie médicale
       CREATE TABLE IF NOT EXISTS imagerie (
         id SERIAL PRIMARY KEY,
@@ -675,10 +698,10 @@ export const initDB = async (): Promise<void> => {
     }
 
     // Seed default habilitations
-    const modules = ['dashboard','patients','medecins','consultations','rendezvous','laboratoire','visites','file-attente','finances','services','listes-patients','documentation','utilisateurs','habilitations','import','lits','programmes','facturation','paiement-mobile','imagerie','orders','concepts','pharmacie','patient-merge','rapports'];
+    const modules = ['dashboard','patients','medecins','consultations','rendezvous','laboratoire','visites','file-attente','finances','services','listes-patients','documentation','utilisateurs','habilitations','import','lits','programmes','facturation','paiement-mobile','imagerie','orders','concepts','pharmacie','patient-merge','rapports','formulaires','cohort-builder'];
     const roleAccess: Record<string, string[]> = {
       admin: modules,
-      medecin: ['dashboard','patients','medecins','consultations','rendezvous','visites','file-attente','listes-patients','documentation','lits','programmes','imagerie','orders','pharmacie'],
+      medecin: ['dashboard','patients','medecins','consultations','rendezvous','visites','file-attente','listes-patients','documentation','lits','programmes','imagerie','orders','pharmacie','cohort-builder'],
       comptable: ['dashboard','finances','documentation','facturation','paiement-mobile','rapports'],
       laborantin: ['dashboard','laboratoire','documentation','orders'],
       reception: ['dashboard','patients','rendezvous','visites','file-attente','documentation'],
@@ -716,6 +739,8 @@ export const initDB = async (): Promise<void> => {
       ['Clinique', 1, 'pharmacie', 'Pharmacie', 'bi-capsule', '/app/pharmacie', 11],
       ['Administration', 2, 'patient-merge', 'Fusion patients', 'bi-people-fill', '/app/patient-merge', 10],
       ['Administration', 2, 'rapports', 'Rapports', 'bi-graph-up', '/app/rapports', 11],
+      ['Administration', 2, 'formulaires', 'Formulaires', 'bi-ui-checks-grid', '/app/formulaires', 12],
+      ['Clinique', 1, 'cohort-builder', 'Cohort Builder', 'bi-funnel', '/app/cohort-builder', 12],
     ];
     for (const [groupe, groupe_ordre, module, label, icon, path, ordre] of menuItems) {
       await client.query('INSERT INTO menu_config (groupe, groupe_ordre, module, label, icon, path, ordre) SELECT $1::varchar, $2::int, $3::varchar, $4::varchar, $5::varchar, $6::varchar, $7::int WHERE NOT EXISTS (SELECT 1 FROM menu_config WHERE module = $3::varchar)', [groupe, groupe_ordre, module, label, icon, path, ordre]);
