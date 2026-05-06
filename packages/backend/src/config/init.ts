@@ -675,10 +675,10 @@ export const initDB = async (): Promise<void> => {
     }
 
     // Seed default habilitations
-    const modules = ['dashboard','patients','medecins','consultations','rendezvous','laboratoire','visites','file-attente','finances','services','listes-patients','documentation','utilisateurs','habilitations','import','lits','programmes','facturation','paiement-mobile','imagerie','orders','concepts'];
+    const modules = ['dashboard','patients','medecins','consultations','rendezvous','laboratoire','visites','file-attente','finances','services','listes-patients','documentation','utilisateurs','habilitations','import','lits','programmes','facturation','paiement-mobile','imagerie','orders','concepts','pharmacie','patient-merge'];
     const roleAccess: Record<string, string[]> = {
       admin: modules,
-      medecin: ['dashboard','patients','medecins','consultations','rendezvous','visites','file-attente','listes-patients','documentation','lits','programmes','imagerie','orders'],
+      medecin: ['dashboard','patients','medecins','consultations','rendezvous','visites','file-attente','listes-patients','documentation','lits','programmes','imagerie','orders','pharmacie'],
       comptable: ['dashboard','finances','documentation','facturation','paiement-mobile'],
       laborantin: ['dashboard','laboratoire','documentation','orders'],
       reception: ['dashboard','patients','rendezvous','visites','file-attente','documentation'],
@@ -713,6 +713,8 @@ export const initDB = async (): Promise<void> => {
       ['Clinique', 1, 'imagerie', 'Imagerie médicale', 'bi-image', '/app/imagerie', 9],
       ['Clinique', 1, 'orders', 'Ordres médicaux', 'bi-clipboard2-data', '/app/orders', 10],
       ['Administration', 2, 'concepts', 'Dictionnaire concepts', 'bi-book-half', '/app/concepts', 9],
+      ['Clinique', 1, 'pharmacie', 'Pharmacie', 'bi-capsule', '/app/pharmacie', 11],
+      ['Administration', 2, 'patient-merge', 'Fusion patients', 'bi-people-fill', '/app/patient-merge', 10],
     ];
     for (const [groupe, groupe_ordre, module, label, icon, path, ordre] of menuItems) {
       await client.query('INSERT INTO menu_config (groupe, groupe_ordre, module, label, icon, path, ordre) SELECT $1::varchar, $2::int, $3::varchar, $4::varchar, $5::varchar, $6::varchar, $7::int WHERE NOT EXISTS (SELECT 1 FROM menu_config WHERE module = $3::varchar)', [groupe, groupe_ordre, module, label, icon, path, ordre]);
