@@ -448,6 +448,69 @@ export const initDB = async (): Promise<void> => {
         actif BOOLEAN DEFAULT TRUE
       );
 
+      -- Pharmacie
+      CREATE TABLE IF NOT EXISTS medicaments (
+        id SERIAL PRIMARY KEY,
+        nom VARCHAR(200) NOT NULL,
+        dci VARCHAR(200),
+        forme VARCHAR(50),
+        dosage_standard VARCHAR(100),
+        code_barre VARCHAR(50),
+        categorie VARCHAR(100),
+        prix_unitaire DECIMAL(12,2),
+        actif BOOLEAN DEFAULT TRUE,
+        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+      );
+
+      CREATE TABLE IF NOT EXISTS stock (
+        id SERIAL PRIMARY KEY,
+        medicament_id INTEGER REFERENCES medicaments(id),
+        lot VARCHAR(100),
+        date_expiration DATE,
+        quantite INTEGER DEFAULT 0,
+        quantite_min INTEGER DEFAULT 10,
+        prix_achat DECIMAL(12,2),
+        fournisseur VARCHAR(200),
+        date_entree DATE DEFAULT CURRENT_DATE,
+        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+      );
+
+      CREATE TABLE IF NOT EXISTS stock_mouvements (
+        id SERIAL PRIMARY KEY,
+        medicament_id INTEGER REFERENCES medicaments(id),
+        type_mouvement VARCHAR(20) CHECK (type_mouvement IN ('entree', 'sortie', 'ajustement', 'perime')),
+        quantite INTEGER NOT NULL,
+        lot VARCHAR(100),
+        motif TEXT,
+        user_id INTEGER REFERENCES users(id),
+        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+      );
+
+      CREATE TABLE IF NOT EXISTS dispensations (
+        id SERIAL PRIMARY KEY,
+        patient_id INTEGER REFERENCES patients(id),
+        prescription_id INTEGER,
+        medicament_id INTEGER REFERENCES medicaments(id),
+        quantite_delivree INTEGER,
+        dispenseur_id INTEGER REFERENCES users(id),
+        date_dispensation TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+        notes TEXT
+      );
+
+      -- Facilities (multi-site)
+      CREATE TABLE IF NOT EXISTS facilities (
+        id SERIAL PRIMARY KEY,
+        nom VARCHAR(200) NOT NULL,
+        code VARCHAR(50) UNIQUE,
+        type_facility VARCHAR(50),
+        adresse TEXT,
+        ville VARCHAR(100),
+        telephone VARCHAR(20),
+        email VARCHAR(150),
+        actif BOOLEAN DEFAULT TRUE,
+        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+      );
+
       -- Imagerie médicale
       CREATE TABLE IF NOT EXISTS imagerie (
         id SERIAL PRIMARY KEY,

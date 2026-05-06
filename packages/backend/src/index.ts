@@ -44,6 +44,9 @@ import imagerieRoutes from './routes/imagerie.js';
 import conceptsRoutes from './routes/concepts.js';
 import encountersRoutes from './routes/encounters.js';
 import ordersRoutes from './routes/orders.js';
+import pharmacieRoutes from './routes/pharmacie.js';
+import fhirRoutes from './routes/fhir.js';
+import patientMergeRoutes from './routes/patient-merge.js';
 
 const app = express();
 const PORT = process.env.PORT || 5000;
@@ -135,6 +138,9 @@ app.use('/api/imagerie', imagerieRoutes);
 app.use('/api/concepts', conceptsRoutes);
 app.use('/api/encounters', encountersRoutes);
 app.use('/api/orders', ordersRoutes);
+app.use('/api/pharmacie', pharmacieRoutes);
+app.use('/fhir', fhirRoutes);
+app.use('/api/patients', patientMergeRoutes);
 
 // Serve uploaded files
 import { fileURLToPath as fu } from 'url';

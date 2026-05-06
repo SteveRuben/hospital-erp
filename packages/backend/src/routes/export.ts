@@ -84,4 +84,50 @@ ${p.groupe_sanguin ? `<div class="info">Groupe: ${p.groupe_sanguin}</div>` : ''}
   } catch (err) { res.status(500).json({ error: 'Erreur serveur' }); }
 });
 
+// Print patient card (CR-80 format: 85.6mm x 54mm)
+router.get('/carte/:patientId', authenticate, async (req: AuthRequest, res: Response): Promise<void> => {
+  try {
+    const result = await query('SELECT * FROM patients WHERE id = $1', [req.params.patientId]);
+    if (result.rows.length === 0) { res.status(404).json({ error: 'Patient non trouvé' }); return; }
+    const p = result.rows[0];
+    const age = p.date_naissance ? Math.floor((Date.now() - new Date(p.date_naissance).getTime()) / 31557600000) : '?';
+    const allergies = await query("SELECT allergene FROM allergies WHERE patient_id = $1 AND active = TRUE LIMIT 3", [req.params.patientId]);
+    const allergyList = allergies.rows.map((a: any) => a.allergene).join(', ') || 'Aucune connue';
+
+    const html = `<!DOCTYPE html><html><head><meta charset="utf-8"><title>Carte Patient</title>
+<style>@page{size:85.6mm 54mm;margin:0}*{box-sizing:border-box}body{font-family:'IBM Plex Sans',sans-serif;margin:0;padding:0;font-size:8pt}
+.card{width:85.6mm;height:54mm;position:relative;overflow:hidden}
+.front{width:85.6mm;height:54mm;padding:3mm;background:linear-gradient(135deg,#0f62fe 0%,#001d6c 100%);color:#fff;display:flex;flex-direction:column;justify-content:space-between}
+.back{width:85.6mm;height:54mm;padding:3mm;background:#fff;color:#161616;page-break-before:always}
+.logo{font-size:10pt;font-weight:700;display:flex;align-items:center;gap:2mm}.logo-icon{font-size:12pt}
+.patient-name{font-size:14pt;font-weight:600;margin:2mm 0}
+.patient-id{font-size:9pt;opacity:0.8}
+.info-row{display:flex;justify-content:space-between;font-size:7pt;opacity:0.9}
+.qr{position:absolute;right:3mm;bottom:3mm;width:16mm;height:16mm;background:#fff;border-radius:2px;display:flex;align-items:center;justify-content:center;color:#000;font-size:6pt;text-align:center}
+.back-title{font-size:9pt;font-weight:600;margin-bottom:2mm;color:#0f62fe;border-bottom:0.5pt solid #e0e0e0;padding-bottom:1mm}
+.back-row{display:flex;justify-content:space-between;margin-bottom:1.5mm;font-size:7.5pt}
+.back-label{color:#525252;font-weight:500}
+.back-value{font-weight:400}
+.footer{position:absolute;bottom:2mm;left:3mm;right:3mm;font-size:6pt;color:#6f6f6f;text-align:center;border-top:0.5pt solid #e0e0e0;padding-top:1mm}
+@media print{body{margin:0}.card{page-break-after:always}}</style></head><body>
+<div class="card front">
+<div class="logo"><span class="logo-icon">🏥</span> Hospital ERP</div>
+<div><div class="patient-name">${p.prenom} ${p.nom}</div><div class="patient-id">ID: #${String(p.id).padStart(6, '0')}</div></div>
+<div class="info-row"><span>${p.sexe === 'M' ? 'Masculin' : p.sexe === 'F' ? 'Féminin' : ''} — ${age} ans</span><span>${p.groupe_sanguin || ''}</span></div>
+<div class="qr">QR<br>#${p.id}</div>
+</div>
+<div class="card back">
+<div class="back-title">Informations patient</div>
+<div class="back-row"><span class="back-label">Téléphone</span><span class="back-value">${p.telephone || '-'}</span></div>
+<div class="back-row"><span class="back-label">Date naissance</span><span class="back-value">${p.date_naissance ? new Date(p.date_naissance).toLocaleDateString('fr-FR') : '-'}</span></div>
+<div class="back-row"><span class="back-label">Groupe sanguin</span><span class="back-value">${p.groupe_sanguin || 'Non renseigné'}</span></div>
+<div class="back-row"><span class="back-label">Allergies</span><span class="back-value">${allergyList}</span></div>
+<div class="back-row"><span class="back-label">Contact urgence</span><span class="back-value">${p.contact_urgence_nom || '-'} ${p.contact_urgence_telephone || ''}</span></div>
+<div class="footer">Carte émise le ${new Date().toLocaleDateString('fr-FR')} — Hospital ERP</div>
+</div></body></html>`;
+    res.setHeader('Content-Type', 'text/html');
+    res.send(html);
+  } catch (err) { res.status(500).json({ error: 'Erreur serveur' }); }
+});
+
 export default router;

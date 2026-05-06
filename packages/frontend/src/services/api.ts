@@ -237,3 +237,20 @@ export const getPatientOrders = (patientId: number, params?: unknown) => api.get
 export const getOrders = (params?: unknown) => api.get('/orders', { params });
 export const createOrder = (data: unknown) => api.post('/orders', data);
 export const updateOrderStatut = (id: number, data: { statut: string; resultat?: string }) => api.put(`/orders/${id}/statut`, data);
+
+// Pharmacie
+export const getMedicaments = (params?: unknown) => api.get('/pharmacie/medicaments', { params });
+export const createMedicament = (data: unknown) => api.post('/pharmacie/medicaments', data);
+export const getStock = () => api.get('/pharmacie/stock');
+export const createStock = (data: unknown) => api.post('/pharmacie/stock', data);
+export const createMouvement = (data: unknown) => api.post('/pharmacie/mouvements', data);
+export const getMouvements = () => api.get('/pharmacie/mouvements');
+export const createDispensation = (data: unknown) => api.post('/pharmacie/dispensations', data);
+export const getPharmacieAlertes = () => api.get('/pharmacie/alertes');
+
+// Patient merge
+export const getPatientDuplicates = () => api.get('/patients/duplicates');
+export const mergePatients = (keep_id: number, merge_id: number) => api.post('/patients/merge', { keep_id, merge_id });
+
+// Carte patient
+export const printCartePatient = (patientId: number) => window.open(`${API_URL}/export/carte/${patientId}?token=${localStorage.getItem('token')}`, '_blank');
