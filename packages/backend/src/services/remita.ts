@@ -7,7 +7,7 @@
  * Auth: apiKey + apiId + Bearer JWT token
  */
 
-const REMITA_BASE_URL = process.env.REMITA_API_URL || 'https://api.remita.cm';
+const REMITA_BASE_URL = process.env.REMITA_API_URL || 'https://api.remita.finance';
 const REMITA_API_KEY = process.env.REMITA_API_KEY || '';
 const REMITA_API_ID = process.env.REMITA_API_ID || '';
 const REMITA_USERNAME = process.env.REMITA_USERNAME || '';
@@ -21,20 +21,28 @@ async function getToken(): Promise<string> {
     return cachedToken.access_token;
   }
 
+  console.log(`[REMITA] Getting token from ${REMITA_BASE_URL}/public/token`);
   const response = await fetch(`${REMITA_BASE_URL}/public/token`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({ username: REMITA_USERNAME, password: REMITA_PASSWORD }),
   });
 
+  const responseText = await response.text();
+  console.log(`[REMITA] Token response ${response.status}: ${responseText.substring(0, 200)}`);
+
   if (!response.ok) {
-    throw new Error(`Remita auth failed: ${response.status}`);
+    throw new Error(`Remita auth failed: ${response.status} - ${responseText}`);
   }
 
-  const data = await response.json() as { access_token: string; expires_in: number };
+  const data = JSON.parse(responseText) as { token?: string; access_token?: string; expires_in?: number };
+  const accessToken = data.token || data.access_token;
+  if (!accessToken) {
+    throw new Error(`Remita auth: no token in response: ${responseText.substring(0, 100)}`);
+  }
   cachedToken = {
-    access_token: data.access_token,
-    expires_at: Date.now() + (data.expires_in - 60) * 1000, // Refresh 60s before expiry
+    access_token: accessToken,
+    expires_at: Date.now() + ((data.expires_in || 3600) - 60) * 1000,
   };
 
   return cachedToken.access_token;
@@ -43,13 +51,13 @@ async function getToken(): Promise<string> {
 // Make authenticated request to Remita API
 async function remitaRequest(endpoint: string, body: unknown): Promise<any> {
   if (!REMITA_API_KEY || !REMITA_API_ID) {
-    // Simulation mode if no credentials
     console.log(`[REMITA][SIMULATION] ${endpoint}`, JSON.stringify(body));
     return { success: true, transactionId: `SIM-${Date.now()}`, status: 'PENDING', simulated: true };
   }
 
   const token = await getToken();
 
+  console.log(`[REMITA] Calling ${REMITA_BASE_URL}${endpoint} with apiId=${REMITA_API_ID}, apiKey=${REMITA_API_KEY.substring(0, 8)}..., token=${token.substring(0, 20)}...`);
   const response = await fetch(`${REMITA_BASE_URL}${endpoint}`, {
     method: 'POST',
     headers: {
@@ -61,12 +69,15 @@ async function remitaRequest(endpoint: string, body: unknown): Promise<any> {
     body: JSON.stringify(body),
   });
 
+  const responseText = await response.text();
+  console.log(`[REMITA] Response ${response.status}: ${responseText.substring(0, 300)}`);
+
   if (!response.ok) {
-    const error = await response.json().catch(() => ({ message: 'Unknown error' }));
-    throw new Error(`Remita API error ${response.status}: ${(error as any).message || JSON.stringify(error)}`);
+    const error = responseText ? JSON.parse(responseText) : { message: 'Unknown error' };
+    throw new Error(`Remita API error ${response.status}: ${error.message || responseText.substring(0, 100)}`);
   }
 
-  return response.json();
+  return JSON.parse(responseText);
 }
 
 export interface CollectPaymentParams {
@@ -106,7 +117,11 @@ export async function collectPayment(params: CollectPaymentParams): Promise<Coll
     };
   } catch (err) {
     console.error('[REMITA] Collect payment error:', err);
-    return { success: false, transactionId: '', status: 'FAILED', error: (err as Error).message };
+    const message = (err as Error).message || '';
+    if (message.includes('ENOTFOUND') || message.includes('fetch failed')) {
+      return { success: false, transactionId: '', status: 'FAILED', error: 'API Remita injoignable. Le service sera disponible prochainement.' };
+    }
+    return { success: false, transactionId: '', status: 'FAILED', error: message };
   }
 }
 
