@@ -1,13 +1,535 @@
-// This is your Prisma schema file,
-// learn more about it in the docs: https://pris.ly/d/prisma-schema
-
-// Get a free hosted Postgres database in seconds: `npx create-db`
-
 generator client {
-  provider = "prisma-client"
-  output   = "../src/generated/prisma"
+  provider = "prisma-client-js"
 }
 
 datasource db {
   provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+// ===== AUTH =====
+
+enum UserRole {
+  admin
+  medecin
+  comptable
+  laborantin
+  reception
+}
+
+model User {
+  id                  Int       @id @default(autoincrement())
+  username            String    @unique @db.VarChar(100)
+  password            String    @db.VarChar(255)
+  role                UserRole
+  nom                 String?   @db.VarChar(100)
+  prenom              String?   @db.VarChar(100)
+  telephone           String?   @db.VarChar(20)
+  must_change_password Boolean  @default(true)
+  createdAt           DateTime  @default(now()) @map("created_at")
+
+  notes               Note[]
+  alertes             Alerte[]
+  encounters          Encounter[] @relation("provider")
+  observations        Observation[] @relation("obs_provider")
+  orders              Order[]   @relation("orderer")
+  auditLogs           AuditLog[]
+
+  @@map("users")
+}
+
+// ===== PATIENTS =====
+
+enum Sexe {
+  M
+  F
+  autre
+}
+
+enum StatutMatrimonial {
+  celibataire
+  marie
+  divorce
+  veuf
+}
+
+enum GroupeSanguin {
+  Aplus  @map("A+")
+  Amoins @map("A-")
+  Bplus  @map("B+")
+  Bmoins @map("B-")
+  ABplus @map("AB+")
+  ABmoins @map("AB-")
+  Oplus  @map("O+")
+  Omoins @map("O-")
+}
+
+model Patient {
+  id                      Int       @id @default(autoincrement())
+  nom                     String    @db.VarChar(100)
+  prenom                  String    @db.VarChar(100)
+  deuxiemePrenom          String?   @map("deuxieme_prenom") @db.VarChar(100)
+  sexe                    Sexe?
+  dateNaissance           DateTime? @map("date_naissance") @db.Date
+  ageEstime               Int?      @map("age_estime")
+  lieuNaissance           String?   @map("lieu_naissance") @db.VarChar(100)
+  nationalite             String?   @db.VarChar(100)
+  numeroIdentite          String?   @map("numero_identite") @db.VarChar(50)
+  statutMatrimonial       StatutMatrimonial? @map("statut_matrimonial")
+  groupeSanguin           GroupeSanguin?     @map("groupe_sanguin")
+  pays                    String?   @db.VarChar(100)
+  province                String?   @db.VarChar(100)
+  ville                   String?   @db.VarChar(100)
+  commune                 String?   @db.VarChar(100)
+  quartier                String?   @db.VarChar(100)
+  adresse                 String?
+  profession              String?   @db.VarChar(100)
+  telephone               String?   @db.VarChar(20)
+  email                   String?   @db.VarChar(150)
+  contactUrgenceNom       String?   @map("contact_urgence_nom") @db.VarChar(100)
+  contactUrgenceRelation  String?   @map("contact_urgence_relation") @db.VarChar(50)
+  contactUrgenceTelephone String?   @map("contact_urgence_telephone") @db.VarChar(20)
+  photoUrl                String?   @map("photo_url")
+  archived                Boolean   @default(false)
+  createdAt               DateTime  @default(now()) @map("created_at")
+
+  consultations   Consultation[]
+  recettes        Recette[]
+  examens         Examen[]
+  rendezVous      RendezVous[]
+  vitaux          Vital[]
+  allergies       Allergie[]
+  pathologies     Pathologie[]
+  prescriptions   Prescription[]
+  ordonnances     Ordonnance[]
+  vaccinations    Vaccination[]
+  notes           Note[]
+  alertes         Alerte[]
+  encounters      Encounter[]
+  observations    Observation[]
+  orders          Order[]
+  visites         Visite[]
+  hospitalisations Hospitalisation[]
+
+  @@map("patients")
+}
+
+// ===== MEDECINS =====
+
+model Medecin {
+  id          Int       @id @default(autoincrement())
+  nom         String    @db.VarChar(100)
+  prenom      String    @db.VarChar(100)
+  specialite  String?   @db.VarChar(100)
+  telephone   String?   @db.VarChar(20)
+  createdAt   DateTime  @default(now()) @map("created_at")
+
+  consultations Consultation[]
+  rendezVous    RendezVous[]
+  vitaux        Vital[]
+  prescriptions Prescription[]
+  ordonnances   Ordonnance[]
+  vaccinations  Vaccination[]
+  hospitalisations Hospitalisation[]
+
+  @@map("medecins")
+}
+
+// ===== SERVICES =====
+
+model Service {
+  id          Int       @id @default(autoincrement())
+  nom         String    @db.VarChar(100)
+  description String?
+  createdAt   DateTime  @default(now()) @map("created_at")
+
+  consultations Consultation[]
+  recettes      Recette[]
+  rendezVous    RendezVous[]
+  encounters    Encounter[]
+  visites       Visite[]
+  hospitalisations Hospitalisation[]
+
+  @@map("services")
+}
+
+// ===== CONSULTATIONS =====
+
+model Consultation {
+  id               Int       @id @default(autoincrement())
+  reference        String?   @unique @db.VarChar(20)
+  patientId        Int       @map("patient_id")
+  medecinId        Int?      @map("medecin_id")
+  serviceId        Int?      @map("service_id")
+  dateConsultation DateTime  @default(now()) @map("date_consultation")
+  diagnostic       String?
+  traitement       String?
+  notes            String?
+  statut           String?   @default("en_cours") @db.VarChar(50)
+  motif            String?
+  gravite          String?   @db.VarChar(20)
+
+  patient  Patient  @relation(fields: [patientId], references: [id])
+  medecin  Medecin? @relation(fields: [medecinId], references: [id])
+  service  Service? @relation(fields: [serviceId], references: [id])
+
+  @@map("consultations")
+}
+
+// ===== CONCEPTS (OpenMRS) =====
+
+enum ConceptDatatype {
+  numeric
+  coded
+  text
+  date
+  boolean
+  datetime
+  document
+}
+
+enum ConceptClasse {
+  diagnostic
+  symptome
+  test
+  medicament
+  procedure
+  finding
+  question
+  reponse
+  misc
+}
+
+model Concept {
+  id          Int              @id @default(autoincrement())
+  nom         String           @db.VarChar(200)
+  code        String?          @unique @db.VarChar(50)
+  datatype    ConceptDatatype
+  classe      ConceptClasse
+  description String?
+  unite       String?          @db.VarChar(50)
+  valeurMin   Decimal?         @map("valeur_min") @db.Decimal(10, 2)
+  valeurMax   Decimal?         @map("valeur_max") @db.Decimal(10, 2)
+  actif       Boolean          @default(true)
+  createdAt   DateTime         @default(now()) @map("created_at")
+
+  observations    Observation[] @relation("obs_concept")
+  observationsCoded Observation[] @relation("obs_coded")
+  orders          Order[]
+
+  @@map("concepts")
+}
+
+// ===== ENCOUNTERS =====
+
+model EncounterType {
+  id          Int       @id @default(autoincrement())
+  nom         String    @db.VarChar(100)
+  description String?
+  createdAt   DateTime  @default(now()) @map("created_at")
+
+  encounters Encounter[]
+
+  @@map("encounter_types")
+}
+
+model Encounter {
+  id              Int       @id @default(autoincrement())
+  reference       String?   @unique @db.VarChar(20)
+  patientId       Int       @map("patient_id")
+  encounterTypeId Int       @map("encounter_type_id")
+  visiteId        Int?      @map("visite_id")
+  providerId      Int?      @map("provider_id")
+  serviceId       Int?      @map("service_id")
+  dateEncounter   DateTime  @default(now()) @map("date_encounter")
+  notes           String?
+  createdAt       DateTime  @default(now()) @map("created_at")
+
+  patient       Patient       @relation(fields: [patientId], references: [id])
+  encounterType EncounterType @relation(fields: [encounterTypeId], references: [id])
+  visite        Visite?       @relation(fields: [visiteId], references: [id])
+  provider      User?         @relation("provider", fields: [providerId], references: [id])
+  service       Service?      @relation(fields: [serviceId], references: [id])
+  observations  Observation[]
+  orders        Order[]
+
+  @@map("encounters")
+}
+
+model Observation {
+  id              Int       @id @default(autoincrement())
+  encounterId     Int       @map("encounter_id")
+  patientId       Int       @map("patient_id")
+  conceptId       Int       @map("concept_id")
+  valeurNumerique Decimal?  @map("valeur_numerique") @db.Decimal(12, 4)
+  valeurTexte     String?   @map("valeur_texte")
+  valeurDate      DateTime? @map("valeur_date")
+  valeurCoded     Int?      @map("valeur_coded")
+  valeurBoolean   Boolean?  @map("valeur_boolean")
+  commentaire     String?
+  providerId      Int?      @map("provider_id")
+  dateObs         DateTime  @default(now()) @map("date_obs")
+  voided          Boolean   @default(false)
+  createdAt       DateTime  @default(now()) @map("created_at")
+
+  encounter    Encounter @relation(fields: [encounterId], references: [id], onDelete: Cascade)
+  patient      Patient   @relation(fields: [patientId], references: [id])
+  concept      Concept   @relation("obs_concept", fields: [conceptId], references: [id])
+  codedConcept Concept?  @relation("obs_coded", fields: [valeurCoded], references: [id])
+  provider     User?     @relation("obs_provider", fields: [providerId], references: [id])
+
+  @@map("observations")
+}
+
+// ===== ORDERS =====
+
+model Order {
+  id           Int       @id @default(autoincrement())
+  reference    String?   @unique @db.VarChar(20)
+  patientId    Int       @map("patient_id")
+  encounterId  Int?      @map("encounter_id")
+  conceptId    Int?      @map("concept_id")
+  typeOrder    String    @map("type_order") @db.VarChar(30)
+  ordererId    Int?      @map("orderer_id")
+  urgence      String    @default("routine") @db.VarChar(20)
+  instructions String?
+  dateDebut    DateTime  @default(now()) @map("date_debut")
+  dateFin      DateTime? @map("date_fin")
+  statut       String    @default("actif") @db.VarChar(30)
+  dosage       String?   @db.VarChar(100)
+  frequence    String?   @db.VarChar(100)
+  duree        String?   @db.VarChar(100)
+  voie         String?   @db.VarChar(50)
+  quantite     Int?
+  resultat     String?
+  dateResultat DateTime? @map("date_resultat")
+  createdAt    DateTime  @default(now()) @map("created_at")
+
+  patient   Patient    @relation(fields: [patientId], references: [id])
+  encounter Encounter? @relation(fields: [encounterId], references: [id])
+  concept   Concept?   @relation(fields: [conceptId], references: [id])
+  orderer   User?      @relation("orderer", fields: [ordererId], references: [id])
+
+  @@map("orders")
+}
+
+// ===== Simplified models for remaining tables =====
+
+model Recette {
+  id           Int      @id @default(autoincrement())
+  patientId    Int?     @map("patient_id")
+  serviceId    Int?     @map("service_id")
+  typeActe     String   @map("type_acte") @db.VarChar(100)
+  montant      Decimal  @db.Decimal(12, 2)
+  modePaiement String?  @map("mode_paiement") @db.VarChar(50)
+  dateRecette  DateTime @default(now()) @map("date_recette") @db.Date
+  description  String?
+  createdAt    DateTime @default(now()) @map("created_at")
+  patient      Patient? @relation(fields: [patientId], references: [id])
+  service      Service? @relation(fields: [serviceId], references: [id])
+  @@map("recettes")
+}
+
+model Examen {
+  id          Int      @id @default(autoincrement())
+  reference   String?  @unique @db.VarChar(20)
+  patientId   Int      @map("patient_id")
+  typeExamen  String   @map("type_examen") @db.VarChar(100)
+  resultat    String?
+  dateExamen  DateTime @default(now()) @map("date_examen") @db.Date
+  montant     Decimal? @db.Decimal(10, 2)
+  statut      String?  @default("demande") @db.VarChar(50)
+  demandeurId Int?     @map("demandeur_id")
+  createdAt   DateTime @default(now()) @map("created_at")
+  patient     Patient  @relation(fields: [patientId], references: [id])
+  @@map("examens")
+}
+
+model RendezVous {
+  id        Int      @id @default(autoincrement())
+  patientId Int      @map("patient_id")
+  medecinId Int?     @map("medecin_id")
+  serviceId Int?     @map("service_id")
+  dateRdv   DateTime @map("date_rdv")
+  motif     String?
+  statut    String   @default("planifie") @db.VarChar(50)
+  notes     String?
+  createdAt DateTime @default(now()) @map("created_at")
+  patient   Patient  @relation(fields: [patientId], references: [id])
+  medecin   Medecin? @relation(fields: [medecinId], references: [id])
+  service   Service? @relation(fields: [serviceId], references: [id])
+  @@map("rendez_vous")
+}
+
+model Vital {
+  id                   Int      @id @default(autoincrement())
+  patientId            Int      @map("patient_id")
+  medecinId            Int?     @map("medecin_id")
+  temperature          Decimal? @db.Decimal(4, 1)
+  tensionSystolique    Int?     @map("tension_systolique")
+  tensionDiastolique   Int?     @map("tension_diastolique")
+  pouls                Int?
+  frequenceRespiratoire Int?    @map("frequence_respiratoire")
+  saturationO2         Int?     @map("saturation_o2")
+  poids                Decimal? @db.Decimal(5, 1)
+  taille               Decimal? @db.Decimal(5, 1)
+  glycemie             Decimal? @db.Decimal(5, 2)
+  notes                String?
+  dateMesure           DateTime @default(now()) @map("date_mesure")
+  createdAt            DateTime @default(now()) @map("created_at")
+  patient              Patient  @relation(fields: [patientId], references: [id])
+  medecin              Medecin? @relation(fields: [medecinId], references: [id])
+  @@map("vitaux")
+}
+
+model Allergie {
+  id           Int      @id @default(autoincrement())
+  patientId    Int      @map("patient_id")
+  allergene    String   @db.VarChar(200)
+  typeAllergie String?  @map("type_allergie") @db.VarChar(50)
+  severite     String?  @db.VarChar(20)
+  reaction     String?
+  dateDebut    DateTime? @map("date_debut") @db.Date
+  active       Boolean  @default(true)
+  createdAt    DateTime @default(now()) @map("created_at")
+  patient      Patient  @relation(fields: [patientId], references: [id])
+  @@map("allergies")
+}
+
+model Pathologie {
+  id        Int       @id @default(autoincrement())
+  patientId Int       @map("patient_id")
+  nom       String    @db.VarChar(200)
+  codeCim   String?   @map("code_cim") @db.VarChar(20)
+  statut    String    @default("active") @db.VarChar(50)
+  dateDebut DateTime? @map("date_debut") @db.Date
+  dateFin   DateTime? @map("date_fin") @db.Date
+  notes     String?
+  createdAt DateTime  @default(now()) @map("created_at")
+  patient   Patient   @relation(fields: [patientId], references: [id])
+  @@map("pathologies")
+}
+
+model Prescription {
+  id             Int       @id @default(autoincrement())
+  patientId      Int       @map("patient_id")
+  medecinId      Int?      @map("medecin_id")
+  consultationId Int?      @map("consultation_id")
+  medicament     String    @db.VarChar(200)
+  dosage         String?   @db.VarChar(100)
+  frequence      String?   @db.VarChar(100)
+  duree          String?   @db.VarChar(100)
+  voie           String?   @db.VarChar(50)
+  instructions   String?
+  statut         String    @default("active") @db.VarChar(50)
+  dateDebut      DateTime  @default(now()) @map("date_debut") @db.Date
+  dateFin        DateTime? @map("date_fin") @db.Date
+  createdAt      DateTime  @default(now()) @map("created_at")
+  patient        Patient   @relation(fields: [patientId], references: [id])
+  medecin        Medecin?  @relation(fields: [medecinId], references: [id])
+  @@map("prescriptions")
+}
+
+model Ordonnance {
+  id             Int      @id @default(autoincrement())
+  patientId      Int      @map("patient_id")
+  medecinId      Int?     @map("medecin_id")
+  consultationId Int?     @map("consultation_id")
+  dateOrdonnance DateTime @default(now()) @map("date_ordonnance") @db.Date
+  notes          String?
+  statut         String   @default("emise") @db.VarChar(50)
+  createdAt      DateTime @default(now()) @map("created_at")
+  patient        Patient  @relation(fields: [patientId], references: [id])
+  medecin        Medecin? @relation(fields: [medecinId], references: [id])
+  @@map("ordonnances")
+}
+
+model Vaccination {
+  id              Int       @id @default(autoincrement())
+  patientId       Int       @map("patient_id")
+  medecinId       Int?      @map("medecin_id")
+  vaccin          String    @db.VarChar(200)
+  lot             String?   @db.VarChar(100)
+  dose            String?   @db.VarChar(50)
+  siteInjection   String?   @map("site_injection") @db.VarChar(100)
+  dateVaccination DateTime  @default(now()) @map("date_vaccination") @db.Date
+  dateRappel      DateTime? @map("date_rappel") @db.Date
+  notes           String?
+  createdAt       DateTime  @default(now()) @map("created_at")
+  patient         Patient   @relation(fields: [patientId], references: [id])
+  medecin         Medecin?  @relation(fields: [medecinId], references: [id])
+  @@map("vaccinations")
+}
+
+model Note {
+  id        Int      @id @default(autoincrement())
+  patientId Int      @map("patient_id")
+  auteurId  Int      @map("auteur_id")
+  titre     String?  @db.VarChar(200)
+  contenu   String
+  typeNote  String   @default("general") @map("type_note") @db.VarChar(50)
+  createdAt DateTime @default(now()) @map("created_at")
+  patient   Patient  @relation(fields: [patientId], references: [id])
+  auteur    User     @relation(fields: [auteurId], references: [id])
+  @@map("notes")
+}
+
+model Alerte {
+  id         Int      @id @default(autoincrement())
+  patientId  Int      @map("patient_id")
+  typeAlerte String?  @map("type_alerte") @db.VarChar(50)
+  message    String
+  severite   String   @default("info") @db.VarChar(20)
+  active     Boolean  @default(true)
+  createdBy  Int?     @map("created_by")
+  createdAt  DateTime @default(now()) @map("created_at")
+  patient    Patient  @relation(fields: [patientId], references: [id])
+  creator    User?    @relation(fields: [createdBy], references: [id])
+  @@map("alertes")
+}
+
+model Visite {
+  id         Int       @id @default(autoincrement())
+  patientId  Int       @map("patient_id")
+  serviceId  Int?      @map("service_id")
+  typeVisite String    @default("ambulatoire") @map("type_visite") @db.VarChar(50)
+  dateDebut  DateTime  @default(now()) @map("date_debut")
+  dateFin    DateTime? @map("date_fin")
+  statut     String    @default("active") @db.VarChar(50)
+  notes      String?
+  createdAt  DateTime  @default(now()) @map("created_at")
+  patient    Patient   @relation(fields: [patientId], references: [id])
+  service    Service?  @relation(fields: [serviceId], references: [id])
+  encounters Encounter[]
+  @@map("visites")
+}
+
+model Hospitalisation {
+  id            Int       @id @default(autoincrement())
+  patientId     Int       @map("patient_id")
+  litId         Int?      @map("lit_id")
+  medecinId     Int?      @map("medecin_id")
+  serviceId     Int?      @map("service_id")
+  dateAdmission DateTime  @default(now()) @map("date_admission")
+  dateSortie    DateTime? @map("date_sortie")
+  motif         String?
+  statut        String    @default("active") @db.VarChar(50)
+  notes         String?
+  createdAt     DateTime  @default(now()) @map("created_at")
+  patient       Patient   @relation(fields: [patientId], references: [id])
+  medecin       Medecin?  @relation(fields: [medecinId], references: [id])
+  service       Service?  @relation(fields: [serviceId], references: [id])
+  @@map("hospitalisations")
+}
+
+model AuditLog {
+  id        Int      @id @default(autoincrement())
+  userId    Int?     @map("user_id")
+  action    String?  @db.VarChar(100)
+  tableName String?  @map("table_name") @db.VarChar(50)
+  recordId  Int?     @map("record_id")
+  details   String?
+  createdAt DateTime @default(now()) @map("created_at")
+  user      User?    @relation(fields: [userId], references: [id])
+  @@map("audit_log")
 }

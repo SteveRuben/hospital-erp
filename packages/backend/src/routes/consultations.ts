@@ -1,12 +1,14 @@
 import { Router, Response } from 'express';
 import { query } from '../config/db.js';
 import { authenticate, authorize, AuthRequest } from '../middleware/auth.js';
+import { getPaginationParams, paginatedResponse } from '../middleware/pagination.js';
 
 const router = Router();
 
 router.get('/', authenticate, async (req: AuthRequest, res: Response): Promise<void> => {
   try {
     const { patient_id, medecin_id, service_id, date_debut, date_fin } = req.query;
+    const { page, limit, offset } = getPaginationParams(req);
     let sql = `SELECT c.*, p.nom as patient_nom, p.prenom as patient_prenom, m.nom as medecin_nom, m.prenom as medecin_prenom, m.specialite, s.nom as service_nom FROM consultations c LEFT JOIN patients p ON c.patient_id = p.id LEFT JOIN medecins m ON c.medecin_id = m.id LEFT JOIN services s ON c.service_id = s.id WHERE 1=1`;
     const params: unknown[] = [];
     if (patient_id) { params.push(patient_id); sql += ` AND c.patient_id = $${params.length}`; }
@@ -14,10 +16,13 @@ router.get('/', authenticate, async (req: AuthRequest, res: Response): Promise<v
     if (service_id) { params.push(service_id); sql += ` AND c.service_id = $${params.length}`; }
     if (date_debut) { params.push(date_debut); sql += ` AND c.date_consultation >= $${params.length}`; }
     if (date_fin) { params.push(date_fin); sql += ` AND c.date_consultation <= $${params.length}`; }
-    sql += ' ORDER BY c.date_consultation DESC';
+    const countResult = await query(`SELECT COUNT(*) as total FROM (${sql}) sub`, params);
+    const total = parseInt(countResult.rows[0].total as string);
+    params.push(limit); sql += ` ORDER BY c.date_consultation DESC LIMIT $${params.length}`;
+    params.push(offset); sql += ` OFFSET $${params.length}`;
     const result = await query(sql, params);
-    res.json(result.rows);
-  } catch (err) { res.status(500).json({ error: 'Erreur serveur' }); }
+    res.json(paginatedResponse(result.rows, total, { page, limit, offset }));
+  } catch (err) { console.error(err); res.status(500).json({ error: 'Erreur serveur' }); }
 });
 
 router.get('/:id', authenticate, async (req: AuthRequest, res: Response): Promise<void> => {
