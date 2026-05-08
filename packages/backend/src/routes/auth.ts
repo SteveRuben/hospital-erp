@@ -1,4 +1,5 @@
 import { Router, Request, Response } from 'express';
+import crypto from 'crypto';
 import bcrypt from 'bcryptjs';
 import { query } from '../config/db.js';
 import { authenticate, authorize, generateToken, AuthRequest } from '../middleware/auth.js';
@@ -13,6 +14,17 @@ const router = Router();
 
 // OWASP A07 - Bcrypt cost factor (12 rounds)
 const BCRYPT_ROUNDS = 12;
+
+// MFA challenge store (opaque IDs to prevent user enumeration)
+const mfaChallenges = new Map<string, { userId: number; expires: number }>();
+
+// Cleanup expired challenges every 5 minutes
+setInterval(() => {
+  const now = Date.now();
+  for (const [id, ch] of mfaChallenges) {
+    if (ch.expires < now) mfaChallenges.delete(id);
+  }
+}, 5 * 60 * 1000).unref();
 
 // Common passwords list (top 100 most common — check against these)
 const COMMON_PASSWORDS = new Set([
@@ -54,8 +66,10 @@ router.post('/login', validate(loginSchema), async (req: Request, res: Response)
     // MFA check: if user has MFA enabled, require token
     if (user.mfa_enabled) {
       if (!mfa_token) {
-        // Return partial success — frontend should show MFA input
-        res.json({ mfa_required: true, user_id: user.id });
+        // Return opaque challenge — don't leak user_id
+        const challengeId = crypto.randomUUID();
+        mfaChallenges.set(challengeId, { userId: user.id, expires: Date.now() + 5 * 60 * 1000 });
+        res.json({ mfa_required: true, challenge_id: challengeId });
         return;
       }
       const secret = await mfa.getMfaSecret(user.id);
@@ -84,6 +98,51 @@ router.post('/login', validate(loginSchema), async (req: Request, res: Response)
     });
   } catch (err) {
     console.error('Login error:', err);
+    res.status(500).json({ error: 'Erreur serveur' });
+  }
+});
+
+// Complete MFA login with challenge_id + mfa_token
+router.post('/login/mfa', async (req: Request, res: Response): Promise<void> => {
+  try {
+    const { challenge_id, mfa_token } = req.body;
+    if (!challenge_id || !mfa_token) { res.status(400).json({ error: 'challenge_id et mfa_token requis' }); return; }
+
+    const challenge = mfaChallenges.get(challenge_id);
+    if (!challenge || challenge.expires < Date.now()) {
+      mfaChallenges.delete(challenge_id);
+      res.status(401).json({ error: 'Challenge expiré, reconnectez-vous' });
+      return;
+    }
+
+    const secret = await mfa.getMfaSecret(challenge.userId);
+    if (!secret || !mfa.verifyToken(mfa_token, secret)) {
+      res.status(401).json({ error: 'Code MFA invalide' });
+      return;
+    }
+
+    mfaChallenges.delete(challenge_id);
+
+    const result = await query('SELECT id, username, role, nom, prenom, must_change_password, mfa_enabled FROM users WHERE id = $1', [challenge.userId]);
+    if (result.rows.length === 0) { res.status(401).json({ error: 'Utilisateur non trouvé' }); return; }
+
+    const user = result.rows[0];
+    const token = generateToken(user);
+    recordActivity(user.id);
+
+    await logAudit({ userId: user.id, action: 'login', tableName: 'users', recordId: user.id, details: 'MFA login completed' });
+
+    res.json({
+      token,
+      user: {
+        id: user.id, username: user.username, role: user.role,
+        nom: user.nom, prenom: user.prenom,
+        must_change_password: user.must_change_password ?? false,
+        mfa_enabled: user.mfa_enabled ?? false,
+      }
+    });
+  } catch (err) {
+    console.error('MFA login error:', err);
     res.status(500).json({ error: 'Erreur serveur' });
   }
 });
@@ -147,10 +206,10 @@ router.post('/mfa/verify', authenticate, async (req: AuthRequest, res: Response)
   }
 });
 
-// MFA Disable (admin or self)
+// MFA Disable (admin or self) — requires password + own MFA if disabling another user
 router.post('/mfa/disable', authenticate, async (req: AuthRequest, res: Response): Promise<void> => {
   try {
-    const { user_id, password } = req.body;
+    const { user_id, password, mfa_token } = req.body;
     const targetId = user_id && req.user!.role === 'admin' ? user_id : req.user!.id;
 
     // Require password confirmation
@@ -160,8 +219,21 @@ router.post('/mfa/disable', authenticate, async (req: AuthRequest, res: Response
     const valid = await bcrypt.compare(password, userResult.rows[0].password);
     if (!valid) { res.status(401).json({ error: 'Mot de passe incorrect' }); return; }
 
+    // If disabling another user's MFA, require admin's own MFA token
+    if (targetId !== req.user!.id) {
+      const adminMfaEnabled = await mfa.isMfaEnabled(req.user!.id);
+      if (adminMfaEnabled) {
+        if (!mfa_token) { res.status(400).json({ error: 'Votre code MFA est requis pour désactiver le MFA d\'un autre utilisateur' }); return; }
+        const adminSecret = await mfa.getMfaSecret(req.user!.id);
+        if (!adminSecret || !mfa.verifyToken(mfa_token, adminSecret)) {
+          res.status(401).json({ error: 'Code MFA admin invalide' });
+          return;
+        }
+      }
+    }
+
     await mfa.disableMfa(targetId);
-    await logAudit({ userId: req.user!.id, action: 'mfa_setup', tableName: 'users', recordId: targetId, details: 'MFA disabled' });
+    await logAudit({ userId: req.user!.id, action: 'mfa_setup', tableName: 'users', recordId: targetId, details: `MFA disabled for user ${targetId}${targetId !== req.user!.id ? ' (by admin)' : ''}` });
 
     res.json({ message: 'MFA désactivé' });
   } catch (err) {
@@ -297,7 +369,7 @@ router.post('/stop-impersonate', authenticate, async (req: AuthRequest, res: Res
     if (!admin_id) { res.status(400).json({ error: 'admin_id requis' }); return; }
 
     const impersonationCheck = await query(
-      `SELECT id FROM audit_log WHERE user_id = $1 AND action = 'impersonate' AND record_id = $2 ORDER BY created_at DESC LIMIT 1`,
+      `SELECT id FROM audit_log WHERE user_id = $1 AND action = 'impersonate' AND record_id = $2 AND created_at > NOW() - INTERVAL '8 hours' ORDER BY created_at DESC LIMIT 1`,
       [admin_id, req.user!.id]
     );
     if (impersonationCheck.rows.length === 0) {

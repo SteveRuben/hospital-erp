@@ -30,6 +30,7 @@ export const validateIdParam = (req: Request, res: Response, next: NextFunction)
 export const loginSchema = z.object({
   username: z.string().min(1).max(100).trim(),
   password: z.string().min(1).max(255),
+  mfa_token: z.string().length(6).regex(/^\d+$/, 'Code MFA: 6 chiffres').optional(),
 });
 
 export const createUserSchema = z.object({

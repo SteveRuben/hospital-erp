@@ -23,7 +23,7 @@ setInterval(() => {
   for (const [userId, lastActivity] of activeSessions) {
     if (now - lastActivity > SESSION_TIMEOUT_MS * 2) activeSessions.delete(userId);
   }
-}, 10 * 60 * 1000);
+}, 10 * 60 * 1000).unref();
 
 /**
  * Blacklist a token (e.g., on logout or password change)

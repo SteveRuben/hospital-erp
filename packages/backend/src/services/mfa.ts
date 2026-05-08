@@ -74,12 +74,18 @@ export async function generateQRCode(otpauthUrl: string): Promise<string> {
 
 /**
  * Verify a TOTP token against a secret (with window tolerance)
+ * Uses constant-time comparison to prevent timing attacks
  */
 export function verifyToken(token: string, secret: string): boolean {
   const now = Date.now();
   for (let i = -TOTP_WINDOW; i <= TOTP_WINDOW; i++) {
     const time = now + i * TOTP_PERIOD * 1000;
-    if (generateTOTP(secret, time) === token) return true;
+    const expected = generateTOTP(secret, time);
+    // Constant-time comparison to prevent timing attacks
+    if (expected.length === token.length &&
+        crypto.timingSafeEqual(Buffer.from(expected), Buffer.from(token))) {
+      return true;
+    }
   }
   return false;
 }

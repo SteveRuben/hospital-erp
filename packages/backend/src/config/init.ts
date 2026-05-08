@@ -784,6 +784,22 @@ export const initDB = async (): Promise<void> => {
       ALTER TABLE users ADD COLUMN IF NOT EXISTS mfa_secret VARCHAR(255);
     `);
 
+    // Protect audit_log from modification (WORM - write-once-read-many)
+    await client.query(`
+      CREATE OR REPLACE FUNCTION prevent_audit_modification()
+      RETURNS TRIGGER AS $$
+      BEGIN
+        RAISE EXCEPTION 'audit_log is immutable: UPDATE and DELETE are not allowed';
+        RETURN NULL;
+      END;
+      $$ LANGUAGE plpgsql;
+
+      DROP TRIGGER IF EXISTS audit_log_immutable ON audit_log;
+      CREATE TRIGGER audit_log_immutable
+        BEFORE UPDATE OR DELETE ON audit_log
+        FOR EACH ROW EXECUTE FUNCTION prevent_audit_modification();
+    `);
+
     console.log('Database initialized successfully');
   } catch (err) {
     console.error('Error initializing database:', err);

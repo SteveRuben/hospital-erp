@@ -92,19 +92,20 @@ export const validateContentType = (req: Request, res: Response, next: NextFunct
 };
 
 // OWASP A09 - Security Logging and Monitoring: audit middleware
+// Logs all mutating requests to audit_log table via the audit service
 export const auditLog = (req: Request, _res: Response, next: NextFunction): void => {
   if (process.env.NODE_ENV !== 'test') {
     const authReq = req as Request & { user?: { id: number; username: string } };
-    const logEntry = {
-      timestamp: new Date().toISOString(),
-      method: req.method,
-      path: req.path,
-      ip: req.ip || req.headers['x-forwarded-for'],
-      userId: authReq.user?.id || 'anonymous',
-      userAgent: req.headers['user-agent']?.substring(0, 100),
-    };
-    // Log sensitive operations
+    // Only log mutating operations to console (audit_log writes happen in route handlers)
     if (['POST', 'PUT', 'DELETE'].includes(req.method)) {
+      const logEntry = {
+        timestamp: new Date().toISOString(),
+        method: req.method,
+        path: req.path,
+        ip: req.ip || req.headers['x-forwarded-for'],
+        userId: authReq.user?.id || 'anonymous',
+        userAgent: req.headers['user-agent']?.substring(0, 100),
+      };
       console.log('[AUDIT]', JSON.stringify(logEntry));
     }
   }
