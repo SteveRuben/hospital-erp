@@ -35,7 +35,7 @@ router.post('/collect', authenticate, async (req: AuthRequest, res: Response): P
 
     // Resolve transferMethod: use explicit transferMethod, or map from provider
     const resolvedMethod = transferMethod || TRANSFER_METHOD_MAP[provider] || 'OMCM';
-    const resolvedCountry = countryName || 'Cameroon';
+    const resolvedCountry = countryName || 'CAMEROON';
     const normalizedPhone = normalizePhone(phoneNumber);
 
     // Get customer name from facture if linked
