@@ -52,6 +52,8 @@ export default function PaiementMobile() {
   const [result, setResult] = useState<any>(null);
   const [error, setError] = useState('');
 
+  const [txnStatus, setTxnStatus] = useState<string | null>(null);
+
   // Search factures when typing #
   useEffect(() => {
     if (factureSearch.startsWith('#') || factureSearch.startsWith('FAC')) {
@@ -106,7 +108,15 @@ export default function PaiementMobile() {
     }
   };
 
-  const reset = () => { setStatus('idle'); setPhone(''); setMontant(''); setFactureSearch(''); setFactureId(null); setResult(null); setError(''); };
+  const checkStatus = async () => {
+    if (!result?.transactionId) return;
+    try {
+      const { data } = await api.get(`/paiement-remita/status/${result.transactionId}`);
+      setTxnStatus(data.transactionStatus || data.status || 'UNKNOWN');
+    } catch { setTxnStatus('Erreur de vérification'); }
+  };
+
+  const reset = () => { setStatus('idle'); setPhone(''); setMontant(''); setFactureSearch(''); setFactureId(null); setResult(null); setError(''); setTxnStatus(null); };
 
   return (
     <div>
@@ -189,7 +199,11 @@ export default function PaiementMobile() {
               <p style={{ fontSize: '0.75rem', color: 'var(--cds-text-secondary)', marginTop: '0.5rem' }}>Transaction: {result?.transactionId}</p>
               <p style={{ fontSize: '0.75rem', color: 'var(--cds-text-secondary)' }}>Statut: {result?.status}</p>
               {result?.simulated && <p style={{ fontSize: '0.6875rem', color: 'var(--cds-support-warning)', marginTop: '0.5rem' }}>⚠️ Mode simulation</p>}
-              <button className="btn-ghost mt-2" onClick={reset}>Nouveau paiement</button>
+              {txnStatus && <p style={{ fontSize: '0.8125rem', marginTop: '0.75rem', padding: '0.5rem', background: txnStatus === 'SUCCESS' ? 'var(--cds-support-success)' : txnStatus === 'PENDING' ? 'var(--cds-support-warning)' : 'var(--cds-support-error)', color: '#fff', borderRadius: '4px' }}>Statut actuel: {txnStatus}</p>}
+              <div className="d-flex gap-1 mt-2" style={{ justifyContent: 'center' }}>
+                <button className="btn-ghost" onClick={checkStatus}>🔄 Vérifier le statut</button>
+                <button className="btn-ghost" onClick={reset}>Nouveau paiement</button>
+              </div>
             </div>
           )}
 
