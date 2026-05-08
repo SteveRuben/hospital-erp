@@ -95,7 +95,7 @@ export default function PaiementMobile() {
         phoneNumber: rawPhone,
         amount: rawAmount,
         transferMethod: tab === 'orange' ? 'OMCM' : 'MOMOCM',
-        countryName: 'CAMEROON',
+        countryName: 'Cameroon',
         facture_id: factureId,
         description: `Paiement Hospital ERP via ${tab === 'orange' ? 'Orange Money' : 'MTN MoMo'}`,
       });
