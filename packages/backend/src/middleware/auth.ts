@@ -18,16 +18,13 @@ export interface AuthRequest extends Request {
 // OWASP A01 - Authentication
 export const authenticate = (req: AuthRequest, res: Response, next: NextFunction): void => {
   const authHeader = req.headers.authorization;
-  // Support token in query string for print routes (opened in new tab)
-  const queryToken = req.query.token as string | undefined;
   
   let token: string | undefined;
   
   if (authHeader?.startsWith('Bearer ')) {
     token = authHeader.substring(7);
-  } else if (queryToken) {
-    token = queryToken;
   }
+  // SECURITY: Removed query string token support (leaks in logs, referrers, browser history)
   
   if (!token) {
     res.status(401).json({ error: 'Token requis' });

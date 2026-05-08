@@ -177,10 +177,22 @@ router.post('/impersonate/:id', authenticate, authorize('admin'), async (req: Au
 });
 
 // Stop impersonation — switch back to admin
+// SECURITY: Only allow if the request includes a valid admin_id that matches an actual admin
+// AND the current session was initiated via impersonation (tracked via audit_log)
 router.post('/stop-impersonate', authenticate, async (req: AuthRequest, res: Response): Promise<void> => {
   try {
     const { admin_id } = req.body;
     if (!admin_id) { res.status(400).json({ error: 'admin_id requis' }); return; }
+
+    // Verify that admin_id actually impersonated the current user (check audit_log)
+    const impersonationCheck = await query(
+      `SELECT id FROM audit_log WHERE user_id = $1 AND action = 'impersonate' AND record_id = $2 ORDER BY created_at DESC LIMIT 1`,
+      [admin_id, req.user!.id]
+    );
+    if (impersonationCheck.rows.length === 0) {
+      res.status(403).json({ error: 'Aucune session d\'impersonation trouvée' });
+      return;
+    }
 
     const adminUser = await query('SELECT id, username, role, nom, prenom FROM users WHERE id = $1 AND role = $2', [admin_id, 'admin']);
     if (adminUser.rows.length === 0) { res.status(403).json({ error: 'Utilisateur admin non trouvé' }); return; }

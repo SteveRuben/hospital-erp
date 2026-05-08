@@ -6,49 +6,63 @@
  *   npx playwright install chromium
  * 
  * Run:
- *   npx playwright test e2e/screenshots.spec.ts
+ *   E2E_BASE_URL=https://hospital-erp-production-d9e3.up.railway.app npx playwright test e2e/screenshots.spec.ts
  * 
  * Screenshots will be saved to: packages/frontend/public/docs/
  */
 
-import { test, expect } from '@playwright/test';
+import { test, expect, Page } from '@playwright/test';
 import path from 'path';
 
 const BASE_URL = process.env.E2E_BASE_URL || 'http://localhost:3000';
 const DOCS_DIR = path.resolve(__dirname, '../packages/frontend/public/docs');
 const CREDENTIALS = { username: 'admin', password: 'Admin1234' };
 
-// Helper: login and get token via API, then set localStorage
-async function login(page: any) {
-  // First get token via API
-  const response = await page.request.post(`${BASE_URL}/api/auth/login`, {
-    data: { username: CREDENTIALS.username, password: CREDENTIALS.password },
+// Shared token — login once, reuse across all tests
+let authToken: string | null = null;
+let authUser: any = null;
+
+async function getToken(): Promise<{ token: string; user: any }> {
+  if (authToken && authUser) return { token: authToken, user: authUser };
+
+  const response = await fetch(`${BASE_URL}/api/auth/login`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(CREDENTIALS),
   });
   const data = await response.json();
-  
+
   if (!data.token) {
     throw new Error(`Login failed: ${JSON.stringify(data)}`);
   }
 
-  // Navigate to app and inject auth into localStorage
+  authToken = data.token;
+  authUser = data.user;
+  return { token: data.token, user: data.user };
+}
+
+// Inject auth into page localStorage and navigate
+async function loginAndGo(page: Page, path: string) {
+  const { token, user } = await getToken();
+
   await page.goto(BASE_URL);
-  await page.evaluate(({ token, user }: any) => {
+  await page.evaluate(({ token, user }) => {
     localStorage.setItem('token', token);
     localStorage.setItem('user', JSON.stringify({ ...user, must_change_password: false }));
-  }, { token: data.token, user: data.user });
-  
-  // Now navigate to app
-  await page.goto(`${BASE_URL}/app`);
+  }, { token, user });
+
+  await page.goto(`${BASE_URL}${path}`);
   await page.waitForTimeout(2000);
 }
 
-// Helper: take screenshot
-async function screenshot(page: any, name: string) {
+// Take screenshot
+async function screenshot(page: Page, name: string) {
   await page.waitForTimeout(500);
   await page.screenshot({ path: path.join(DOCS_DIR, `${name}.png`), fullPage: false });
 }
 
-test.describe('Screenshots', () => {
+// Pages that don't require auth
+test.describe.serial('Screenshots - Public', () => {
   test('Landing page', async ({ page }) => {
     await page.goto(BASE_URL);
     await page.waitForTimeout(2000);
@@ -60,117 +74,93 @@ test.describe('Screenshots', () => {
     await page.waitForTimeout(1000);
     await screenshot(page, 'login');
   });
+});
 
+// Pages that require auth — serial to reuse token
+test.describe.serial('Screenshots - Authenticated', () => {
   test('Dashboard', async ({ page }) => {
-    await login(page);
-    await page.goto(`${BASE_URL}/app`);
-    await page.waitForTimeout(2000);
+    await loginAndGo(page, '/app');
     await screenshot(page, 'dashboard');
   });
 
   test('Patients list', async ({ page }) => {
-    await login(page);
-    await page.goto(`${BASE_URL}/app/patients`);
-    await page.waitForTimeout(2000);
+    await loginAndGo(page, '/app/patients');
     await screenshot(page, 'patients-list');
   });
 
   test('Consultations', async ({ page }) => {
-    await login(page);
-    await page.goto(`${BASE_URL}/app/consultations`);
-    await page.waitForTimeout(2000);
+    await loginAndGo(page, '/app/consultations');
     await screenshot(page, 'consultations');
   });
 
   test('Laboratoire', async ({ page }) => {
-    await login(page);
-    await page.goto(`${BASE_URL}/app/laboratoire`);
-    await page.waitForTimeout(2000);
+    await loginAndGo(page, '/app/laboratoire');
     await screenshot(page, 'laboratoire');
   });
 
   test('Finances', async ({ page }) => {
-    await login(page);
-    await page.goto(`${BASE_URL}/app/finances`);
-    await page.waitForTimeout(2000);
+    await loginAndGo(page, '/app/finances');
     await screenshot(page, 'finances');
   });
 
   test('Facturation', async ({ page }) => {
-    await login(page);
-    await page.goto(`${BASE_URL}/app/facturation`);
-    await page.waitForTimeout(2000);
+    await loginAndGo(page, '/app/facturation');
     await screenshot(page, 'facturation');
   });
 
   test('Pharmacie', async ({ page }) => {
-    await login(page);
-    await page.goto(`${BASE_URL}/app/pharmacie`);
-    await page.waitForTimeout(2000);
+    await loginAndGo(page, '/app/pharmacie');
     await screenshot(page, 'pharmacie');
   });
 
   test('Rendez-vous', async ({ page }) => {
-    await login(page);
-    await page.goto(`${BASE_URL}/app/rendezvous`);
-    await page.waitForTimeout(2000);
+    await loginAndGo(page, '/app/rendezvous');
     await screenshot(page, 'rdv');
   });
 
   test('File attente', async ({ page }) => {
-    await login(page);
-    await page.goto(`${BASE_URL}/app/file-attente`);
-    await page.waitForTimeout(2000);
+    await loginAndGo(page, '/app/file-attente');
     await screenshot(page, 'file-attente');
   });
 
   test('Lits', async ({ page }) => {
-    await login(page);
-    await page.goto(`${BASE_URL}/app/lits`);
-    await page.waitForTimeout(2000);
+    await loginAndGo(page, '/app/lits');
     await screenshot(page, 'lits');
   });
 
   test('Rapports', async ({ page }) => {
-    await login(page);
-    await page.goto(`${BASE_URL}/app/rapports`);
-    await page.waitForTimeout(2000);
+    await loginAndGo(page, '/app/rapports');
     await screenshot(page, 'rapports');
   });
 
   test('Utilisateurs', async ({ page }) => {
-    await login(page);
-    await page.goto(`${BASE_URL}/app/utilisateurs`);
-    await page.waitForTimeout(2000);
+    await loginAndGo(page, '/app/utilisateurs');
     await screenshot(page, 'utilisateurs');
   });
 
   test('Habilitations', async ({ page }) => {
-    await login(page);
-    await page.goto(`${BASE_URL}/app/habilitations`);
-    await page.waitForTimeout(2000);
+    await loginAndGo(page, '/app/habilitations');
     await screenshot(page, 'habilitations');
   });
 
   test('Documentation', async ({ page }) => {
-    await login(page);
-    await page.goto(`${BASE_URL}/app/documentation`);
-    await page.waitForTimeout(2000);
+    await loginAndGo(page, '/app/documentation');
     await screenshot(page, 'documentation');
   });
 
   test('Concepts', async ({ page }) => {
-    await login(page);
-    await page.goto(`${BASE_URL}/app/concepts`);
-    await page.waitForTimeout(2000);
+    await loginAndGo(page, '/app/concepts');
     await screenshot(page, 'concepts');
   });
 
   test('Content Packages', async ({ page }) => {
-    await login(page);
-    await page.goto(`${BASE_URL}/app/content-packages`);
-    await page.waitForTimeout(2000);
+    await loginAndGo(page, '/app/content-packages');
     await screenshot(page, 'content-packages');
+  });
+
+  test('Paiement Mobile', async ({ page }) => {
+    await loginAndGo(page, '/app/paiement-mobile');
+    await screenshot(page, 'paiement-mobile');
   });
 
   test('Portail patient', async ({ page }) => {

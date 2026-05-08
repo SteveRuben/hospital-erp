@@ -772,6 +772,16 @@ export const initDB = async (): Promise<void> => {
       await client.query('INSERT INTO concepts (code, nom, datatype, classe, unite, valeur_min, valeur_max) SELECT $1::varchar,$2::varchar,$3::varchar,$4::varchar,$5::varchar,$6::decimal,$7::decimal WHERE NOT EXISTS (SELECT 1 FROM concepts WHERE code = $1::varchar)', [code, nom, datatype, classe, unite, vmin, vmax]);
     }
 
+    // Migrations: add soft-delete columns to recettes and depenses
+    await client.query(`
+      ALTER TABLE recettes ADD COLUMN IF NOT EXISTS annulee BOOLEAN DEFAULT FALSE;
+      ALTER TABLE recettes ADD COLUMN IF NOT EXISTS date_annulation TIMESTAMP;
+      ALTER TABLE recettes ADD COLUMN IF NOT EXISTS annulee_par INTEGER REFERENCES users(id);
+      ALTER TABLE depenses ADD COLUMN IF NOT EXISTS annulee BOOLEAN DEFAULT FALSE;
+      ALTER TABLE depenses ADD COLUMN IF NOT EXISTS date_annulation TIMESTAMP;
+      ALTER TABLE depenses ADD COLUMN IF NOT EXISTS annulee_par INTEGER REFERENCES users(id);
+    `);
+
     console.log('Database initialized successfully');
   } catch (err) {
     console.error('Error initializing database:', err);

@@ -1,9 +1,10 @@
 import { Router, Response, Request } from 'express';
 import { query } from '../config/db.js';
+import { authenticate, AuthRequest } from '../middleware/auth.js';
 
 const router = Router();
 
-// FHIR CapabilityStatement
+// FHIR CapabilityStatement (public — describes server capabilities)
 router.get('/metadata', (_req: Request, res: Response): void => {
   res.json({
     resourceType: 'CapabilityStatement',
@@ -13,7 +14,7 @@ router.get('/metadata', (_req: Request, res: Response): void => {
     software: { name: 'Hospital ERP', version: '1.0.0' },
     fhirVersion: '4.0.1',
     format: ['json'],
-    rest: [{ mode: 'server', resource: [
+    rest: [{ mode: 'server', security: { service: [{ coding: [{ system: 'http://terminology.hl7.org/CodeSystem/restful-security-service', code: 'Bearer' }] }] }, resource: [
       { type: 'Patient', interaction: [{ code: 'read' }, { code: 'search-type' }] },
       { type: 'Encounter', interaction: [{ code: 'read' }, { code: 'search-type' }] },
       { type: 'Observation', interaction: [{ code: 'search-type' }] },
@@ -23,8 +24,8 @@ router.get('/metadata', (_req: Request, res: Response): void => {
   });
 });
 
-// FHIR Patient
-router.get('/Patient/:id', async (req: Request, res: Response): Promise<void> => {
+// FHIR Patient — SECURED
+router.get('/Patient/:id', authenticate, async (req: AuthRequest, res: Response): Promise<void> => {
   try {
     const result = await query('SELECT * FROM patients WHERE id = $1', [req.params.id]);
     if (result.rows.length === 0) { res.status(404).json({ resourceType: 'OperationOutcome', issue: [{ severity: 'error', code: 'not-found' }] }); return; }
@@ -43,8 +44,8 @@ router.get('/Patient/:id', async (req: Request, res: Response): Promise<void> =>
   } catch (err) { res.status(500).json({ resourceType: 'OperationOutcome', issue: [{ severity: 'error', code: 'exception' }] }); }
 });
 
-// FHIR Patient Search
-router.get('/Patient', async (req: Request, res: Response): Promise<void> => {
+// FHIR Patient Search — SECURED
+router.get('/Patient', authenticate, async (req: AuthRequest, res: Response): Promise<void> => {
   try {
     const { name, _count = '20' } = req.query;
     let sql = 'SELECT * FROM patients WHERE archived = FALSE';
@@ -66,8 +67,8 @@ router.get('/Patient', async (req: Request, res: Response): Promise<void> => {
   } catch (err) { res.status(500).json({ resourceType: 'OperationOutcome', issue: [{ severity: 'error', code: 'exception' }] }); }
 });
 
-// FHIR Observation search by patient
-router.get('/Observation', async (req: Request, res: Response): Promise<void> => {
+// FHIR Observation search by patient — SECURED
+router.get('/Observation', authenticate, async (req: AuthRequest, res: Response): Promise<void> => {
   try {
     const { patient } = req.query;
     if (!patient) { res.status(400).json({ resourceType: 'OperationOutcome', issue: [{ severity: 'error', code: 'required', details: { text: 'patient parameter required' } }] }); return; }

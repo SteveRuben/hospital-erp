@@ -4,6 +4,17 @@ import { authenticate, authorize, AuthRequest } from '../middleware/auth.js';
 
 const router = Router();
 
+// SECURITY: HTML escape to prevent XSS in generated HTML
+const escapeHtml = (str: string | null | undefined): string => {
+  if (!str) return '';
+  return String(str)
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;')
+    .replace(/'/g, '&#x27;');
+};
+
 // Helper: generate CSV content
 const toCsv = (headers: string[], rows: Record<string, unknown>[], keys: string[]): string => {
   const lines = [headers.join(';')];
@@ -73,10 +84,10 @@ router.get('/etiquette/:patientId', authenticate, async (req: AuthRequest, res: 
 .row{display:flex;justify-content:space-between}.name{font-size:12pt;font-weight:700}.id{font-size:8pt;color:#666}
 .info{font-size:8pt;color:#333}.qr{width:24mm;height:24mm;border:1px solid #ccc;display:flex;align-items:center;justify-content:center;font-size:7pt;color:#999}
 @media print{body{margin:0}}</style></head><body>
-<div class="row"><div><div class="name">${p.prenom} ${p.nom}</div><div class="id">ID: #${p.id}</div>
+<div class="row"><div><div class="name">${escapeHtml(p.prenom)} ${escapeHtml(p.nom)}</div><div class="id">ID: #${p.id}</div>
 <div class="info">${p.sexe === 'M' ? 'Masculin' : p.sexe === 'F' ? 'Féminin' : ''} — ${age} ans</div>
-${p.telephone ? `<div class="info">Tél: ${p.telephone}</div>` : ''}
-${p.groupe_sanguin ? `<div class="info">Groupe: ${p.groupe_sanguin}</div>` : ''}
+${p.telephone ? `<div class="info">Tél: ${escapeHtml(p.telephone)}</div>` : ''}
+${p.groupe_sanguin ? `<div class="info">Groupe: ${escapeHtml(p.groupe_sanguin)}</div>` : ''}
 <div class="info">${p.date_naissance ? new Date(p.date_naissance).toLocaleDateString('fr-FR') : ''}</div>
 </div><div class="qr">QR<br>#${p.id}</div></div></body></html>`;
     res.setHeader('Content-Type', 'text/html');
@@ -92,7 +103,7 @@ router.get('/carte/:patientId', authenticate, async (req: AuthRequest, res: Resp
     const p = result.rows[0];
     const age = p.date_naissance ? Math.floor((Date.now() - new Date(p.date_naissance).getTime()) / 31557600000) : '?';
     const allergies = await query("SELECT allergene FROM allergies WHERE patient_id = $1 AND active = TRUE LIMIT 3", [req.params.patientId]);
-    const allergyList = allergies.rows.map((a: any) => a.allergene).join(', ') || 'Aucune connue';
+    const allergyList = allergies.rows.map((a: any) => escapeHtml(a.allergene)).join(', ') || 'Aucune connue';
 
     const html = `<!DOCTYPE html><html><head><meta charset="utf-8"><title>Carte Patient</title>
 <style>@page{size:85.6mm 54mm;margin:0}*{box-sizing:border-box}body{font-family:'IBM Plex Sans',sans-serif;margin:0;padding:0;font-size:8pt}
@@ -112,17 +123,17 @@ router.get('/carte/:patientId', authenticate, async (req: AuthRequest, res: Resp
 @media print{body{margin:0}.card{page-break-after:always}}</style></head><body>
 <div class="card front">
 <div class="logo"><span class="logo-icon">🏥</span> Hospital ERP</div>
-<div><div class="patient-name">${p.prenom} ${p.nom}</div><div class="patient-id">ID: #${String(p.id).padStart(6, '0')}</div></div>
-<div class="info-row"><span>${p.sexe === 'M' ? 'Masculin' : p.sexe === 'F' ? 'Féminin' : ''} — ${age} ans</span><span>${p.groupe_sanguin || ''}</span></div>
+<div><div class="patient-name">${escapeHtml(p.prenom)} ${escapeHtml(p.nom)}</div><div class="patient-id">ID: #${String(p.id).padStart(6, '0')}</div></div>
+<div class="info-row"><span>${p.sexe === 'M' ? 'Masculin' : p.sexe === 'F' ? 'Féminin' : ''} — ${age} ans</span><span>${escapeHtml(p.groupe_sanguin)}</span></div>
 <div class="qr">QR<br>#${p.id}</div>
 </div>
 <div class="card back">
 <div class="back-title">Informations patient</div>
-<div class="back-row"><span class="back-label">Téléphone</span><span class="back-value">${p.telephone || '-'}</span></div>
+<div class="back-row"><span class="back-label">Téléphone</span><span class="back-value">${escapeHtml(p.telephone) || '-'}</span></div>
 <div class="back-row"><span class="back-label">Date naissance</span><span class="back-value">${p.date_naissance ? new Date(p.date_naissance).toLocaleDateString('fr-FR') : '-'}</span></div>
-<div class="back-row"><span class="back-label">Groupe sanguin</span><span class="back-value">${p.groupe_sanguin || 'Non renseigné'}</span></div>
+<div class="back-row"><span class="back-label">Groupe sanguin</span><span class="back-value">${escapeHtml(p.groupe_sanguin) || 'Non renseigné'}</span></div>
 <div class="back-row"><span class="back-label">Allergies</span><span class="back-value">${allergyList}</span></div>
-<div class="back-row"><span class="back-label">Contact urgence</span><span class="back-value">${p.contact_urgence_nom || '-'} ${p.contact_urgence_telephone || ''}</span></div>
+<div class="back-row"><span class="back-label">Contact urgence</span><span class="back-value">${escapeHtml(p.contact_urgence_nom) || '-'} ${escapeHtml(p.contact_urgence_telephone)}</span></div>
 <div class="footer">Carte émise le ${new Date().toLocaleDateString('fr-FR')} — Hospital ERP</div>
 </div></body></html>`;
     res.setHeader('Content-Type', 'text/html');

@@ -1,12 +1,23 @@
 import { Router, Response, Request } from 'express';
+import crypto from 'crypto';
 import { query } from '../config/db.js';
 import jwt from 'jsonwebtoken';
+import rateLimit from 'express-rate-limit';
 
 const router = Router();
 const PORTAL_SECRET = process.env.JWT_SECRET || 'hospital_secret_key_2024';
 
 // Store OTPs in memory (in production, use Redis)
-const otpStore = new Map<string, { code: string; patientId: number; expires: number }>();
+const otpStore = new Map<string, { code: string; patientId: number; expires: number; attempts: number }>();
+
+// Rate limit on OTP verification (brute-force protection)
+const otpVerifyLimiter = rateLimit({
+  windowMs: 5 * 60 * 1000, // 5 minutes
+  max: 5, // max 5 attempts per IP per 5 min
+  standardHeaders: true,
+  legacyHeaders: false,
+  message: { error: 'Trop de tentatives, réessayez dans 5 minutes' },
+});
 
 // Request OTP
 router.post('/request-otp', async (req: Request, res: Response): Promise<void> => {
@@ -18,8 +29,9 @@ router.post('/request-otp', async (req: Request, res: Response): Promise<void> =
     if (result.rows.length === 0) { res.status(404).json({ error: 'Aucun patient trouvé avec ce contact' }); return; }
 
     const patient = result.rows[0];
-    const code = String(Math.floor(100000 + Math.random() * 900000)); // 6 digits
-    otpStore.set(contact, { code, patientId: patient.id, expires: Date.now() + 5 * 60 * 1000 }); // 5 min
+    // SECURITY: Use crypto.randomInt() instead of Math.random() for OTP generation
+    const code = String(crypto.randomInt(100000, 999999)); // 6 digits, cryptographically secure
+    otpStore.set(contact, { code, patientId: patient.id, expires: Date.now() + 5 * 60 * 1000, attempts: 0 }); // 5 min
 
     // In production, send via SMS/email
     console.log(`[PORTAIL] OTP for ${contact}: ${code}`);
@@ -28,29 +40,46 @@ router.post('/request-otp', async (req: Request, res: Response): Promise<void> =
   } catch (err) { console.error(err); res.status(500).json({ error: 'Erreur serveur' }); }
 });
 
-// Verify OTP
-router.post('/verify-otp', async (req: Request, res: Response): Promise<void> => {
+// Verify OTP — rate-limited + max attempts per OTP
+router.post('/verify-otp', otpVerifyLimiter, async (req: Request, res: Response): Promise<void> => {
   try {
     const { contact, code } = req.body;
     const stored = otpStore.get(contact);
 
-    if (!stored || stored.expires < Date.now()) { res.status(401).json({ error: 'Code expiré ou invalide' }); return; }
+    if (!stored || stored.expires < Date.now()) {
+      otpStore.delete(contact);
+      res.status(401).json({ error: 'Code expiré ou invalide' });
+      return;
+    }
+
+    // Max 5 attempts per OTP before invalidation
+    stored.attempts++;
+    if (stored.attempts > 5) {
+      otpStore.delete(contact);
+      res.status(401).json({ error: 'Trop de tentatives, demandez un nouveau code' });
+      return;
+    }
+
     if (stored.code !== code) { res.status(401).json({ error: 'Code incorrect' }); return; }
 
     otpStore.delete(contact);
-    const token = jwt.sign({ patientId: stored.patientId, type: 'portal' }, PORTAL_SECRET, { expiresIn: '1h' });
+    const token = jwt.sign(
+      { patientId: stored.patientId, type: 'portal' },
+      PORTAL_SECRET,
+      { algorithm: 'HS256', expiresIn: '1h', issuer: 'hospital-erp' }
+    );
 
     const patient = await query('SELECT id, nom, prenom, telephone, email FROM patients WHERE id = $1', [stored.patientId]);
     res.json({ token, patient: patient.rows[0] });
   } catch (err) { res.status(500).json({ error: 'Erreur serveur' }); }
 });
 
-// Middleware for portal auth
+// Middleware for portal auth — SECURITY: pin algorithm to HS256
 const portalAuth = (req: Request, res: Response, next: () => void) => {
   const token = req.headers.authorization?.split(' ')[1];
   if (!token) { res.status(401).json({ error: 'Token requis' }); return; }
   try {
-    const decoded = jwt.verify(token, PORTAL_SECRET) as { patientId: number; type: string };
+    const decoded = jwt.verify(token, PORTAL_SECRET, { algorithms: ['HS256'] }) as { patientId: number; type: string };
     if (decoded.type !== 'portal') { res.status(401).json({ error: 'Token invalide' }); return; }
     (req as any).patientId = decoded.patientId;
     next();
