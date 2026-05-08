@@ -17,8 +17,8 @@ export interface AuthRequest extends Request {
   token?: string;
 }
 
-// OWASP A01 - Authentication with session management
-export const authenticate = (req: AuthRequest, res: Response, next: NextFunction): void => {
+// OWASP A01 - Authentication with session management (async for Redis)
+export const authenticate = async (req: AuthRequest, res: Response, next: NextFunction): Promise<void> => {
   const authHeader = req.headers.authorization;
   
   let token: string | undefined;
@@ -38,7 +38,7 @@ export const authenticate = (req: AuthRequest, res: Response, next: NextFunction
   }
 
   // Check token blacklist (revoked tokens)
-  if (isTokenBlacklisted(token)) {
+  if (await isTokenBlacklisted(token)) {
     res.status(401).json({ error: 'Session expirée, veuillez vous reconnecter' });
     return;
   }
@@ -57,13 +57,13 @@ export const authenticate = (req: AuthRequest, res: Response, next: NextFunction
     }
 
     // Server-side session timeout check
-    if (isSessionExpired(decoded.id)) {
+    if (await isSessionExpired(decoded.id)) {
       res.status(401).json({ error: 'Session expirée par inactivité' });
       return;
     }
     
     // Record activity for session timeout tracking
-    recordActivity(decoded.id);
+    await recordActivity(decoded.id);
     
     req.user = decoded;
     req.token = token;
@@ -81,7 +81,6 @@ export const authenticate = (req: AuthRequest, res: Response, next: NextFunction
 export const authorize = (...roles: UserRole[]) => {
   return (req: AuthRequest, res: Response, next: NextFunction): void => {
     if (!req.user || !roles.includes(req.user.role)) {
-      // OWASP A09 - Log unauthorized access attempts
       console.warn(`[SECURITY] Unauthorized access attempt: user=${req.user?.username || 'unknown'} path=${req.path} required=${roles.join(',')}`);
       res.status(403).json({ error: 'Accès refusé' });
       return;

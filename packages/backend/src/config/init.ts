@@ -1,5 +1,5 @@
 import { pool, query } from './db.js';
-import bcrypt from 'bcryptjs';
+import argon2 from 'argon2';
 
 export const initDB = async (): Promise<void> => {
   const client = await pool.connect();
@@ -682,7 +682,7 @@ export const initDB = async (): Promise<void> => {
     `);
 
     // Insert default users (one per role)
-    const hashedPassword = await bcrypt.hash('admin123', 10);
+    const hashedPassword = await argon2.hash('admin123', { type: argon2.argon2id });
     const defaultUsers = [
       ['admin', hashedPassword, 'admin', 'Administrateur', 'Système'],
       ['dr.martin', hashedPassword, 'medecin', 'Martin', 'Jean'],

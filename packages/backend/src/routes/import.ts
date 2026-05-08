@@ -1,6 +1,6 @@
 import { Router, Response } from 'express';
 import multer from 'multer';
-import bcrypt from 'bcryptjs';
+import argon2 from 'argon2';
 import { query } from '../config/db.js';
 import { authenticate, authorize, AuthRequest } from '../middleware/auth.js';
 import { parseCsv, mapPatientFields, mapMedecinFields, mapTarifFields, mapUserFields } from '../services/import.js';
@@ -73,7 +73,7 @@ router.post('/users', authenticate, authorize('admin'), upload.single('file'), a
   try {
     if (!req.file) { res.status(400).json({ error: 'Fichier requis' }); return; }
     const rows = parseCsv(req.file.buffer.toString('utf-8'));
-    const defaultPassword = await bcrypt.hash('Changeme1', 12);
+    const defaultPassword = await argon2.hash('Changeme1', { type: argon2.argon2id });
     let imported = 0, errors: string[] = [];
     for (let i = 0; i < rows.length; i++) {
       try {

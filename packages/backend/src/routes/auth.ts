@@ -1,6 +1,6 @@
 import { Router, Request, Response } from 'express';
 import crypto from 'crypto';
-import bcrypt from 'bcryptjs';
+import argon2 from 'argon2';
 import { query } from '../config/db.js';
 import { authenticate, authorize, generateToken, AuthRequest } from '../middleware/auth.js';
 import { validate, loginSchema, createUserSchema } from '../middleware/validation.js';
@@ -12,8 +12,36 @@ import mfa from '../services/mfa.js';
 
 const router = Router();
 
-// OWASP A07 - Bcrypt cost factor (12 rounds)
-const BCRYPT_ROUNDS = 12;
+// Argon2 configuration (OWASP recommended)
+const ARGON2_OPTIONS = { type: argon2.argon2id, memoryCost: 65536, timeCost: 3, parallelism: 1 };
+
+/**
+ * Verify password — supports both argon2 (new) and bcrypt (legacy) hashes.
+ * If a bcrypt hash is verified successfully, it's automatically rehashed with argon2.
+ */
+async function verifyPassword(hash: string, password: string, userId?: number): Promise<boolean> {
+  // Argon2 hashes start with $argon2
+  if (hash.startsWith('$argon2')) {
+    return argon2.verify(hash, password);
+  }
+  // Legacy bcrypt hashes start with $2a$ or $2b$
+  if (hash.startsWith('$2a$') || hash.startsWith('$2b$')) {
+    // Dynamic import for backward compat (bcryptjs may still be installed)
+    try {
+      const bcryptjs = await import('bcryptjs');
+      const valid = await bcryptjs.default.compare(password, hash);
+      // Auto-rehash to argon2 on successful login
+      if (valid && userId) {
+        const newHash = await argon2.hash(password, ARGON2_OPTIONS);
+        await query('UPDATE users SET password = $1 WHERE id = $2', [newHash, userId]);
+      }
+      return valid;
+    } catch {
+      return false;
+    }
+  }
+  return false;
+}
 
 // MFA challenge store (opaque IDs to prevent user enumeration)
 const mfaChallenges = new Map<string, { userId: number; expires: number }>();
@@ -48,13 +76,13 @@ router.post('/login', validate(loginSchema), async (req: Request, res: Response)
     const result = await query('SELECT * FROM users WHERE username = $1', [username]);
     
     if (result.rows.length === 0) {
-      await bcrypt.hash('dummy', BCRYPT_ROUNDS);
+      await argon2.hash('dummy', ARGON2_OPTIONS);
       res.status(401).json({ error: 'Identifiants invalides' });
       return;
     }
     
     const user = result.rows[0];
-    const validPassword = await bcrypt.compare(password, user.password);
+    const validPassword = await verifyPassword(user.password, password, user.id);
     
     if (!validPassword) {
       console.warn(`[SECURITY] Failed login attempt for user: ${username} from IP: ${req.ip}`);
@@ -216,7 +244,7 @@ router.post('/mfa/disable', authenticate, async (req: AuthRequest, res: Response
     if (!password) { res.status(400).json({ error: 'Mot de passe requis pour désactiver MFA' }); return; }
     const userResult = await query('SELECT password FROM users WHERE id = $1', [req.user!.id]);
     if (userResult.rows.length === 0) { res.status(404).json({ error: 'Utilisateur non trouvé' }); return; }
-    const valid = await bcrypt.compare(password, userResult.rows[0].password);
+    const valid = await verifyPassword(userResult.rows[0].password, password);
     if (!valid) { res.status(401).json({ error: 'Mot de passe incorrect' }); return; }
 
     // If disabling another user's MFA, require admin's own MFA token
@@ -276,7 +304,7 @@ router.post('/users', authenticate, authorize('admin'), validate(createUserSchem
       return;
     }
 
-    const hashedPassword = await bcrypt.hash(password, BCRYPT_ROUNDS);
+    const hashedPassword = await argon2.hash(password, ARGON2_OPTIONS);
     
     const result = await query(
       `INSERT INTO users (username, password, role, nom, prenom, telephone) 
@@ -398,7 +426,7 @@ router.post('/change-password', authenticate, async (req: AuthRequest, res: Resp
     const result = await query('SELECT password FROM users WHERE id = $1', [req.user!.id]);
     if (result.rows.length === 0) { res.status(404).json({ error: 'Utilisateur non trouvé' }); return; }
 
-    const valid = await bcrypt.compare(old_password, result.rows[0].password);
+    const valid = await verifyPassword(result.rows[0].password, old_password);
     if (!valid) { res.status(401).json({ error: 'Ancien mot de passe incorrect' }); return; }
 
     const passwordCheck = validatePassword(new_password);
@@ -409,7 +437,7 @@ router.post('/change-password', authenticate, async (req: AuthRequest, res: Resp
       return;
     }
 
-    const hashed = await bcrypt.hash(new_password, BCRYPT_ROUNDS);
+    const hashed = await argon2.hash(new_password, ARGON2_OPTIONS);
     await query('UPDATE users SET password = $1, must_change_password = FALSE WHERE id = $2', [hashed, req.user!.id]);
 
     // Invalidate all existing sessions for this user
