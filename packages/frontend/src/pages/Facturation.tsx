@@ -53,6 +53,43 @@ export default function Facturation() {
   const fmt = (n: number) => new Intl.NumberFormat('fr-FR', { style: 'currency', currency: 'XOF' }).format(n);
   const totalFacture = factureForm.lignes.reduce((s, l) => s + l.prix_unitaire * l.quantite, 0);
 
+  // Print a receipt for a specific payment
+  const printRecuPaiement = (facture: any, paiement: any, numero: number) => {
+    const totalPaye = facture.paiements.reduce((s: number, p: any) => s + parseFloat(p.montant), 0);
+    const reste = parseFloat(facture.montant_total) - totalPaye;
+    const html = `<!DOCTYPE html><html><head><meta charset="utf-8"><title>Reçu de paiement</title>
+<style>body{font-family:'IBM Plex Sans',sans-serif;margin:2rem;color:#161616;font-size:14px}
+h1{font-size:1.25rem;font-weight:300}table{width:100%;border-collapse:collapse;margin:1rem 0}
+th{background:#e0e0e0;padding:0.5rem;text-align:left;font-size:0.75rem;text-transform:uppercase}
+td{padding:0.5rem;border-bottom:1px solid #e0e0e0}
+.header{display:flex;justify-content:space-between;border-bottom:2px solid #0f62fe;padding-bottom:1rem;margin-bottom:1rem}
+.amount{font-size:1.5rem;font-weight:600;color:#0f62fe;text-align:center;margin:1.5rem 0}
+.footer{margin-top:2rem;padding-top:1rem;border-top:1px solid #e0e0e0;font-size:0.75rem;color:#525252}
+.badge{display:inline-block;padding:0.25rem 0.5rem;border-radius:4px;font-size:0.75rem;font-weight:600}
+.badge-partial{background:#fff3cd;color:#856404}
+.badge-paid{background:#d4edda;color:#155724}
+@media print{body{margin:0}}</style></head><body>
+<div class="header"><div><h1>Hospital ERP</h1><p>Reçu de paiement N° ${numero}/${facture.paiements.length}</p><p>Facture: ${facture.numero}</p></div>
+<div style="text-align:right"><p>Date: ${new Date(paiement.date_paiement).toLocaleString('fr-FR')}</p>
+<p>Patient: ${facture.patient_prenom} ${facture.patient_nom}</p></div></div>
+<div class="amount">${new Intl.NumberFormat('fr-FR').format(parseFloat(paiement.montant))} XOF</div>
+<table><tbody>
+<tr><td><strong>Mode de paiement</strong></td><td>${paiement.mode_paiement}</td></tr>
+<tr><td><strong>Référence</strong></td><td>${paiement.reference || '-'}</td></tr>
+<tr><td><strong>Reçu par</strong></td><td>${paiement.recu_prenom} ${paiement.recu_nom}</td></tr>
+${paiement.notes ? `<tr><td><strong>Notes</strong></td><td>${paiement.notes}</td></tr>` : ''}
+</tbody></table>
+<table><thead><tr><th>Récapitulatif facture</th><th style="text-align:right">Montant</th></tr></thead><tbody>
+<tr><td>Total facture</td><td style="text-align:right">${new Intl.NumberFormat('fr-FR').format(parseFloat(facture.montant_total))} XOF</td></tr>
+<tr><td>Total payé (${facture.paiements.length} paiement${facture.paiements.length > 1 ? 's' : ''})</td><td style="text-align:right;color:green">${new Intl.NumberFormat('fr-FR').format(totalPaye)} XOF</td></tr>
+<tr><td><strong>Reste à payer</strong></td><td style="text-align:right;color:${reste > 0 ? 'red' : 'green'};font-weight:600">${new Intl.NumberFormat('fr-FR').format(reste)} XOF</td></tr>
+</tbody></table>
+<p style="text-align:center;margin-top:1rem"><span class="badge ${reste <= 0 ? 'badge-paid' : 'badge-partial'}">${reste <= 0 ? 'FACTURE SOLDÉE' : 'PAIEMENT PARTIEL'}</span></p>
+<div class="footer"><p>Document généré automatiquement par Hospital ERP — ${new Date().toLocaleString('fr-FR')}</p></div></body></html>`;
+    const w = window.open('', '_blank');
+    if (w) { w.document.write(html); w.document.close(); w.print(); }
+  };
+
   if (loading) return <div className="loading"><div className="spinner"></div></div>;
 
   const statutConfig: Record<string, { label: string; tag: string }> = { en_attente: { label: 'En attente', tag: 'tag-yellow' }, partielle: { label: 'Partielle', tag: 'tag-orange' }, payee: { label: 'Payée', tag: 'tag-green' }, annulee: { label: 'Annulée', tag: 'tag-red' } };
@@ -112,10 +149,26 @@ export default function Facturation() {
           </div>
           {detail.paiements?.length > 0 && (
             <div className="tile" style={{ padding: '1.5rem' }}>
-              <h4 style={{ fontSize: '0.875rem', fontWeight: 600, marginBottom: '0.75rem' }}>Paiements</h4>
-              <table className="data-table"><thead><tr><th>Date</th><th>Montant</th><th>Mode</th><th>Référence</th><th>Reçu par</th></tr></thead>
-                <tbody>{detail.paiements.map((p: any) => <tr key={p.id}><td>{new Date(p.date_paiement).toLocaleString('fr-FR')}</td><td className="text-success fw-600">{fmt(parseFloat(p.montant))}</td><td><span className="tag tag-gray">{p.mode_paiement}</span></td><td>{p.reference || '-'}</td><td>{p.recu_prenom} {p.recu_nom}</td></tr>)}</tbody>
+              <h4 style={{ fontSize: '0.875rem', fontWeight: 600, marginBottom: '0.75rem' }}>Historique des paiements ({detail.paiements.length})</h4>
+              <table className="data-table"><thead><tr><th>Date</th><th>Montant</th><th>Mode</th><th>Référence</th><th>Reçu par</th><th>Notes</th><th></th></tr></thead>
+                <tbody>{detail.paiements.map((p: any, idx: number) => <tr key={p.id}>
+                  <td>{new Date(p.date_paiement).toLocaleString('fr-FR')}</td>
+                  <td className="text-success fw-600">{fmt(parseFloat(p.montant))}</td>
+                  <td><span className="tag tag-gray">{p.mode_paiement}</span></td>
+                  <td style={{ fontSize: '0.75rem' }}>{p.reference || '-'}</td>
+                  <td>{p.recu_prenom} {p.recu_nom}</td>
+                  <td style={{ fontSize: '0.75rem', maxWidth: '150px', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }} title={p.notes || ''}>{p.notes || '-'}</td>
+                  <td><button className="btn-icon" title="Imprimer reçu" onClick={() => printRecuPaiement(detail, p, idx + 1)}><i className="bi bi-printer"></i></button></td>
+                </tr>)}</tbody>
               </table>
+              <div style={{ marginTop: '1rem', padding: '0.75rem', background: 'var(--cds-ui-01)', borderRadius: '4px' }}>
+                <div className="d-flex justify-between" style={{ fontSize: '0.8125rem' }}>
+                  <span>Total payé</span><span className="text-success fw-600">{fmt(detail.paiements.reduce((s: number, p: any) => s + parseFloat(p.montant), 0))}</span>
+                </div>
+                <div className="d-flex justify-between" style={{ fontSize: '0.8125rem', marginTop: '0.25rem' }}>
+                  <span>Reste à payer</span><span className="text-danger fw-600">{fmt(parseFloat(detail.montant_total) - parseFloat(detail.montant_paye))}</span>
+                </div>
+              </div>
             </div>
           )}
         </div>
