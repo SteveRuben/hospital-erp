@@ -4,7 +4,7 @@ import helmet from 'helmet';
 import dotenv from 'dotenv';
 import path from 'path';
 import { fileURLToPath } from 'url';
-import { enforceHttps, sanitizeInput, globalRateLimit, authRateLimit, validateContentType, auditLog, errorHandler } from './middleware/security.js';
+import { enforceHttps, sanitizeInput, globalRateLimit, authRateLimit, validateContentType, errorHandler } from './middleware/security.js';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 dotenv.config({ path: path.resolve(__dirname, '../.env') });
@@ -112,9 +112,6 @@ app.use(sanitizeInput);
 
 // OWASP A08 - Content-Type validation
 app.use(validateContentType);
-
-// OWASP A09 - Audit logging
-app.use(auditLog);
 
 // Disable X-Powered-By
 app.disable('x-powered-by');

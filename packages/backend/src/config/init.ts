@@ -807,6 +807,45 @@ export const initDB = async (): Promise<void> => {
       );
     `);
 
+    // Performance indexes (D1) — critical for queries on FK columns
+    await client.query(`
+      CREATE INDEX IF NOT EXISTS idx_consultations_patient_id ON consultations(patient_id);
+      CREATE INDEX IF NOT EXISTS idx_consultations_medecin_id ON consultations(medecin_id);
+      CREATE INDEX IF NOT EXISTS idx_consultations_date ON consultations(date_consultation DESC);
+      CREATE INDEX IF NOT EXISTS idx_examens_patient_id ON examens(patient_id);
+      CREATE INDEX IF NOT EXISTS idx_recettes_patient_id ON recettes(patient_id);
+      CREATE INDEX IF NOT EXISTS idx_recettes_date ON recettes(date_recette DESC);
+      CREATE INDEX IF NOT EXISTS idx_depenses_date ON depenses(date_depense DESC);
+      CREATE INDEX IF NOT EXISTS idx_factures_patient_id ON factures(patient_id);
+      CREATE INDEX IF NOT EXISTS idx_factures_statut ON factures(statut);
+      CREATE INDEX IF NOT EXISTS idx_facture_lignes_facture_id ON facture_lignes(facture_id);
+      CREATE INDEX IF NOT EXISTS idx_paiements_facture_id ON paiements(facture_id);
+      CREATE INDEX IF NOT EXISTS idx_observations_patient_id ON observations(patient_id);
+      CREATE INDEX IF NOT EXISTS idx_observations_encounter_id ON observations(encounter_id);
+      CREATE INDEX IF NOT EXISTS idx_observations_concept_id ON observations(concept_id);
+      CREATE INDEX IF NOT EXISTS idx_encounters_patient_id ON encounters(patient_id);
+      CREATE INDEX IF NOT EXISTS idx_prescriptions_patient_id ON prescriptions(patient_id);
+      CREATE INDEX IF NOT EXISTS idx_ordonnances_patient_id ON ordonnances(patient_id);
+      CREATE INDEX IF NOT EXISTS idx_vaccinations_patient_id ON vaccinations(patient_id);
+      CREATE INDEX IF NOT EXISTS idx_allergies_patient_id ON allergies(patient_id);
+      CREATE INDEX IF NOT EXISTS idx_pathologies_patient_id ON pathologies(patient_id);
+      CREATE INDEX IF NOT EXISTS idx_notes_patient_id ON notes(patient_id);
+      CREATE INDEX IF NOT EXISTS idx_vitaux_patient_id ON vitaux(patient_id);
+      CREATE INDEX IF NOT EXISTS idx_rendez_vous_patient_id ON rendez_vous(patient_id);
+      CREATE INDEX IF NOT EXISTS idx_rendez_vous_date ON rendez_vous(date_rdv);
+      CREATE INDEX IF NOT EXISTS idx_file_attente_service_id ON file_attente(service_id);
+      CREATE INDEX IF NOT EXISTS idx_hospitalisations_patient_id ON hospitalisations(patient_id);
+      CREATE INDEX IF NOT EXISTS idx_hospitalisations_lit_id ON hospitalisations(lit_id);
+      CREATE INDEX IF NOT EXISTS idx_lits_pavillon_id ON lits(pavillon_id);
+      CREATE INDEX IF NOT EXISTS idx_stock_medicament_id ON stock(medicament_id);
+      CREATE INDEX IF NOT EXISTS idx_orders_patient_id ON orders(patient_id);
+      CREATE INDEX IF NOT EXISTS idx_audit_log_user_id ON audit_log(user_id);
+      CREATE INDEX IF NOT EXISTS idx_audit_log_table_record ON audit_log(table_name, record_id);
+      CREATE INDEX IF NOT EXISTS idx_patient_attributions_medecin ON patient_attributions(medecin_user_id, actif);
+      CREATE INDEX IF NOT EXISTS idx_patients_archived ON patients(archived);
+      CREATE INDEX IF NOT EXISTS idx_patients_nom_prenom ON patients(nom, prenom);
+    `);
+
     // Protect audit_log from modification (WORM - write-once-read-many)
     await client.query(`
       CREATE OR REPLACE FUNCTION prevent_audit_modification()

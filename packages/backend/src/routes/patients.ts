@@ -9,16 +9,17 @@ const router = Router();
  * Check if a medecin user has access to a specific patient.
  * Admin, comptable, reception, laborantin have access to all patients.
  * Medecin only has access to patients they've consulted or been attributed.
+ * Uses patient_attributions FK (not name matching).
  */
 async function canAccessPatient(user: { id: number; role: string }, patientId: number): Promise<boolean> {
-  if (user.role !== 'medecin') return true; // Non-medecin roles have full access
-  // Check if medecin has a consultation or attribution with this patient
+  if (user.role !== 'medecin') return true;
   const result = await query(
-    `SELECT 1 FROM (
-      SELECT patient_id FROM consultations WHERE medecin_id IN (SELECT id FROM medecins WHERE nom = (SELECT nom FROM users WHERE id = $1) AND prenom = (SELECT prenom FROM users WHERE id = $1))
-      UNION
-      SELECT patient_id FROM patient_attributions WHERE medecin_user_id = $1 AND actif = TRUE
-    ) sub WHERE patient_id = $2 LIMIT 1`,
+    `SELECT 1 FROM patient_attributions WHERE medecin_user_id = $1 AND patient_id = $2 AND actif = TRUE
+     UNION ALL
+     SELECT 1 FROM consultations c JOIN medecins m ON c.medecin_id = m.id
+       JOIN users u ON u.nom = m.nom AND u.prenom = m.prenom AND u.id = $1
+       WHERE c.patient_id = $2
+     LIMIT 1`,
     [user.id, patientId]
   );
   return result.rows.length > 0;
@@ -153,9 +154,17 @@ router.post('/', authenticate, authorize('admin', 'medecin', 'reception'), async
   }
 });
 
-// Update patient
+// Update patient (with IDOR protection)
 router.put('/:id', authenticate, authorize('admin', 'medecin', 'reception'), async (req: AuthRequest, res: Response): Promise<void> => {
   try {
+    const patientId = Number(req.params.id);
+
+    // IDOR check
+    if (!(await canAccessPatient(req.user!, patientId))) {
+      res.status(403).json({ error: 'Accès refusé — ce patient ne vous est pas attribué' });
+      return;
+    }
+
     const { nom, prenom, deuxieme_prenom, sexe, date_naissance, age_estime, lieu_naissance, nationalite, numero_identite, statut_matrimonial, groupe_sanguin, pays, province, ville, commune, quartier, adresse, profession, telephone, email, contact_urgence_nom, contact_urgence_relation, contact_urgence_telephone } = req.body;
     
     const n = (v: unknown) => (v === '' || v === undefined) ? null : v;
@@ -186,9 +195,17 @@ router.put('/:id', authenticate, authorize('admin', 'medecin', 'reception'), asy
   }
 });
 
-// Soft delete patient
+// Soft delete patient (with IDOR protection)
 router.delete('/:id', authenticate, authorize('admin'), async (req: AuthRequest, res: Response): Promise<void> => {
   try {
+    const patientId = Number(req.params.id);
+
+    // IDOR check (even admin goes through this for consistency)
+    if (!(await canAccessPatient(req.user!, patientId))) {
+      res.status(403).json({ error: 'Accès refusé' });
+      return;
+    }
+
     const result = await query(
       'UPDATE patients SET archived = TRUE WHERE id = $1 RETURNING *', 
       [req.params.id]
@@ -207,35 +224,41 @@ router.delete('/:id', authenticate, authorize('admin'), async (req: AuthRequest,
   }
 });
 
-// Get patient history
+// Get patient history (with IDOR protection + parallel queries)
 router.get('/:id/historique', authenticate, async (req: AuthRequest, res: Response): Promise<void> => {
   try {
-    const patientId = req.params.id;
-    
-    const consultations = await query(
-      `SELECT c.*, m.nom as medecin_nom, m.prenom as medecin_prenom, s.nom as service_nom 
-       FROM consultations c 
-       LEFT JOIN medecins m ON c.medecin_id = m.id 
-       LEFT JOIN services s ON c.service_id = s.id 
-       WHERE c.patient_id = $1 
-       ORDER BY c.date_consultation DESC`,
-      [patientId]
-    );
-    
-    const examens = await query(
-      'SELECT * FROM examens WHERE patient_id = $1 ORDER BY date_examen DESC',
-      [patientId]
-    );
-    
-    const recettes = await query(
-      'SELECT * FROM recettes WHERE patient_id = $1 ORDER BY date_recette DESC',
-      [patientId]
-    );
-    
-    const documents = await query(
-      'SELECT * FROM documents WHERE patient_id = $1 ORDER BY created_at DESC',
-      [patientId]
-    );
+    const patientId = Number(req.params.id);
+
+    // IDOR check
+    if (!(await canAccessPatient(req.user!, patientId))) {
+      res.status(403).json({ error: 'Accès refusé — ce patient ne vous est pas attribué' });
+      return;
+    }
+
+    // Parallel queries (D2 fix: was sequential, now ~3x faster)
+    const [consultations, examens, recettes, documents] = await Promise.all([
+      query(
+        `SELECT c.id, c.reference, c.date_consultation, c.diagnostic, c.statut, c.motif, m.nom as medecin_nom, m.prenom as medecin_prenom, s.nom as service_nom 
+         FROM consultations c 
+         LEFT JOIN medecins m ON c.medecin_id = m.id 
+         LEFT JOIN services s ON c.service_id = s.id 
+         WHERE c.patient_id = $1 
+         ORDER BY c.date_consultation DESC`,
+        [patientId]
+      ),
+      query(
+        'SELECT id, reference, type_examen, resultat, date_examen, statut FROM examens WHERE patient_id = $1 ORDER BY date_examen DESC',
+        [patientId]
+      ),
+      query(
+        'SELECT id, type_acte, montant, mode_paiement, date_recette FROM recettes WHERE patient_id = $1 AND (annulee = FALSE OR annulee IS NULL) ORDER BY date_recette DESC',
+        [patientId]
+      ),
+      query(
+        'SELECT id, type_document, description, fichier_url, created_at FROM documents WHERE patient_id = $1 ORDER BY created_at DESC',
+        [patientId]
+      ),
+    ]);
     
     res.json({ 
       consultations: consultations.rows, 

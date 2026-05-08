@@ -2,32 +2,28 @@ name: Hospital ERP CI
 
 on:
   push:
-    branches: [main]
+    branches: [master, main]
   pull_request:
-    branches: [main]
+    branches: [master, main]
 
 jobs:
-  build:
+  build-and-test:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
         with:
           node-version: '20'
-          cache: 'yarn'
-      - run: yarn install --frozen-lockfile
-      - run: yarn typecheck
-      - run: yarn lint
-      - run: yarn build
-
-  deploy:
-    needs: build
-    if: github.ref == 'refs/heads/main'
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-node@v4
-        with:
-          node-version: '20'
-      - run: yarn install --frozen-lockfile
-      - run: yarn build
+          cache: 'npm'
+      - run: npm ci
+      - name: Typecheck backend
+        run: npx tsc --noEmit --project packages/backend/tsconfig.json
+      - name: Typecheck frontend
+        run: npx tsc --noEmit
+        working-directory: packages/frontend
+      - name: Build frontend
+        run: npm run build
+        working-directory: packages/frontend
+      - name: Build backend
+        run: npx tsc
+        working-directory: packages/backend

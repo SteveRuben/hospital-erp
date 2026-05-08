@@ -1,6 +1,7 @@
 import { Router, Response } from 'express';
 import { query } from '../config/db.js';
 import { authenticate, authorize, AuthRequest } from '../middleware/auth.js';
+import { validate, createRecetteSchema, createDepenseSchema } from '../middleware/validation.js';
 import { auditCreate, auditDelete } from '../services/audit.js';
 
 const router = Router();
@@ -23,7 +24,7 @@ router.get('/recettes', authenticate, async (req: AuthRequest, res: Response): P
   } catch (err) { res.status(500).json({ error: 'Erreur serveur' }); }
 });
 
-router.post('/recettes', authenticate, authorize('admin', 'comptable'), async (req: AuthRequest, res: Response): Promise<void> => {
+router.post('/recettes', authenticate, authorize('admin', 'comptable'), validate(createRecetteSchema), async (req: AuthRequest, res: Response): Promise<void> => {
   try {
     const { patient_id, service_id, type_acte, montant, mode_paiement, description } = req.body;
     const result = await query(`INSERT INTO recettes (patient_id, service_id, type_acte, montant, mode_paiement, description) VALUES ($1, $2, $3, $4, $5, $6) RETURNING *`, [patient_id, service_id, type_acte, montant, mode_paiement, description]);
@@ -61,7 +62,7 @@ router.get('/depenses', authenticate, async (req: AuthRequest, res: Response): P
   } catch (err) { res.status(500).json({ error: 'Erreur serveur' }); }
 });
 
-router.post('/depenses', authenticate, authorize('admin', 'comptable'), async (req: AuthRequest, res: Response): Promise<void> => {
+router.post('/depenses', authenticate, authorize('admin', 'comptable'), validate(createDepenseSchema), async (req: AuthRequest, res: Response): Promise<void> => {
   try {
     const { type_depense, nature, montant, fournisseur, description, date_depense } = req.body;
     const result = await query(`INSERT INTO depenses (type_depense, nature, montant, fournisseur, description, date_depense) VALUES ($1, $2, $3, $4, $5, $6) RETURNING *`, [type_depense, nature, montant, fournisseur, description, date_depense]);
