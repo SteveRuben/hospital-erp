@@ -2,13 +2,28 @@ import { useState, useEffect } from 'react';
 import api from '../services/api';
 import { getFactures } from '../services/api';
 
-// Format phone: +237 6XX XXX XXX
+// Format phone: groups digits for display, accepts +237 or 237 or just 6XXXXXXXX
 const formatPhone = (value: string): string => {
-  const digits = value.replace(/\D/g, '');
-  if (digits.length <= 3) return `+${digits}`;
-  if (digits.length <= 6) return `+${digits.slice(0, 3)} ${digits.slice(3)}`;
-  if (digits.length <= 9) return `+${digits.slice(0, 3)} ${digits.slice(3, 6)} ${digits.slice(6)}`;
-  return `+${digits.slice(0, 3)} ${digits.slice(3, 6)} ${digits.slice(6, 9)} ${digits.slice(9, 12)}`;
+  let digits = value.replace(/[^\d+]/g, '');
+  // If starts with +, keep it
+  if (digits.startsWith('+')) {
+    const nums = digits.slice(1);
+    if (nums.length <= 3) return `+${nums}`;
+    if (nums.length <= 6) return `+${nums.slice(0, 3)} ${nums.slice(3)}`;
+    if (nums.length <= 9) return `+${nums.slice(0, 3)} ${nums.slice(3, 6)} ${nums.slice(6)}`;
+    return `+${nums.slice(0, 3)} ${nums.slice(3, 6)} ${nums.slice(6, 9)} ${nums.slice(9, 12)}`;
+  }
+  // If starts with 237
+  if (digits.startsWith('237')) {
+    if (digits.length <= 3) return digits;
+    if (digits.length <= 6) return `${digits.slice(0, 3)} ${digits.slice(3)}`;
+    if (digits.length <= 9) return `${digits.slice(0, 3)} ${digits.slice(3, 6)} ${digits.slice(6)}`;
+    return `${digits.slice(0, 3)} ${digits.slice(3, 6)} ${digits.slice(6, 9)} ${digits.slice(9, 12)}`;
+  }
+  // Local number (6XXXXXXXX)
+  if (digits.length <= 3) return digits;
+  if (digits.length <= 6) return `${digits.slice(0, 3)} ${digits.slice(3)}`;
+  return `${digits.slice(0, 3)} ${digits.slice(3, 6)} ${digits.slice(6, 9)}`;
 };
 
 // Format amount: 1 000 000
@@ -22,7 +37,7 @@ const getRawAmount = (formatted: string): number => {
 };
 
 const getRawPhone = (formatted: string): string => {
-  return '+' + formatted.replace(/\D/g, '');
+  return formatted.replace(/\s/g, '');
 };
 
 export default function PaiementMobile() {
@@ -69,13 +84,18 @@ export default function PaiementMobile() {
   const handlePay = async () => {
     const rawPhone = getRawPhone(phone);
     const rawAmount = getRawAmount(montant);
-    if (!rawPhone || rawPhone.length < 10 || !rawAmount) return;
+    if (!rawPhone || rawPhone.length < 9 || !rawAmount) {
+      setError('Numéro (min 9 chiffres) et montant requis');
+      setStatus('error');
+      return;
+    }
     setStatus('pending'); setError('');
     try {
       const { data } = await api.post('/paiement-remita/collect', {
         phoneNumber: rawPhone,
         amount: rawAmount,
-        provider: tab === 'orange' ? 'orange_money' : 'mtn_momo',
+        transferMethod: tab === 'orange' ? 'OMCM' : 'MOMOCM',
+        countryName: 'CAMEROON',
         facture_id: factureId,
         description: `Paiement Hospital ERP via ${tab === 'orange' ? 'Orange Money' : 'MTN MoMo'}`,
       });
@@ -118,7 +138,7 @@ export default function PaiementMobile() {
             <div>
               <div className="form-group">
                 <label className="form-label">Numéro de téléphone *</label>
-                <input type="tel" className="form-input" value={phone} onChange={e => setPhone(formatPhone(e.target.value))} placeholder="+237 6XX XXX XXX" style={{ fontSize: '1.125rem', letterSpacing: '0.5px' }} />
+                <input type="tel" className="form-input" value={phone} onChange={e => setPhone(formatPhone(e.target.value))} placeholder="690010010 ou +237690010010" style={{ fontSize: '1.125rem', letterSpacing: '0.5px' }} />
               </div>
               <div className="form-group">
                 <label className="form-label">Montant (XAF) *</label>
