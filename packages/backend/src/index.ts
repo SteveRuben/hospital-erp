@@ -181,6 +181,9 @@ app.get('*', (req, res) => {
   res.sendFile(path.join(frontendPath, 'index.html'));
 });
 
+// Global error handler (catches unhandled errors from asyncHandler)
+app.use(errorHandler);
+
 const start = async () => {
   try {
     await initDB();

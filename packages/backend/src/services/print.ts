@@ -1,6 +1,5 @@
 // Print service — generates HTML templates for printing
-// In production, use puppeteer for PDF generation
-// For now, returns HTML that the frontend can print via window.print()
+// Frontend handles printing via window.print() (no server-side PDF needed)
 
 // SECURITY: HTML escape to prevent XSS
 const escapeHtml = (str: string | null | undefined): string => {
