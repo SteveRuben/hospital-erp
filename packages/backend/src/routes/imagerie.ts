@@ -5,6 +5,7 @@ import fs from 'fs';
 import { fileURLToPath } from 'url';
 import { query } from '../config/db.js';
 import { authenticate, authorize, AuthRequest } from '../middleware/auth.js';
+import { validate, createImagerieSchema } from '../middleware/validation.js';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const uploadDir = path.resolve(__dirname, '../../uploads/imagerie');
@@ -31,7 +32,7 @@ router.get('/:patientId', authenticate, async (req: AuthRequest, res: Response):
 });
 
 // Upload image
-router.post('/', authenticate, authorize('admin', 'medecin'), upload.single('file'), async (req: AuthRequest, res: Response): Promise<void> => {
+router.post('/', authenticate, authorize('admin', 'medecin'), upload.single('file'), validate(createImagerieSchema), async (req: AuthRequest, res: Response): Promise<void> => {
   try {
     const { patient_id, type_examen, description, date_examen, medecin_id } = req.body;
     if (!patient_id || !req.file) { res.status(400).json({ error: 'Patient et fichier requis' }); return; }

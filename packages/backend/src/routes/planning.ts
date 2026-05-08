@@ -1,6 +1,7 @@
 import { Router, Response } from 'express';
 import { query } from '../config/db.js';
 import { authenticate, authorize, AuthRequest } from '../middleware/auth.js';
+import { validate, createPlanningSchema, createBlocageSchema } from '../middleware/validation.js';
 
 const router = Router();
 
@@ -13,7 +14,7 @@ router.get('/medecin/:medecinId', authenticate, async (req: AuthRequest, res: Re
 });
 
 // Create planning slot
-router.post('/', authenticate, authorize('admin', 'medecin'), async (req: AuthRequest, res: Response): Promise<void> => {
+router.post('/', authenticate, authorize('admin', 'medecin'), validate(createPlanningSchema), async (req: AuthRequest, res: Response): Promise<void> => {
   try {
     const { medecin_id, service_id, jour_semaine, heure_debut, heure_fin, duree_creneau } = req.body;
     const n = (v: unknown) => (v === '' || v === undefined) ? null : v;
@@ -37,7 +38,7 @@ router.get('/blocages/:medecinId', authenticate, async (req: AuthRequest, res: R
 });
 
 // Create blocage
-router.post('/blocages', authenticate, authorize('admin', 'medecin'), async (req: AuthRequest, res: Response): Promise<void> => {
+router.post('/blocages', authenticate, authorize('admin', 'medecin'), validate(createBlocageSchema), async (req: AuthRequest, res: Response): Promise<void> => {
   try {
     const { medecin_id, date_debut, date_fin, motif } = req.body;
     const result = await query('INSERT INTO planning_blocages (medecin_id, date_debut, date_fin, motif) VALUES ($1,$2,$3,$4) RETURNING *', [medecin_id, date_debut, date_fin, motif || null]);

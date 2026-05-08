@@ -1,6 +1,7 @@
 import { Router, Response } from 'express';
 import { query } from '../config/db.js';
 import { authenticate, authorize, AuthRequest } from '../middleware/auth.js';
+import { validate, createRendezVousSchema } from '../middleware/validation.js';
 
 const router = Router();
 
@@ -94,7 +95,7 @@ router.get('/:id', authenticate, async (req: AuthRequest, res: Response): Promis
 });
 
 // Create rendez-vous
-router.post('/', authenticate, authorize('admin', 'medecin', 'reception'), async (req: AuthRequest, res: Response): Promise<void> => {
+router.post('/', authenticate, authorize('admin', 'medecin', 'reception'), validate(createRendezVousSchema), async (req: AuthRequest, res: Response): Promise<void> => {
   try {
     const { patient_id, medecin_id, service_id, date_rdv, motif, notes } = req.body;
 

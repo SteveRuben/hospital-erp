@@ -1,6 +1,7 @@
 import { Router, Response } from 'express';
 import { query } from '../config/db.js';
 import { authenticate, authorize, AuthRequest } from '../middleware/auth.js';
+import { validate, patientMergeSchema } from '../middleware/validation.js';
 
 const router = Router();
 
@@ -23,7 +24,7 @@ router.get('/duplicates', authenticate, authorize('admin'), async (_req: AuthReq
 });
 
 // Merge patients
-router.post('/merge', authenticate, authorize('admin'), async (req: AuthRequest, res: Response): Promise<void> => {
+router.post('/merge', authenticate, authorize('admin'), validate(patientMergeSchema), async (req: AuthRequest, res: Response): Promise<void> => {
   try {
     const { keep_id, merge_id } = req.body;
     if (!keep_id || !merge_id || keep_id === merge_id) { res.status(400).json({ error: 'IDs invalides' }); return; }

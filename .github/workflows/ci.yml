@@ -27,3 +27,6 @@ jobs:
       - name: Build backend
         run: npx tsc
         working-directory: packages/backend
+      - name: Test backend
+        run: npm test
+        working-directory: packages/backend

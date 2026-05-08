@@ -1,6 +1,7 @@
 import { Router, Response } from 'express';
 import { query } from '../config/db.js';
 import { authenticate, authorize, AuthRequest } from '../middleware/auth.js';
+import { validate, createProgrammeSchema } from '../middleware/validation.js';
 
 const router = Router();
 
@@ -20,7 +21,7 @@ router.get('/:id', authenticate, async (req: AuthRequest, res: Response): Promis
   } catch (err) { res.status(500).json({ error: 'Erreur serveur' }); }
 });
 
-router.post('/', authenticate, authorize('admin', 'medecin'), async (req: AuthRequest, res: Response): Promise<void> => {
+router.post('/', authenticate, authorize('admin', 'medecin'), validate(createProgrammeSchema), async (req: AuthRequest, res: Response): Promise<void> => {
   try {
     const { nom, description, type_programme } = req.body;
     const result = await query('INSERT INTO programmes (nom, description, type_programme) VALUES ($1,$2,$3) RETURNING *', [nom, description || null, type_programme || null]);

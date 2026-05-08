@@ -6,6 +6,7 @@ import rateLimit from 'express-rate-limit';
 
 const router = Router();
 const PORTAL_SECRET = process.env.JWT_SECRET || 'hospital_secret_key_2024';
+import { validate, requestOtpSchema, verifyOtpSchema, bookRendezVousPortalSchema } from '../middleware/validation.js';
 
 // Store OTPs in memory (in production, use Redis)
 const otpStore = new Map<string, { code: string; patientId: number; expires: number; attempts: number }>();
@@ -20,7 +21,7 @@ const otpVerifyLimiter = rateLimit({
 });
 
 // Request OTP
-router.post('/request-otp', async (req: Request, res: Response): Promise<void> => {
+router.post('/request-otp', validate(requestOtpSchema), async (req: Request, res: Response): Promise<void> => {
   try {
     const { contact } = req.body; // phone or email
     if (!contact) { res.status(400).json({ error: 'Téléphone ou email requis' }); return; }
@@ -41,7 +42,7 @@ router.post('/request-otp', async (req: Request, res: Response): Promise<void> =
 });
 
 // Verify OTP — rate-limited + max attempts per OTP
-router.post('/verify-otp', otpVerifyLimiter, async (req: Request, res: Response): Promise<void> => {
+router.post('/verify-otp', otpVerifyLimiter, validate(verifyOtpSchema), async (req: Request, res: Response): Promise<void> => {
   try {
     const { contact, code } = req.body;
     const stored = otpStore.get(contact);
@@ -142,7 +143,7 @@ router.get('/medecins', async (req: Request, res: Response): Promise<void> => {
 });
 
 // Book appointment
-router.post('/rdv', portalAuth, async (req: Request, res: Response): Promise<void> => {
+router.post('/rdv', portalAuth, validate(bookRendezVousPortalSchema), async (req: Request, res: Response): Promise<void> => {
   try {
     const { service_id, medecin_id, date_rdv, motif } = req.body;
     if (!date_rdv) { res.status(400).json({ error: 'Date requise' }); return; }

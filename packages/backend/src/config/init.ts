@@ -697,6 +697,14 @@ export const initDB = async (): Promise<void> => {
       );
     }
 
+    // Migration: rehash admin password if still bcrypt (ensures login works after argon2 migration)
+    const adminUser = await client.query("SELECT id, password FROM users WHERE username = 'admin'");
+    if (adminUser.rows.length > 0 && adminUser.rows[0].password.startsWith('$2')) {
+      const newAdminHash = await argon2.hash('Admin1234', { type: argon2.argon2id });
+      await client.query('UPDATE users SET password = $1 WHERE id = $2', [newAdminHash, adminUser.rows[0].id]);
+      console.log('[INIT] Admin password migrated from bcrypt to argon2');
+    }
+
     // Seed default habilitations
     const modules = ['dashboard','patients','medecins','consultations','rendezvous','laboratoire','visites','file-attente','finances','services','listes-patients','documentation','utilisateurs','habilitations','import','lits','programmes','facturation','paiement-mobile','imagerie','orders','concepts','pharmacie','patient-merge','rapports','formulaires','cohort-builder'];
     const roleAccess: Record<string, string[]> = {
@@ -844,6 +852,25 @@ export const initDB = async (): Promise<void> => {
       CREATE INDEX IF NOT EXISTS idx_patient_attributions_medecin ON patient_attributions(medecin_user_id, actif);
       CREATE INDEX IF NOT EXISTS idx_patients_archived ON patients(archived);
       CREATE INDEX IF NOT EXISTS idx_patients_nom_prenom ON patients(nom, prenom);
+      -- Composite index for paginated list (WHERE archived=$1 ORDER BY created_at DESC)
+      CREATE INDEX IF NOT EXISTS idx_patients_archived_created ON patients(archived, created_at DESC);
+      -- Sort indexes for chronological listings
+      CREATE INDEX IF NOT EXISTS idx_examens_date ON examens(date_examen DESC);
+      CREATE INDEX IF NOT EXISTS idx_audit_log_created ON audit_log(created_at DESC);
+      CREATE INDEX IF NOT EXISTS idx_encounters_date ON encounters(date_encounter DESC);
+      CREATE INDEX IF NOT EXISTS idx_observations_date ON observations(date_obs DESC);
+      -- Filter indexes for active/non-voided rows (frequent WHERE clauses)
+      CREATE INDEX IF NOT EXISTS idx_observations_voided ON observations(voided) WHERE voided = FALSE;
+      CREATE INDEX IF NOT EXISTS idx_alertes_patient_active ON alertes(patient_id, active) WHERE active = TRUE;
+      CREATE INDEX IF NOT EXISTS idx_allergies_patient_active ON allergies(patient_id, active) WHERE active = TRUE;
+      CREATE INDEX IF NOT EXISTS idx_orders_statut ON orders(statut) WHERE statut = 'actif';
+      CREATE INDEX IF NOT EXISTS idx_orders_encounter_id ON orders(encounter_id);
+      CREATE INDEX IF NOT EXISTS idx_prescriptions_medecin_id ON prescriptions(medecin_id);
+      CREATE INDEX IF NOT EXISTS idx_visites_patient_id ON visites(patient_id);
+      CREATE INDEX IF NOT EXISTS idx_visites_service_statut ON visites(service_id, statut) WHERE statut = 'active';
+      -- Recettes annulees filter (used in finances)
+      CREATE INDEX IF NOT EXISTS idx_recettes_annulee ON recettes(annulee) WHERE annulee = FALSE OR annulee IS NULL;
+      CREATE INDEX IF NOT EXISTS idx_depenses_annulee ON depenses(annulee) WHERE annulee = FALSE OR annulee IS NULL;
     `);
 
     // Protect audit_log from modification (WORM - write-once-read-many)

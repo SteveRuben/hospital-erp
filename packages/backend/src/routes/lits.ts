@@ -1,6 +1,7 @@
 import { Router, Response } from 'express';
 import { query } from '../config/db.js';
 import { authenticate, authorize, AuthRequest } from '../middleware/auth.js';
+import { validate, createPavillonSchema, createLitSchema } from '../middleware/validation.js';
 
 const router = Router();
 
@@ -12,7 +13,7 @@ router.get('/pavillons', authenticate, async (_req: AuthRequest, res: Response):
   } catch (err) { console.error(err); res.status(500).json({ error: 'Erreur serveur' }); }
 });
 
-router.post('/pavillons', authenticate, authorize('admin'), async (req: AuthRequest, res: Response): Promise<void> => {
+router.post('/pavillons', authenticate, authorize('admin'), validate(createPavillonSchema), async (req: AuthRequest, res: Response): Promise<void> => {
   try {
     const { nom, etage, service_id, capacite, description } = req.body;
     const n = (v: unknown) => (v === '' || v === undefined) ? null : v;
@@ -35,7 +36,7 @@ router.get('/', authenticate, async (req: AuthRequest, res: Response): Promise<v
   } catch (err) { res.status(500).json({ error: 'Erreur serveur' }); }
 });
 
-router.post('/', authenticate, authorize('admin'), async (req: AuthRequest, res: Response): Promise<void> => {
+router.post('/', authenticate, authorize('admin'), validate(createLitSchema), async (req: AuthRequest, res: Response): Promise<void> => {
   try {
     const { pavillon_id, numero, type_lit } = req.body;
     const n = (v: unknown) => (v === '' || v === undefined) ? null : v;

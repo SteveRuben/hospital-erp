@@ -1,6 +1,7 @@
 import { Router, Response } from 'express';
 import { query } from '../config/db.js';
 import { authenticate, authorize, AuthRequest } from '../middleware/auth.js';
+import { validate, createFacilitySchema } from '../middleware/validation.js';
 
 const router = Router();
 
@@ -11,7 +12,7 @@ router.get('/', authenticate, async (_req: AuthRequest, res: Response): Promise<
   } catch (err) { res.status(500).json({ error: 'Erreur serveur' }); }
 });
 
-router.post('/', authenticate, authorize('admin'), async (req: AuthRequest, res: Response): Promise<void> => {
+router.post('/', authenticate, authorize('admin'), validate(createFacilitySchema), async (req: AuthRequest, res: Response): Promise<void> => {
   try {
     const { nom, code, type_facility, adresse, ville, telephone, email } = req.body;
     const n = (v: unknown) => (v === '' || v === undefined) ? null : v;

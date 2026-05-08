@@ -1,6 +1,7 @@
 import { Router, Response } from 'express';
 import { query } from '../config/db.js';
 import { authenticate, authorize, AuthRequest } from '../middleware/auth.js';
+import { validate, createMedicamentSchema, createStockSchema } from '../middleware/validation.js';
 
 const router = Router();
 
@@ -18,7 +19,7 @@ router.get('/medicaments', authenticate, async (req: AuthRequest, res: Response)
   } catch (err) { res.status(500).json({ error: 'Erreur serveur' }); }
 });
 
-router.post('/medicaments', authenticate, authorize('admin'), async (req: AuthRequest, res: Response): Promise<void> => {
+router.post('/medicaments', authenticate, authorize('admin'), validate(createMedicamentSchema), async (req: AuthRequest, res: Response): Promise<void> => {
   try {
     const { nom, dci, forme, dosage_standard, code_barre, categorie, prix_unitaire } = req.body;
     const n = (v: unknown) => (v === '' || v === undefined) ? null : v;
@@ -35,7 +36,7 @@ router.get('/stock', authenticate, async (req: AuthRequest, res: Response): Prom
   } catch (err) { res.status(500).json({ error: 'Erreur serveur' }); }
 });
 
-router.post('/stock', authenticate, authorize('admin'), async (req: AuthRequest, res: Response): Promise<void> => {
+router.post('/stock', authenticate, authorize('admin'), validate(createStockSchema), async (req: AuthRequest, res: Response): Promise<void> => {
   try {
     const { medicament_id, lot, date_expiration, quantite, quantite_min, prix_achat, fournisseur } = req.body;
     const n = (v: unknown) => (v === '' || v === undefined) ? null : v;

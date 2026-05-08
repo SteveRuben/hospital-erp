@@ -2,6 +2,7 @@ import { Router, Response } from 'express';
 import { query } from '../config/db.js';
 import { authenticate, authorize, AuthRequest } from '../middleware/auth.js';
 import { generateReference } from '../services/reference.js';
+import { validate, createOrderSchema } from '../middleware/validation.js';
 
 const router = Router();
 
@@ -40,7 +41,7 @@ router.get('/', authenticate, async (req: AuthRequest, res: Response): Promise<v
 });
 
 // Create order
-router.post('/', authenticate, authorize('admin', 'medecin'), async (req: AuthRequest, res: Response): Promise<void> => {
+router.post('/', authenticate, authorize('admin', 'medecin'), validate(createOrderSchema), async (req: AuthRequest, res: Response): Promise<void> => {
   try {
     const { patient_id, encounter_id, concept_id, type_order, urgence, instructions, dosage, frequence, duree, voie, quantite } = req.body;
     if (!patient_id || !type_order) { res.status(400).json({ error: 'Patient et type requis' }); return; }

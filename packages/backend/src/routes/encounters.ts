@@ -2,6 +2,7 @@ import { Router, Response } from 'express';
 import { query } from '../config/db.js';
 import { authenticate, authorize, AuthRequest } from '../middleware/auth.js';
 import { generateReference } from '../services/reference.js';
+import { validate, createEncounterSchema } from '../middleware/validation.js';
 
 const router = Router();
 
@@ -30,7 +31,7 @@ router.get('/:id', authenticate, async (req: AuthRequest, res: Response): Promis
 });
 
 // Create encounter with observations
-router.post('/', authenticate, authorize('admin', 'medecin'), async (req: AuthRequest, res: Response): Promise<void> => {
+router.post('/', authenticate, authorize('admin', 'medecin'), validate(createEncounterSchema), async (req: AuthRequest, res: Response): Promise<void> => {
   try {
     const { patient_id, encounter_type_id, visite_id, service_id, notes, observations } = req.body;
     if (!patient_id || !encounter_type_id) { res.status(400).json({ error: 'Patient et type requis' }); return; }

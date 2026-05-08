@@ -6,7 +6,8 @@
  */
 
 import RedisLib from 'ioredis';
-const Redis = RedisLib.default || RedisLib;
+// CJS/ESM interop fallback: some bundlers wrap the default export
+const Redis = (RedisLib as any).default || RedisLib;
 
 // Session timeout: 30 minutes of inactivity
 const SESSION_TIMEOUT_MS = 30 * 60 * 1000;

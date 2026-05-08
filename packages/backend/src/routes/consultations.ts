@@ -2,6 +2,7 @@ import { Router, Response } from 'express';
 import { query } from '../config/db.js';
 import { authenticate, authorize, AuthRequest } from '../middleware/auth.js';
 import { getPaginationParams, paginatedResponse } from '../middleware/pagination.js';
+import { validate, createConsultationSchema } from '../middleware/validation.js';
 
 const router = Router();
 
@@ -33,7 +34,7 @@ router.get('/:id', authenticate, async (req: AuthRequest, res: Response): Promis
   } catch (err) { res.status(500).json({ error: 'Erreur serveur' }); }
 });
 
-router.post('/', authenticate, authorize('admin', 'medecin'), async (req: AuthRequest, res: Response): Promise<void> => {
+router.post('/', authenticate, authorize('admin', 'medecin'), validate(createConsultationSchema), async (req: AuthRequest, res: Response): Promise<void> => {
   try {
     const { patient_id, medecin_id, service_id, diagnostic, traitement, notes } = req.body;
     const result = await query(`INSERT INTO consultations (patient_id, medecin_id, service_id, diagnostic, traitement, notes) VALUES ($1, $2, $3, $4, $5, $6) RETURNING *`, [patient_id, medecin_id, service_id, diagnostic, traitement, notes]);

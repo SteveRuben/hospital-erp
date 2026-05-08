@@ -1,6 +1,7 @@
 import { Router, Response } from 'express';
 import { query } from '../config/db.js';
 import { authenticate, authorize, AuthRequest } from '../middleware/auth.js';
+import { validate, createListePatientsSchema, addPatientToListeSchema } from '../middleware/validation.js';
 
 const router = Router();
 
@@ -23,7 +24,7 @@ router.get('/:id', authenticate, async (req: AuthRequest, res: Response): Promis
 });
 
 // Create list
-router.post('/', authenticate, async (req: AuthRequest, res: Response): Promise<void> => {
+router.post('/', authenticate, validate(createListePatientsSchema), async (req: AuthRequest, res: Response): Promise<void> => {
   try {
     const { nom, description } = req.body;
     if (!nom) { res.status(400).json({ error: 'Nom requis' }); return; }
@@ -42,7 +43,7 @@ router.delete('/:id', authenticate, async (req: AuthRequest, res: Response): Pro
 });
 
 // Add patient to list
-router.post('/:id/patients', authenticate, async (req: AuthRequest, res: Response): Promise<void> => {
+router.post('/:id/patients', authenticate, validate(addPatientToListeSchema), async (req: AuthRequest, res: Response): Promise<void> => {
   try {
     const { patient_id } = req.body;
     if (!patient_id) { res.status(400).json({ error: 'Patient requis' }); return; }

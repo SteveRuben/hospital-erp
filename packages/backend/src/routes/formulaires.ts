@@ -1,6 +1,7 @@
 import { Router, Response } from 'express';
 import { query } from '../config/db.js';
 import { authenticate, authorize, AuthRequest } from '../middleware/auth.js';
+import { validate, createFormulaireSchema, createReponseFormulaireSchema } from '../middleware/validation.js';
 
 const router = Router();
 
@@ -13,7 +14,7 @@ router.get('/', authenticate, async (req: AuthRequest, res: Response): Promise<v
 });
 
 // Create form definition
-router.post('/', authenticate, authorize('admin'), async (req: AuthRequest, res: Response): Promise<void> => {
+router.post('/', authenticate, authorize('admin'), validate(createFormulaireSchema), async (req: AuthRequest, res: Response): Promise<void> => {
   try {
     const { nom, description, schema_json, service_id } = req.body;
     const result = await query(`INSERT INTO formulaires (nom, description, schema_json, service_id) VALUES ($1,$2,$3,$4) RETURNING *`, [nom, description, JSON.stringify(schema_json), service_id]);
@@ -30,7 +31,7 @@ router.get('/reponses/:patientId', authenticate, async (req: AuthRequest, res: R
 });
 
 // Submit form response
-router.post('/reponses', authenticate, async (req: AuthRequest, res: Response): Promise<void> => {
+router.post('/reponses', authenticate, validate(createReponseFormulaireSchema), async (req: AuthRequest, res: Response): Promise<void> => {
   try {
     const { formulaire_id, patient_id, donnees_json } = req.body;
     const result = await query(`INSERT INTO formulaire_reponses (formulaire_id, patient_id, rempli_par, donnees_json) VALUES ($1,$2,$3,$4) RETURNING *`, [formulaire_id, patient_id, req.user!.id, JSON.stringify(donnees_json)]);

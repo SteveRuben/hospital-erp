@@ -1,6 +1,7 @@
 import { Router, Response } from 'express';
 import { query } from '../config/db.js';
 import { authenticate, authorize, AuthRequest } from '../middleware/auth.js';
+import { validate, createVisiteSchema } from '../middleware/validation.js';
 
 const router = Router();
 
@@ -18,7 +19,7 @@ router.get('/', authenticate, async (req: AuthRequest, res: Response): Promise<v
 });
 
 // Start visit
-router.post('/', authenticate, authorize('admin', 'medecin', 'reception'), async (req: AuthRequest, res: Response): Promise<void> => {
+router.post('/', authenticate, authorize('admin', 'medecin', 'reception'), validate(createVisiteSchema), async (req: AuthRequest, res: Response): Promise<void> => {
   try {
     const { patient_id, service_id, type_visite, notes } = req.body;
     if (!patient_id) { res.status(400).json({ error: 'Patient requis' }); return; }

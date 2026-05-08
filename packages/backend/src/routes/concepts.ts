@@ -1,6 +1,7 @@
 import { Router, Response } from 'express';
 import { query } from '../config/db.js';
 import { authenticate, authorize, AuthRequest } from '../middleware/auth.js';
+import { validate, createConceptSchema } from '../middleware/validation.js';
 
 const router = Router();
 
@@ -32,7 +33,7 @@ router.get('/:id', authenticate, async (req: AuthRequest, res: Response): Promis
 });
 
 // Create concept
-router.post('/', authenticate, authorize('admin'), async (req: AuthRequest, res: Response): Promise<void> => {
+router.post('/', authenticate, authorize('admin'), validate(createConceptSchema), async (req: AuthRequest, res: Response): Promise<void> => {
   try {
     const { nom, code, datatype, classe, description, unite, valeur_min, valeur_max } = req.body;
     if (!nom || !datatype || !classe) { res.status(400).json({ error: 'Nom, datatype et classe requis' }); return; }

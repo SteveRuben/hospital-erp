@@ -108,8 +108,8 @@ router.post('/login', validate(loginSchema), async (req: Request, res: Response)
     }
     
     const token = generateToken(user);
-    recordActivity(user.id);
-    
+    await recordActivity(user.id);
+
     await logAudit({ userId: user.id, action: 'login', tableName: 'users', recordId: user.id, details: `Successful login from IP: ${req.ip}`, ip: req.ip || undefined });
     
     res.json({ 
@@ -156,7 +156,7 @@ router.post('/login/mfa', async (req: Request, res: Response): Promise<void> => 
 
     const user = result.rows[0];
     const token = generateToken(user);
-    recordActivity(user.id);
+    await recordActivity(user.id);
 
     await logAudit({ userId: user.id, action: 'login', tableName: 'users', recordId: user.id, details: 'MFA login completed' });
 
@@ -180,9 +180,9 @@ router.post('/logout', authenticate, async (req: AuthRequest, res: Response): Pr
   try {
     if (req.token) {
       // Blacklist for remaining token lifetime (max 8h)
-      blacklistToken(req.token, 8 * 60 * 60 * 1000);
+      await blacklistToken(req.token, 8 * 60 * 60 * 1000);
     }
-    invalidateUserSessions(req.user!.id);
+    await invalidateUserSessions(req.user!.id);
     await logAudit({ userId: req.user!.id, action: 'logout', tableName: 'users', recordId: req.user!.id });
     res.json({ message: 'Déconnexion réussie' });
   } catch (err) {
@@ -441,8 +441,8 @@ router.post('/change-password', authenticate, async (req: AuthRequest, res: Resp
     await query('UPDATE users SET password = $1, must_change_password = FALSE WHERE id = $2', [hashed, req.user!.id]);
 
     // Invalidate all existing sessions for this user
-    invalidateUserSessions(req.user!.id);
-    if (req.token) blacklistToken(req.token, 8 * 60 * 60 * 1000);
+    await invalidateUserSessions(req.user!.id);
+    if (req.token) await blacklistToken(req.token, 8 * 60 * 60 * 1000);
 
     await logAudit({ userId: req.user!.id, action: 'password_change', tableName: 'users', recordId: req.user!.id });
 

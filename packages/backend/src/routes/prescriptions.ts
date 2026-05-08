@@ -1,6 +1,7 @@
 import { Router, Response } from 'express';
 import { query } from '../config/db.js';
 import { authenticate, authorize, AuthRequest } from '../middleware/auth.js';
+import { validate, createPrescriptionSchema } from '../middleware/validation.js';
 
 const router = Router();
 
@@ -11,7 +12,7 @@ router.get('/:patientId', authenticate, async (req: AuthRequest, res: Response):
   } catch (err) { res.status(500).json({ error: 'Erreur serveur' }); }
 });
 
-router.post('/', authenticate, authorize('admin', 'medecin'), async (req: AuthRequest, res: Response): Promise<void> => {
+router.post('/', authenticate, authorize('admin', 'medecin'), validate(createPrescriptionSchema), async (req: AuthRequest, res: Response): Promise<void> => {
   try {
     const { patient_id, medecin_id, consultation_id, medicament, dosage, frequence, duree, voie, instructions, date_debut, date_fin } = req.body;
     const result = await query(`INSERT INTO prescriptions (patient_id, medecin_id, consultation_id, medicament, dosage, frequence, duree, voie, instructions, date_debut, date_fin) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11) RETURNING *`, [patient_id, medecin_id, consultation_id, medicament, dosage, frequence, duree, voie, instructions, date_debut, date_fin]);

@@ -2,28 +2,10 @@ import { Router, Response } from 'express';
 import { query } from '../config/db.js';
 import { authenticate, authorize, AuthRequest } from '../middleware/auth.js';
 import { auditCreate, auditUpdate, auditDelete } from '../services/audit.js';
+import { canAccessPatient } from '../services/access-control.js';
+import { validate, createPatientSchema } from '../middleware/validation.js';
 
 const router = Router();
-
-/**
- * Check if a medecin user has access to a specific patient.
- * Admin, comptable, reception, laborantin have access to all patients.
- * Medecin only has access to patients they've consulted or been attributed.
- * Uses patient_attributions FK (not name matching).
- */
-async function canAccessPatient(user: { id: number; role: string }, patientId: number): Promise<boolean> {
-  if (user.role !== 'medecin') return true;
-  const result = await query(
-    `SELECT 1 FROM patient_attributions WHERE medecin_user_id = $1 AND patient_id = $2 AND actif = TRUE
-     UNION ALL
-     SELECT 1 FROM consultations c JOIN medecins m ON c.medecin_id = m.id
-       JOIN users u ON u.nom = m.nom AND u.prenom = m.prenom AND u.id = $1
-       WHERE c.patient_id = $2
-     LIMIT 1`,
-    [user.id, patientId]
-  );
-  return result.rows.length > 0;
-}
 
 // Get all patients (with optional search)
 router.get('/', authenticate, async (req: AuthRequest, res: Response): Promise<void> => {
@@ -126,7 +108,7 @@ router.get('/:id', authenticate, async (req: AuthRequest, res: Response): Promis
 });
 
 // Create patient
-router.post('/', authenticate, authorize('admin', 'medecin', 'reception'), async (req: AuthRequest, res: Response): Promise<void> => {
+router.post('/', authenticate, authorize('admin', 'medecin', 'reception'), validate(createPatientSchema), async (req: AuthRequest, res: Response): Promise<void> => {
   try {
     const { nom, prenom, deuxieme_prenom, sexe, date_naissance, age_estime, lieu_naissance, nationalite, numero_identite, statut_matrimonial, groupe_sanguin, pays, province, ville, commune, quartier, adresse, profession, telephone, email, contact_urgence_nom, contact_urgence_relation, contact_urgence_telephone } = req.body;
     
