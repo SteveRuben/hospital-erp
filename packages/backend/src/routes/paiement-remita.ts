@@ -83,6 +83,7 @@ router.post('/collect', authenticate, async (req: AuthRequest, res: Response): P
 });
 
 // Webhook endpoint — Remita calls this to update transaction status
+// Idempotent: duplicate events are ignored
 router.post('/webhook', async (req: Request, res: Response): Promise<void> => {
   try {
     const { transactionId, externalId, transactionStatus, amount, phoneNumber } = req.body;
@@ -92,6 +93,19 @@ router.post('/webhook', async (req: Request, res: Response): Promise<void> => {
       res.status(400).json({ error: 'Missing transactionId or externalId' });
       return;
     }
+
+    // Idempotence check: skip if already processed
+    const eventId = `${transactionId || externalId}_${transactionStatus}`;
+    const existing = await query('SELECT id FROM webhook_events WHERE event_id = $1', [eventId]);
+    if (existing.rows.length > 0) {
+      console.log(`[REMITA WEBHOOK] Duplicate event ${eventId} — skipping`);
+      res.json({ received: true, duplicate: true });
+      return;
+    }
+
+    // Record the event for idempotence
+    await query('INSERT INTO webhook_events (event_id, source, payload) VALUES ($1, $2, $3) ON CONFLICT (event_id) DO NOTHING',
+      [eventId, 'remita', JSON.stringify(req.body).substring(0, 2000)]);
 
     // Find the payment by reference (transactionId)
     const ref = transactionId || externalId;

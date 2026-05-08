@@ -93,3 +93,43 @@ export const createPrescriptionSchema = z.object({
   date_debut: z.string().optional().nullable(),
   date_fin: z.string().optional().nullable(),
 });
+
+
+// === FACTURATION SCHEMAS ===
+
+export const createTarifSchema = z.object({
+  code: z.string().min(1).max(50).trim(),
+  libelle: z.string().min(1).max(200).trim(),
+  categorie: z.string().min(1).max(100).trim(),
+  montant: z.number().positive().max(50_000_000), // Max 50M XOF
+  service_id: z.number().int().positive().optional().nullable(),
+});
+
+export const createFactureSchema = z.object({
+  patient_id: z.number().int().positive(),
+  lignes: z.array(z.object({
+    tarif_id: z.number().int().positive().optional().nullable(),
+    libelle: z.string().min(1).max(200).trim(),
+    quantite: z.number().int().positive().max(1000),
+    prix_unitaire: z.number().positive().max(50_000_000),
+  })).min(1, 'Au moins une ligne requise'),
+  notes: z.string().max(1000).trim().optional().nullable(),
+});
+
+export const createPaiementSchema = z.object({
+  facture_id: z.number().int().positive(),
+  montant: z.number().positive().max(100_000_000), // Max 100M XOF
+  mode_paiement: z.enum(['especes', 'mobile_money', 'carte', 'virement', 'assurance']).optional(),
+  reference: z.string().max(100).trim().optional().nullable(),
+  notes: z.string().max(500).trim().optional().nullable(),
+});
+
+// === BUSINESS LIMITS ===
+export const BUSINESS_LIMITS = {
+  MAX_RECETTE_MONTANT: 100_000_000, // 100M XOF
+  MAX_DEPENSE_MONTANT: 100_000_000,
+  MAX_FACTURE_LIGNE_MONTANT: 50_000_000,
+  MAX_PAIEMENT_MONTANT: 100_000_000,
+  MAX_PRESCRIPTIONS_PER_DAY: 50,
+  MAX_CONSULTATIONS_PER_DAY: 100,
+};

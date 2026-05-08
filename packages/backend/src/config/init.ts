@@ -784,6 +784,29 @@ export const initDB = async (): Promise<void> => {
       ALTER TABLE users ADD COLUMN IF NOT EXISTS mfa_secret VARCHAR(255);
     `);
 
+    // Patient-medecin attribution (need-to-know access control)
+    await client.query(`
+      CREATE TABLE IF NOT EXISTS patient_attributions (
+        id SERIAL PRIMARY KEY,
+        patient_id INTEGER REFERENCES patients(id) ON DELETE CASCADE,
+        medecin_user_id INTEGER REFERENCES users(id) ON DELETE CASCADE,
+        date_attribution TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+        actif BOOLEAN DEFAULT TRUE,
+        UNIQUE(patient_id, medecin_user_id)
+      );
+    `);
+
+    // Webhook idempotence tracking
+    await client.query(`
+      CREATE TABLE IF NOT EXISTS webhook_events (
+        id SERIAL PRIMARY KEY,
+        event_id VARCHAR(100) UNIQUE NOT NULL,
+        source VARCHAR(50) NOT NULL,
+        payload TEXT,
+        processed_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+      );
+    `);
+
     // Protect audit_log from modification (WORM - write-once-read-many)
     await client.query(`
       CREATE OR REPLACE FUNCTION prevent_audit_modification()

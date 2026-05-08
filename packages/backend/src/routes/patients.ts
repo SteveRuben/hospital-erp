@@ -5,6 +5,25 @@ import { auditCreate, auditUpdate, auditDelete } from '../services/audit.js';
 
 const router = Router();
 
+/**
+ * Check if a medecin user has access to a specific patient.
+ * Admin, comptable, reception, laborantin have access to all patients.
+ * Medecin only has access to patients they've consulted or been attributed.
+ */
+async function canAccessPatient(user: { id: number; role: string }, patientId: number): Promise<boolean> {
+  if (user.role !== 'medecin') return true; // Non-medecin roles have full access
+  // Check if medecin has a consultation or attribution with this patient
+  const result = await query(
+    `SELECT 1 FROM (
+      SELECT patient_id FROM consultations WHERE medecin_id IN (SELECT id FROM medecins WHERE nom = (SELECT nom FROM users WHERE id = $1) AND prenom = (SELECT prenom FROM users WHERE id = $1))
+      UNION
+      SELECT patient_id FROM patient_attributions WHERE medecin_user_id = $1 AND actif = TRUE
+    ) sub WHERE patient_id = $2 LIMIT 1`,
+    [user.id, patientId]
+  );
+  return result.rows.length > 0;
+}
+
 // Get all patients (with optional search)
 router.get('/', authenticate, async (req: AuthRequest, res: Response): Promise<void> => {
   try {
@@ -81,10 +100,18 @@ router.get('/search/advanced', authenticate, async (req: AuthRequest, res: Respo
   } catch (err) { console.error('[ERROR] Advanced search:', err); res.status(500).json({ error: 'Erreur serveur' }); }
 });
 
-// Get single patient
+// Get single patient (with access control for medecins)
 router.get('/:id', authenticate, async (req: AuthRequest, res: Response): Promise<void> => {
   try {
-    const result = await query('SELECT * FROM patients WHERE id = $1', [req.params.id]);
+    const patientId = Number(req.params.id);
+    
+    // Access control: medecins can only see their own patients
+    if (!(await canAccessPatient(req.user!, patientId))) {
+      res.status(403).json({ error: 'Accès refusé — ce patient ne vous est pas attribué' });
+      return;
+    }
+
+    const result = await query('SELECT * FROM patients WHERE id = $1', [patientId]);
     
     if (result.rows.length === 0) {
       res.status(404).json({ error: 'Patient non trouvé' });

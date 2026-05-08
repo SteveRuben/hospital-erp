@@ -1,6 +1,7 @@
 import { Router, Response } from 'express';
 import { query } from '../config/db.js';
 import { authenticate, authorize, AuthRequest } from '../middleware/auth.js';
+import { validate, createTarifSchema, createFactureSchema, createPaiementSchema } from '../middleware/validation.js';
 import { auditCreate, auditUpdate } from '../services/audit.js';
 
 const router = Router();
@@ -19,7 +20,7 @@ router.get('/tarifs', authenticate, async (req: AuthRequest, res: Response): Pro
   } catch (err) { res.status(500).json({ error: 'Erreur serveur' }); }
 });
 
-router.post('/tarifs', authenticate, authorize('admin', 'comptable'), async (req: AuthRequest, res: Response): Promise<void> => {
+router.post('/tarifs', authenticate, authorize('admin', 'comptable'), validate(createTarifSchema), async (req: AuthRequest, res: Response): Promise<void> => {
   try {
     const { code, libelle, categorie, montant, service_id } = req.body;
     const n = (v: unknown) => (v === '' || v === undefined) ? null : v;
@@ -62,7 +63,7 @@ router.get('/factures/:id', authenticate, async (req: AuthRequest, res: Response
   } catch (err) { res.status(500).json({ error: 'Erreur serveur' }); }
 });
 
-router.post('/factures', authenticate, authorize('admin', 'comptable'), async (req: AuthRequest, res: Response): Promise<void> => {
+router.post('/factures', authenticate, authorize('admin', 'comptable'), validate(createFactureSchema), async (req: AuthRequest, res: Response): Promise<void> => {
   try {
     const { patient_id, lignes, notes } = req.body;
     // Generate invoice number
@@ -83,7 +84,7 @@ router.post('/factures', authenticate, authorize('admin', 'comptable'), async (r
 });
 
 // === PAIEMENTS ===
-router.post('/paiements', authenticate, authorize('admin', 'comptable'), async (req: AuthRequest, res: Response): Promise<void> => {
+router.post('/paiements', authenticate, authorize('admin', 'comptable'), validate(createPaiementSchema), async (req: AuthRequest, res: Response): Promise<void> => {
   try {
     const { facture_id, montant, mode_paiement, reference, notes } = req.body;
     const n = (v: unknown) => (v === '' || v === undefined) ? null : v;
