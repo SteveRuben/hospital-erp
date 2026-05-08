@@ -780,6 +780,8 @@ export const initDB = async (): Promise<void> => {
       ALTER TABLE depenses ADD COLUMN IF NOT EXISTS annulee BOOLEAN DEFAULT FALSE;
       ALTER TABLE depenses ADD COLUMN IF NOT EXISTS date_annulation TIMESTAMP;
       ALTER TABLE depenses ADD COLUMN IF NOT EXISTS annulee_par INTEGER REFERENCES users(id);
+      ALTER TABLE users ADD COLUMN IF NOT EXISTS mfa_enabled BOOLEAN DEFAULT FALSE;
+      ALTER TABLE users ADD COLUMN IF NOT EXISTS mfa_secret VARCHAR(255);
     `);
 
     console.log('Database initialized successfully');

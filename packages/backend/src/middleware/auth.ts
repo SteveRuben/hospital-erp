@@ -1,6 +1,7 @@
 import { Request, Response, NextFunction } from 'express';
 import jwt from 'jsonwebtoken';
 import { UserRole, JWTPayload } from '../types/index.js';
+import { isTokenBlacklisted, recordActivity, isSessionExpired } from '../services/session.js';
 
 const JWT_SECRET = process.env.JWT_SECRET || 'hospital_secret_key_2024';
 const JWT_ALGORITHM = 'HS256' as const;
@@ -13,9 +14,10 @@ if (process.env.NODE_ENV === 'production' && JWT_SECRET === 'hospital_secret_key
 
 export interface AuthRequest extends Request {
   user?: JWTPayload;
+  token?: string;
 }
 
-// OWASP A01 - Authentication
+// OWASP A01 - Authentication with session management
 export const authenticate = (req: AuthRequest, res: Response, next: NextFunction): void => {
   const authHeader = req.headers.authorization;
   
@@ -24,7 +26,6 @@ export const authenticate = (req: AuthRequest, res: Response, next: NextFunction
   if (authHeader?.startsWith('Bearer ')) {
     token = authHeader.substring(7);
   }
-  // SECURITY: Removed query string token support (leaks in logs, referrers, browser history)
   
   if (!token) {
     res.status(401).json({ error: 'Token requis' });
@@ -33,6 +34,12 @@ export const authenticate = (req: AuthRequest, res: Response, next: NextFunction
   
   if (token.split('.').length !== 3) {
     res.status(401).json({ error: 'Format de token invalide' });
+    return;
+  }
+
+  // Check token blacklist (revoked tokens)
+  if (isTokenBlacklisted(token)) {
+    res.status(401).json({ error: 'Session expirée, veuillez vous reconnecter' });
     return;
   }
 
@@ -48,8 +55,18 @@ export const authenticate = (req: AuthRequest, res: Response, next: NextFunction
       res.status(401).json({ error: 'Token malformé' });
       return;
     }
+
+    // Server-side session timeout check
+    if (isSessionExpired(decoded.id)) {
+      res.status(401).json({ error: 'Session expirée par inactivité' });
+      return;
+    }
+    
+    // Record activity for session timeout tracking
+    recordActivity(decoded.id);
     
     req.user = decoded;
+    req.token = token;
     next();
   } catch (err) {
     if (err instanceof jwt.TokenExpiredError) {
@@ -80,7 +97,7 @@ export const generateToken = (user: { id: number; username: string; role: UserRo
     JWT_SECRET,
     { 
       algorithm: JWT_ALGORITHM,
-      expiresIn: '8h', // Reduced from 24h for security
+      expiresIn: '8h',
       issuer: 'hospital-erp',
       audience: 'hospital-erp-frontend',
     }

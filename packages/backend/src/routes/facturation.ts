@@ -1,6 +1,7 @@
 import { Router, Response } from 'express';
 import { query } from '../config/db.js';
 import { authenticate, authorize, AuthRequest } from '../middleware/auth.js';
+import { auditCreate, auditUpdate } from '../services/audit.js';
 
 const router = Router();
 

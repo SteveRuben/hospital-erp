@@ -1,6 +1,7 @@
 import { Router, Response } from 'express';
 import { query } from '../config/db.js';
 import { authenticate, authorize, AuthRequest } from '../middleware/auth.js';
+import { auditCreate, auditUpdate, auditDelete } from '../services/audit.js';
 
 const router = Router();
 
@@ -115,6 +116,8 @@ router.post('/', authenticate, authorize('admin', 'medecin', 'reception'), async
        RETURNING *`,
       [nom, prenom, n(deuxieme_prenom), n(sexe), n(date_naissance), n(age_estime), n(lieu_naissance), n(nationalite), n(numero_identite), n(statut_matrimonial), n(groupe_sanguin), n(pays), n(province), n(ville), n(commune), n(quartier), n(adresse), n(profession), n(telephone), n(email), n(contact_urgence_nom), n(contact_urgence_relation), n(contact_urgence_telephone)]
     );
+
+    auditCreate(req.user!.id, 'patients', result.rows[0].id, `Created patient ${prenom} ${nom}`);
     
     res.status(201).json(result.rows[0]);
   } catch (err) {
@@ -130,6 +133,11 @@ router.put('/:id', authenticate, authorize('admin', 'medecin', 'reception'), asy
     
     const n = (v: unknown) => (v === '' || v === undefined) ? null : v;
 
+    // Fetch before state for audit
+    const beforeResult = await query('SELECT * FROM patients WHERE id = $1', [req.params.id]);
+    if (beforeResult.rows.length === 0) { res.status(404).json({ error: 'Patient non trouvé' }); return; }
+    const before = beforeResult.rows[0];
+
     const result = await query(
       `UPDATE patients SET nom=$1, prenom=$2, deuxieme_prenom=$3, sexe=$4, date_naissance=$5, age_estime=$6, lieu_naissance=$7, nationalite=$8, numero_identite=$9, statut_matrimonial=$10, groupe_sanguin=$11, pays=$12, province=$13, ville=$14, commune=$15, quartier=$16, adresse=$17, profession=$18, telephone=$19, email=$20, contact_urgence_nom=$21, contact_urgence_relation=$22, contact_urgence_telephone=$23
        WHERE id = $24 
@@ -141,6 +149,8 @@ router.put('/:id', authenticate, authorize('admin', 'medecin', 'reception'), asy
       res.status(404).json({ error: 'Patient non trouvé' });
       return;
     }
+
+    auditUpdate(req.user!.id, 'patients', Number(req.params.id), before, result.rows[0]);
     
     res.json(result.rows[0]);
   } catch (err) {
@@ -161,6 +171,8 @@ router.delete('/:id', authenticate, authorize('admin'), async (req: AuthRequest,
       res.status(404).json({ error: 'Patient non trouvé' });
       return;
     }
+
+    auditDelete(req.user!.id, 'patients', Number(req.params.id), `Archived patient ${result.rows[0].prenom} ${result.rows[0].nom}`);
     
     res.json({ message: 'Patient archivé' });
   } catch (err) {

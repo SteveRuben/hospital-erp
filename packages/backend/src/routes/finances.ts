@@ -1,6 +1,7 @@
 import { Router, Response } from 'express';
 import { query } from '../config/db.js';
 import { authenticate, authorize, AuthRequest } from '../middleware/auth.js';
+import { auditCreate, auditDelete } from '../services/audit.js';
 
 const router = Router();
 
@@ -26,6 +27,7 @@ router.post('/recettes', authenticate, authorize('admin', 'comptable'), async (r
   try {
     const { patient_id, service_id, type_acte, montant, mode_paiement, description } = req.body;
     const result = await query(`INSERT INTO recettes (patient_id, service_id, type_acte, montant, mode_paiement, description) VALUES ($1, $2, $3, $4, $5, $6) RETURNING *`, [patient_id, service_id, type_acte, montant, mode_paiement, description]);
+    auditCreate(req.user!.id, 'recettes', result.rows[0].id, `Recette ${type_acte}: ${montant} XAF`);
     res.status(201).json(result.rows[0]);
   } catch (err) { res.status(500).json({ error: 'Erreur serveur' }); }
 });
@@ -37,6 +39,7 @@ router.delete('/recettes/:id', authenticate, authorize('admin', 'comptable'), as
     if (existing.rows.length === 0) { res.status(404).json({ error: 'Recette non trouvée' }); return; }
     if (existing.rows[0].annulee) { res.status(400).json({ error: 'Recette déjà annulée' }); return; }
     await query('UPDATE recettes SET annulee = TRUE, date_annulation = NOW(), annulee_par = $1 WHERE id = $2', [req.user!.id, req.params.id]);
+    auditDelete(req.user!.id, 'recettes', Number(req.params.id), 'Recette annulée (contre-passation)');
     res.json({ message: 'Recette annulée (contre-passation)' });
   } catch (err) { res.status(500).json({ error: 'Erreur serveur' }); }
 });
@@ -62,6 +65,7 @@ router.post('/depenses', authenticate, authorize('admin', 'comptable'), async (r
   try {
     const { type_depense, nature, montant, fournisseur, description, date_depense } = req.body;
     const result = await query(`INSERT INTO depenses (type_depense, nature, montant, fournisseur, description, date_depense) VALUES ($1, $2, $3, $4, $5, $6) RETURNING *`, [type_depense, nature, montant, fournisseur, description, date_depense]);
+    auditCreate(req.user!.id, 'depenses', result.rows[0].id, `Dépense ${type_depense}: ${montant} XAF`);
     res.status(201).json(result.rows[0]);
   } catch (err) { res.status(500).json({ error: 'Erreur serveur' }); }
 });
@@ -73,6 +77,7 @@ router.delete('/depenses/:id', authenticate, authorize('admin'), async (req: Aut
     if (existing.rows.length === 0) { res.status(404).json({ error: 'Dépense non trouvée' }); return; }
     if (existing.rows[0].annulee) { res.status(400).json({ error: 'Dépense déjà annulée' }); return; }
     await query('UPDATE depenses SET annulee = TRUE, date_annulation = NOW(), annulee_par = $1 WHERE id = $2', [req.user!.id, req.params.id]);
+    auditDelete(req.user!.id, 'depenses', Number(req.params.id), 'Dépense annulée (contre-passation)');
     res.json({ message: 'Dépense annulée (contre-passation)' });
   } catch (err) { res.status(500).json({ error: 'Erreur serveur' }); }
 });

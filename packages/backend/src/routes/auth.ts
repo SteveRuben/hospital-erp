@@ -5,21 +5,37 @@ import { authenticate, authorize, generateToken, AuthRequest } from '../middlewa
 import { validate, loginSchema, createUserSchema } from '../middleware/validation.js';
 import { validatePassword } from '../middleware/security.js';
 import { UserRole } from '../types/index.js';
+import { blacklistToken, invalidateUserSessions, recordActivity } from '../services/session.js';
+import { logAudit } from '../services/audit.js';
+import mfa from '../services/mfa.js';
 
 const router = Router();
 
 // OWASP A07 - Bcrypt cost factor (12 rounds)
 const BCRYPT_ROUNDS = 12;
 
-// Login
+// Common passwords list (top 100 most common — check against these)
+const COMMON_PASSWORDS = new Set([
+  'password', '123456', '12345678', 'qwerty', 'abc123', 'monkey', '1234567',
+  'letmein', 'trustno1', 'dragon', 'baseball', 'iloveyou', 'master', 'sunshine',
+  'ashley', 'michael', 'shadow', '123123', '654321', 'superman', 'qazwsx',
+  'football', 'password1', 'password123', 'admin123', 'admin1234', 'welcome',
+  'welcome1', 'p@ssw0rd', 'passw0rd', 'changeme', 'hospital', 'hospital123',
+  'medecin', 'medecin123', 'docteur', 'docteur123', '12345', '1234567890',
+]);
+
+function isCommonPassword(password: string): boolean {
+  return COMMON_PASSWORDS.has(password.toLowerCase());
+}
+
+// Login — with MFA support
 router.post('/login', validate(loginSchema), async (req: Request, res: Response): Promise<void> => {
   try {
-    const { username, password } = req.body;
+    const { username, password, mfa_token } = req.body;
 
     const result = await query('SELECT * FROM users WHERE username = $1', [username]);
     
     if (result.rows.length === 0) {
-      // OWASP A07 - Constant time response to prevent user enumeration
       await bcrypt.hash('dummy', BCRYPT_ROUNDS);
       res.status(401).json({ error: 'Identifiants invalides' });
       return;
@@ -29,16 +45,30 @@ router.post('/login', validate(loginSchema), async (req: Request, res: Response)
     const validPassword = await bcrypt.compare(password, user.password);
     
     if (!validPassword) {
-      // OWASP A09 - Log failed login attempts
       console.warn(`[SECURITY] Failed login attempt for user: ${username} from IP: ${req.ip}`);
+      await logAudit({ userId: user.id, action: 'login', tableName: 'users', recordId: user.id, details: `Failed login from IP: ${req.ip}`, ip: req.ip || undefined });
       res.status(401).json({ error: 'Identifiants invalides' });
       return;
     }
+
+    // MFA check: if user has MFA enabled, require token
+    if (user.mfa_enabled) {
+      if (!mfa_token) {
+        // Return partial success — frontend should show MFA input
+        res.json({ mfa_required: true, user_id: user.id });
+        return;
+      }
+      const secret = await mfa.getMfaSecret(user.id);
+      if (!secret || !mfa.verifyToken(mfa_token, secret)) {
+        res.status(401).json({ error: 'Code MFA invalide' });
+        return;
+      }
+    }
     
     const token = generateToken(user);
+    recordActivity(user.id);
     
-    // OWASP A09 - Log successful login
-    console.log(`[AUDIT] Successful login: user=${username} ip=${req.ip}`);
+    await logAudit({ userId: user.id, action: 'login', tableName: 'users', recordId: user.id, details: `Successful login from IP: ${req.ip}`, ip: req.ip || undefined });
     
     res.json({ 
       token, 
@@ -49,6 +79,7 @@ router.post('/login', validate(loginSchema), async (req: Request, res: Response)
         nom: user.nom, 
         prenom: user.prenom,
         must_change_password: user.must_change_password ?? false,
+        mfa_enabled: user.mfa_enabled ?? false,
       } 
     });
   } catch (err) {
@@ -57,11 +88,92 @@ router.post('/login', validate(loginSchema), async (req: Request, res: Response)
   }
 });
 
+// Logout — blacklist current token
+router.post('/logout', authenticate, async (req: AuthRequest, res: Response): Promise<void> => {
+  try {
+    if (req.token) {
+      // Blacklist for remaining token lifetime (max 8h)
+      blacklistToken(req.token, 8 * 60 * 60 * 1000);
+    }
+    invalidateUserSessions(req.user!.id);
+    await logAudit({ userId: req.user!.id, action: 'logout', tableName: 'users', recordId: req.user!.id });
+    res.json({ message: 'Déconnexion réussie' });
+  } catch (err) {
+    res.status(500).json({ error: 'Erreur serveur' });
+  }
+});
+
+// MFA Setup — generate secret and QR code
+router.post('/mfa/setup', authenticate, async (req: AuthRequest, res: Response): Promise<void> => {
+  try {
+    const alreadyEnabled = await mfa.isMfaEnabled(req.user!.id);
+    if (alreadyEnabled) {
+      res.status(400).json({ error: 'MFA déjà activé' });
+      return;
+    }
+
+    const { secret, otpauthUrl } = mfa.generateSecret(req.user!.username);
+    const qrCode = await mfa.generateQRCode(otpauthUrl);
+
+    // Store secret temporarily (not yet confirmed)
+    await query('UPDATE users SET mfa_secret = $1 WHERE id = $2', [secret, req.user!.id]);
+
+    res.json({ secret, qrCode, otpauthUrl });
+  } catch (err) {
+    res.status(500).json({ error: 'Erreur serveur' });
+  }
+});
+
+// MFA Verify — confirm setup with a valid token
+router.post('/mfa/verify', authenticate, async (req: AuthRequest, res: Response): Promise<void> => {
+  try {
+    const { token } = req.body;
+    if (!token) { res.status(400).json({ error: 'Code MFA requis' }); return; }
+
+    const secret = await mfa.getMfaSecret(req.user!.id);
+    if (!secret) { res.status(400).json({ error: 'MFA non configuré' }); return; }
+
+    if (!mfa.verifyToken(token, secret)) {
+      res.status(401).json({ error: 'Code MFA invalide' });
+      return;
+    }
+
+    await mfa.enableMfa(req.user!.id, secret);
+    await logAudit({ userId: req.user!.id, action: 'mfa_setup', tableName: 'users', recordId: req.user!.id, details: 'MFA enabled' });
+
+    res.json({ message: 'MFA activé avec succès' });
+  } catch (err) {
+    res.status(500).json({ error: 'Erreur serveur' });
+  }
+});
+
+// MFA Disable (admin or self)
+router.post('/mfa/disable', authenticate, async (req: AuthRequest, res: Response): Promise<void> => {
+  try {
+    const { user_id, password } = req.body;
+    const targetId = user_id && req.user!.role === 'admin' ? user_id : req.user!.id;
+
+    // Require password confirmation
+    if (!password) { res.status(400).json({ error: 'Mot de passe requis pour désactiver MFA' }); return; }
+    const userResult = await query('SELECT password FROM users WHERE id = $1', [req.user!.id]);
+    if (userResult.rows.length === 0) { res.status(404).json({ error: 'Utilisateur non trouvé' }); return; }
+    const valid = await bcrypt.compare(password, userResult.rows[0].password);
+    if (!valid) { res.status(401).json({ error: 'Mot de passe incorrect' }); return; }
+
+    await mfa.disableMfa(targetId);
+    await logAudit({ userId: req.user!.id, action: 'mfa_setup', tableName: 'users', recordId: targetId, details: 'MFA disabled' });
+
+    res.json({ message: 'MFA désactivé' });
+  } catch (err) {
+    res.status(500).json({ error: 'Erreur serveur' });
+  }
+});
+
 // Get current user
 router.get('/me', authenticate, async (req: AuthRequest, res: Response): Promise<void> => {
   try {
     const result = await query(
-      'SELECT id, username, role, nom, prenom, telephone FROM users WHERE id = $1', 
+      'SELECT id, username, role, nom, prenom, telephone, mfa_enabled FROM users WHERE id = $1', 
       [req.user!.id]
     );
     
@@ -77,14 +189,18 @@ router.get('/me', authenticate, async (req: AuthRequest, res: Response): Promise
 });
 
 // Create user (admin only)
-router.post('/users', authenticate, authorize('admin'), validate(createUserSchema), async (req: Request, res: Response): Promise<void> => {
+router.post('/users', authenticate, authorize('admin'), validate(createUserSchema), async (req: AuthRequest, res: Response): Promise<void> => {
   try {
     const { username, password, role, nom, prenom, telephone } = req.body;
     
-    // OWASP A07 - Password policy enforcement
     const passwordCheck = validatePassword(password);
     if (!passwordCheck.valid) {
       res.status(400).json({ error: passwordCheck.message });
+      return;
+    }
+
+    if (isCommonPassword(password)) {
+      res.status(400).json({ error: 'Ce mot de passe est trop courant, choisissez-en un plus sûr' });
       return;
     }
 
@@ -96,6 +212,8 @@ router.post('/users', authenticate, authorize('admin'), validate(createUserSchem
        RETURNING id, username, role, nom, prenom`,
       [username, hashedPassword, role, nom, prenom, telephone]
     );
+    
+    await logAudit({ userId: req.user!.id, action: 'create', tableName: 'users', recordId: result.rows[0].id, details: `Created user ${username} (${role})` });
     
     res.status(201).json(result.rows[0]);
   } catch (err: unknown) {
@@ -111,7 +229,7 @@ router.post('/users', authenticate, authorize('admin'), validate(createUserSchem
 router.get('/users', authenticate, authorize('admin'), async (req: Request, res: Response): Promise<void> => {
   try {
     const result = await query(
-      'SELECT id, username, role, nom, prenom, telephone, created_at FROM users ORDER BY created_at DESC'
+      'SELECT id, username, role, nom, prenom, telephone, mfa_enabled, created_at FROM users ORDER BY created_at DESC'
     );
     res.json(result.rows);
   } catch (err) {
@@ -120,21 +238,21 @@ router.get('/users', authenticate, authorize('admin'), async (req: Request, res:
 });
 
 // Update user
-router.put('/users/:id', authenticate, authorize('admin'), async (req: Request, res: Response): Promise<void> => {
+router.put('/users/:id', authenticate, authorize('admin'), async (req: AuthRequest, res: Response): Promise<void> => {
   try {
     const { id } = req.params;
     const { nom, prenom, telephone, role } = req.body;
+
+    const before = await query('SELECT nom, prenom, telephone, role FROM users WHERE id = $1', [id]);
+    if (before.rows.length === 0) { res.status(404).json({ error: 'Utilisateur non trouvé' }); return; }
     
     const result = await query(
       `UPDATE users SET nom = $1, prenom = $2, telephone = $3, role = $4 
        WHERE id = $5 RETURNING id, username, role, nom, prenom, telephone`,
       [nom, prenom, telephone, role, id]
     );
-    
-    if (result.rows.length === 0) {
-      res.status(404).json({ error: 'Utilisateur non trouvé' });
-      return;
-    }
+
+    await logAudit({ userId: req.user!.id, action: 'update', tableName: 'users', recordId: Number(id), before: before.rows[0], after: { nom, prenom, telephone, role } });
     
     res.json(result.rows[0]);
   } catch (err) {
@@ -143,16 +261,17 @@ router.put('/users/:id', authenticate, authorize('admin'), async (req: Request, 
 });
 
 // Delete user
-router.delete('/users/:id', authenticate, authorize('admin'), async (req: Request, res: Response): Promise<void> => {
+router.delete('/users/:id', authenticate, authorize('admin'), async (req: AuthRequest, res: Response): Promise<void> => {
   try {
     const { id } = req.params;
-    const result = await query('DELETE FROM users WHERE id = $1 RETURNING id', [id]);
+    const result = await query('DELETE FROM users WHERE id = $1 RETURNING id, username', [id]);
     if (result.rows.length === 0) { res.status(404).json({ error: 'Utilisateur non trouvé' }); return; }
+    await logAudit({ userId: req.user!.id, action: 'delete', tableName: 'users', recordId: Number(id), details: `Deleted user ${result.rows[0].username}` });
     res.json({ message: 'Utilisateur supprimé' });
   } catch (err) { res.status(500).json({ error: 'Erreur serveur' }); }
 });
 
-// Impersonate user (admin only) — switch to another user's profile
+// Impersonate user (admin only)
 router.post('/impersonate/:id', authenticate, authorize('admin'), async (req: AuthRequest, res: Response): Promise<void> => {
   try {
     const targetUser = await query('SELECT id, username, role, nom, prenom FROM users WHERE id = $1', [req.params.id]);
@@ -161,12 +280,7 @@ router.post('/impersonate/:id', authenticate, authorize('admin'), async (req: Au
     const target = targetUser.rows[0];
     const token = generateToken(target);
 
-    // OWASP A09 — Audit log impersonation
-    console.warn(`[AUDIT][IMPERSONATE] Admin ${req.user!.username} (id:${req.user!.id}) switched to ${target.username} (id:${target.id}) from IP: ${req.ip}`);
-    await query(
-      `INSERT INTO audit_log (user_id, action, table_name, record_id, details) VALUES ($1, $2, $3, $4, $5)`,
-      [req.user!.id, 'impersonate', 'users', target.id, `Admin ${req.user!.username} impersonated ${target.username} (${target.role})`]
-    );
+    await logAudit({ userId: req.user!.id, action: 'impersonate', tableName: 'users', recordId: target.id, details: `Admin ${req.user!.username} impersonated ${target.username} (${target.role})` });
 
     res.json({
       token,
@@ -176,15 +290,12 @@ router.post('/impersonate/:id', authenticate, authorize('admin'), async (req: Au
   } catch (err) { console.error(err); res.status(500).json({ error: 'Erreur serveur' }); }
 });
 
-// Stop impersonation — switch back to admin
-// SECURITY: Only allow if the request includes a valid admin_id that matches an actual admin
-// AND the current session was initiated via impersonation (tracked via audit_log)
+// Stop impersonation
 router.post('/stop-impersonate', authenticate, async (req: AuthRequest, res: Response): Promise<void> => {
   try {
     const { admin_id } = req.body;
     if (!admin_id) { res.status(400).json({ error: 'admin_id requis' }); return; }
 
-    // Verify that admin_id actually impersonated the current user (check audit_log)
     const impersonationCheck = await query(
       `SELECT id FROM audit_log WHERE user_id = $1 AND action = 'impersonate' AND record_id = $2 ORDER BY created_at DESC LIMIT 1`,
       [admin_id, req.user!.id]
@@ -200,17 +311,13 @@ router.post('/stop-impersonate', authenticate, async (req: AuthRequest, res: Res
     const admin = adminUser.rows[0];
     const token = generateToken(admin);
 
-    console.log(`[AUDIT][IMPERSONATE] Admin ${admin.username} stopped impersonation, back to admin`);
-    await query(
-      `INSERT INTO audit_log (user_id, action, table_name, record_id, details) VALUES ($1, $2, $3, $4, $5)`,
-      [admin.id, 'stop_impersonate', 'users', admin.id, `Admin ${admin.username} stopped impersonation`]
-    );
+    await logAudit({ userId: admin.id, action: 'stop_impersonate' as any, tableName: 'users', recordId: admin.id, details: `Admin ${admin.username} stopped impersonation` });
 
     res.json({ token, user: { id: admin.id, username: admin.username, role: admin.role, nom: admin.nom, prenom: admin.prenom } });
   } catch (err) { res.status(500).json({ error: 'Erreur serveur' }); }
 });
 
-// Change password
+// Change password — with common password check + token invalidation
 router.post('/change-password', authenticate, async (req: AuthRequest, res: Response): Promise<void> => {
   try {
     const { old_password, new_password } = req.body;
@@ -225,11 +332,23 @@ router.post('/change-password', authenticate, async (req: AuthRequest, res: Resp
     const passwordCheck = validatePassword(new_password);
     if (!passwordCheck.valid) { res.status(400).json({ error: passwordCheck.message }); return; }
 
+    if (isCommonPassword(new_password)) {
+      res.status(400).json({ error: 'Ce mot de passe est trop courant, choisissez-en un plus sûr' });
+      return;
+    }
+
     const hashed = await bcrypt.hash(new_password, BCRYPT_ROUNDS);
     await query('UPDATE users SET password = $1, must_change_password = FALSE WHERE id = $2', [hashed, req.user!.id]);
 
-    console.log(`[AUDIT] Password changed: user=${req.user!.username}`);
-    res.json({ message: 'Mot de passe modifié' });
+    // Invalidate all existing sessions for this user
+    invalidateUserSessions(req.user!.id);
+    if (req.token) blacklistToken(req.token, 8 * 60 * 60 * 1000);
+
+    await logAudit({ userId: req.user!.id, action: 'password_change', tableName: 'users', recordId: req.user!.id });
+
+    // Generate new token
+    const newToken = generateToken({ id: req.user!.id, username: req.user!.username, role: req.user!.role });
+    res.json({ message: 'Mot de passe modifié', token: newToken });
   } catch (err) { res.status(500).json({ error: 'Erreur serveur' }); }
 });
 

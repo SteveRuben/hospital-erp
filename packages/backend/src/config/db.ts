@@ -14,7 +14,8 @@ export const query = async (text: string, params?: unknown[]) => {
   const start = Date.now();
   const res = await pool.query(text, params);
   const duration = Date.now() - start;
-  if (process.env.NODE_ENV !== 'test') {
+  // Only log in development, and never log query content (PHI protection)
+  if (process.env.NODE_ENV === 'development') {
     console.log('Executed query', { text: text.substring(0, 50), duration, rows: res.rowCount });
   }
   return res;

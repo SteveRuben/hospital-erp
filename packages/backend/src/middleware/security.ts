@@ -57,6 +57,15 @@ export const authRateLimit = rateLimit({
   },
 });
 
+// Rate limit for OTP verification (brute force protection)
+export const otpRateLimit = rateLimit({
+  windowMs: 5 * 60 * 1000, // 5 minutes
+  max: 5, // 5 attempts per 5 min
+  standardHeaders: true,
+  legacyHeaders: false,
+  message: { error: 'Trop de tentatives, réessayez dans 5 minutes' },
+});
+
 // OWASP A05 - Security Misconfiguration: security headers via helmet (in index.ts)
 
 // OWASP A07 - Identification and Authentication Failures: password policy
@@ -65,6 +74,7 @@ export const validatePassword = (password: string): { valid: boolean; message?: 
   if (!/[A-Z]/.test(password)) return { valid: false, message: 'Le mot de passe doit contenir au moins une majuscule' };
   if (!/[a-z]/.test(password)) return { valid: false, message: 'Le mot de passe doit contenir au moins une minuscule' };
   if (!/[0-9]/.test(password)) return { valid: false, message: 'Le mot de passe doit contenir au moins un chiffre' };
+  if (!/[!@#$%^&*()_+\-=\[\]{};':"\\|,.<>\/?]/.test(password)) return { valid: false, message: 'Le mot de passe doit contenir au moins un caractère spécial' };
   return { valid: true };
 };
 
