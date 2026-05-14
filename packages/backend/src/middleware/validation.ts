@@ -45,12 +45,27 @@ export const createUserSchema = z.object({
 export const createPatientSchema = z.object({
   nom: z.string().min(1).max(100).trim(),
   prenom: z.string().min(1).max(100).trim(),
+  deuxieme_prenom: z.string().max(100).trim().optional().nullable(),
+  sexe: z.enum(['M', 'F', 'autre']).optional().nullable(),
   date_naissance: z.string().optional().nullable(),
+  age_estime: z.number().int().min(0).max(150).optional().nullable(),
   lieu_naissance: z.string().max(100).trim().optional().nullable(),
+  nationalite: z.string().max(100).trim().optional().nullable(),
+  numero_identite: z.string().max(50).trim().optional().nullable(),
+  statut_matrimonial: z.enum(['celibataire', 'marie', 'divorce', 'veuf']).optional().nullable(),
+  groupe_sanguin: z.enum(['A+', 'A-', 'B+', 'B-', 'AB+', 'AB-', 'O+', 'O-']).optional().nullable(),
+  pays: z.string().max(100).trim().optional().nullable(),
+  province: z.string().max(100).trim().optional().nullable(),
+  ville: z.string().max(100).trim().optional().nullable(),
+  commune: z.string().max(100).trim().optional().nullable(),
+  quartier: z.string().max(100).trim().optional().nullable(),
   adresse: z.string().max(500).trim().optional().nullable(),
   profession: z.string().max(100).trim().optional().nullable(),
   telephone: z.string().max(20).trim().optional().nullable(),
-  contact_urgence: z.string().max(100).trim().optional().nullable(),
+  email: z.string().max(150).email().optional().nullable().or(z.literal('')),
+  contact_urgence_nom: z.string().max(100).trim().optional().nullable(),
+  contact_urgence_relation: z.string().max(50).trim().optional().nullable(),
+  contact_urgence_telephone: z.string().max(20).trim().optional().nullable(),
 });
 
 export const createRecetteSchema = z.object({

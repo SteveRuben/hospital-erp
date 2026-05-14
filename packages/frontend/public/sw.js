@@ -1,4 +1,4 @@
-const CACHE_NAME = 'hospital-erp-v1';
+const CACHE_NAME = 'hospital-erp-v2';
 const STATIC_ASSETS = ['/', '/index.html'];
 
 // Install — cache static assets

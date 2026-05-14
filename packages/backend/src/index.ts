@@ -180,8 +180,13 @@ app.get('/api/health', (req, res) => {
 const frontendPath = path.resolve(__dirname, '../../frontend/dist');
 app.use(express.static(frontendPath));
 
-// SPA fallback — all non-API routes serve index.html
+// SPA fallback — all non-API, non-asset routes serve index.html
 app.get('*', (req, res) => {
+  // Don't serve index.html for static asset requests (JS, CSS, images)
+  if (req.path.startsWith('/assets/') || req.path.match(/\.(js|css|map|png|jpg|svg|ico|woff|woff2|ttf)$/)) {
+    res.status(404).end();
+    return;
+  }
   res.sendFile(path.join(frontendPath, 'index.html'));
 });
 
