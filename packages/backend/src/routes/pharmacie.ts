@@ -1,10 +1,12 @@
 import { Router, Response } from 'express';
+import multer from 'multer';
 import { Prisma } from '@prisma/client';
 import { prisma } from '../config/db.js';
 import { authenticate, authorize, AuthRequest } from '../middleware/auth.js';
 import { validate, createMedicamentSchema, createStockSchema } from '../middleware/validation.js';
 
 const router = Router();
+const upload = multer({ storage: multer.memoryStorage(), limits: { fileSize: 5 * 1024 * 1024 } });
 
 // === MEDICAMENTS ===
 router.get('/medicaments', authenticate, async (req: AuthRequest, res: Response): Promise<void> => {
@@ -202,6 +204,163 @@ router.get('/alertes', authenticate, async (_req: AuthRequest, res: Response): P
     const bientotPerimes = allStock.filter(s => s.dateExpiration && s.dateExpiration >= now && s.dateExpiration <= in30Days).map(withName);
 
     res.json({ stockBas, rupture, perimes, bientotPerimes });
+  } catch (err) { res.status(500).json({ error: 'Erreur serveur' }); }
+});
+
+// Stock alerts — items below minimum threshold
+router.get('/alerts/stock-bas', authenticate, async (_req: AuthRequest, res: Response): Promise<void> => {
+  try {
+    const rows = await prisma.$queryRaw<Array<Record<string, unknown>>>`
+      SELECT s.id, s.quantite, s.quantite_min, s.lot, s.date_expiration,
+             m.nom as medicament_nom, m.forme, m.dci
+      FROM stock s
+      JOIN medicaments m ON s.medicament_id = m.id
+      WHERE s.quantite <= s.quantite_min AND m.actif = TRUE
+      ORDER BY (s.quantite::float / NULLIF(s.quantite_min, 0)) ASC
+    `;
+    res.json(rows);
+  } catch (err) { res.status(500).json({ error: 'Erreur serveur' }); }
+});
+
+// Expired or soon-to-expire stock (within 30 days)
+router.get('/alerts/expirations', authenticate, async (_req: AuthRequest, res: Response): Promise<void> => {
+  try {
+    const rows = await prisma.$queryRaw<Array<Record<string, unknown>>>`
+      SELECT s.id, s.quantite, s.lot, s.date_expiration,
+             m.nom as medicament_nom, m.forme
+      FROM stock s
+      JOIN medicaments m ON s.medicament_id = m.id
+      WHERE s.date_expiration IS NOT NULL
+        AND s.date_expiration <= CURRENT_DATE + INTERVAL '30 days'
+        AND s.quantite > 0
+      ORDER BY s.date_expiration ASC
+    `;
+    res.json(rows);
+  } catch (err) { res.status(500).json({ error: 'Erreur serveur' }); }
+});
+
+// Point de vente — vente directe sans ordonnance
+router.post('/vente', authenticate, async (req: AuthRequest, res: Response): Promise<void> => {
+  try {
+    const { items, patient_id } = req.body;
+    // items: Array<{ medicament_id: number; quantite: number; prix_unitaire?: number }>
+    if (!items || !Array.isArray(items) || items.length === 0) {
+      res.status(400).json({ error: 'Au moins un article requis' });
+      return;
+    }
+
+    let totalVente = 0;
+    const venteLignes: Array<{ medicament_nom: string; quantite: number; prix: number; montant: number }> = [];
+
+    for (const item of items) {
+      const { medicament_id, quantite } = item;
+      if (!medicament_id || !quantite || quantite <= 0) continue;
+
+      // Get medicament info + price
+      const med = await prisma.medicament.findUnique({ where: { id: Number(medicament_id) } });
+      if (!med) continue;
+
+      const prix = item.prix_unitaire || Number(med.prixUnitaire) || 0;
+      const montant = prix * quantite;
+      totalVente += montant;
+
+      // Decrement stock (FIFO — oldest lot first)
+      await prisma.$executeRaw`
+        UPDATE stock SET quantite = quantite - ${Number(quantite)}
+        WHERE id = (
+          SELECT id FROM stock
+          WHERE medicament_id = ${Number(medicament_id)} AND quantite >= ${Number(quantite)}
+          ORDER BY date_expiration ASC NULLS LAST, date_entree ASC
+          LIMIT 1
+        )
+      `;
+
+      // Record movement
+      await prisma.stockMouvement.create({
+        data: {
+          medicamentId: Number(medicament_id),
+          typeMouvement: 'sortie',
+          quantite: Number(quantite),
+          motif: `Vente directe${patient_id ? ` — Patient #${patient_id}` : ''}`,
+          userId: req.user!.id,
+        },
+      });
+
+      // Record dispensation if patient linked
+      if (patient_id) {
+        await prisma.dispensation.create({
+          data: {
+            patientId: Number(patient_id),
+            medicamentId: Number(medicament_id),
+            quantiteDelivree: Number(quantite),
+            dispenseurId: req.user!.id,
+          },
+        });
+      }
+
+      venteLignes.push({ medicament_nom: med.nom, quantite, prix, montant });
+    }
+
+    res.json({
+      success: true,
+      total: totalVente,
+      lignes: venteLignes,
+      date: new Date().toISOString(),
+      vendeur: req.user!.username,
+    });
+  } catch (err) {
+    console.error('[PHARMACIE] Vente error:', err);
+    res.status(500).json({ error: 'Erreur lors de la vente' });
+  }
+});
+
+// Import CSV de médicaments
+router.post('/import', authenticate, authorize('admin'), upload.single('file'), async (req: AuthRequest, res: Response): Promise<void> => {
+  try {
+    if (!req.file) { res.status(400).json({ error: 'Fichier CSV requis' }); return; }
+
+    const content = req.file.buffer.toString('utf-8');
+    const lines = content.split(/\r?\n/).filter(l => l.trim());
+
+    // Skip header
+    const startIdx = lines[0].toLowerCase().includes('nom') ? 1 : 0;
+    let imported = 0;
+    const errors: string[] = [];
+
+    for (let i = startIdx; i < lines.length; i++) {
+      const parts = lines[i].split(/[;,\t]/).map(s => s.trim().replace(/^"|"$/g, ''));
+      // Format: nom;dci;forme;dosage;categorie;prix;code_barre
+      if (parts.length < 1 || !parts[0]) { errors.push(`Ligne ${i + 1}: nom requis`); continue; }
+
+      const [nom, dci, forme, dosage, categorie, prixStr, codeBarre] = parts;
+
+      try {
+        await prisma.medicament.upsert({
+          where: { id: -1 }, // Force create (no unique field to match on except codeBarre)
+          update: {},
+          create: {
+            nom,
+            dci: dci || null,
+            forme: forme || null,
+            dosageStandard: dosage || null,
+            categorie: categorie || null,
+            prixUnitaire: prixStr ? parseFloat(prixStr) : null,
+            codeBarre: codeBarre || null,
+          },
+        });
+        // Use raw insert since upsert needs a unique field
+        await prisma.$executeRaw`
+          INSERT INTO medicaments (nom, dci, forme, dosage_standard, categorie, prix_unitaire, code_barre)
+          VALUES (${nom}, ${dci || null}, ${forme || null}, ${dosage || null}, ${categorie || null}, ${prixStr ? parseFloat(prixStr) : null}::decimal, ${codeBarre || null})
+          ON CONFLICT DO NOTHING
+        `;
+        imported++;
+      } catch {
+        errors.push(`Ligne ${i + 1}: erreur d'insertion`);
+      }
+    }
+
+    res.json({ imported, errors: errors.length > 0 ? errors : undefined, total: lines.length - startIdx });
   } catch (err) { res.status(500).json({ error: 'Erreur serveur' }); }
 });
 

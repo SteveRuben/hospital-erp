@@ -251,6 +251,10 @@ export const createMouvement = (data: unknown) => api.post('/pharmacie/mouvement
 export const getMouvements = () => api.get('/pharmacie/mouvements');
 export const createDispensation = (data: unknown) => api.post('/pharmacie/dispensations', data);
 export const getPharmacieAlertes = () => api.get('/pharmacie/alertes');
+export const getStockAlerts = () => api.get('/pharmacie/alerts/stock-bas');
+export const getExpirationAlerts = () => api.get('/pharmacie/alerts/expirations');
+export const venteDirecte = (data: { items: Array<{ medicament_id: number; quantite: number; prix_unitaire?: number }>; patient_id?: number }) => api.post('/pharmacie/vente', data);
+export const importMedicaments = (file: File) => { const fd = new FormData(); fd.append('file', file); return api.post('/pharmacie/import', fd, { headers: { 'Content-Type': 'multipart/form-data' } }); };
 
 // Patient merge
 export const getPatientDuplicates = () => api.get('/patients/duplicates');

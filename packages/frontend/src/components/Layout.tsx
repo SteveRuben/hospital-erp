@@ -1,7 +1,8 @@
 import { NavLink, useNavigate } from 'react-router-dom';
 import { useContext, useEffect, useState } from 'react';
 import { AuthContext } from '../App';
-import { getMyHabilitations, getMenuConfig } from '../services/api';
+import { getMyHabilitations, getMenuConfig, getStockAlerts } from '../services/api';
+import { useSnackbar } from './Snackbar';
 import PatientSearch from './PatientSearch';
 import LocaleSelector from './LocaleSelector';
 
@@ -10,11 +11,24 @@ interface MenuItemDB { id: number; groupe: string; groupe_ordre: number; module:
 export default function Layout({ children }: { children: React.ReactNode }) {
   const { user, logout, impersonating, stopImpersonate } = useContext(AuthContext);
   const navigate = useNavigate();
+  const { showSnackbar } = useSnackbar();
   const [menuGroups, setMenuGroups] = useState<Array<{ label: string; items: MenuItemDB[] }>>([]);
 
   useEffect(() => {
-    if (user) loadMenu();
+    if (user) {
+      loadMenu();
+      checkStockAlerts();
+    }
   }, [user]);
+
+  const checkStockAlerts = async () => {
+    try {
+      const { data } = await getStockAlerts();
+      if (Array.isArray(data) && data.length > 0) {
+        showSnackbar(`⚠️ ${data.length} médicament${data.length > 1 ? 's' : ''} en stock bas`, 'warning', 8000);
+      }
+    } catch { /* ignore if endpoint not available */ }
+  };
 
   const loadMenu = async () => {
     try {
