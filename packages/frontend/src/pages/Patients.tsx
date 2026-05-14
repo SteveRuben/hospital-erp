@@ -42,7 +42,7 @@ export default function Patients() {
           <tbody>
             {patients.map(p => (
               <tr key={p.id} style={{ cursor: 'pointer' }} onClick={() => navigate(`/app/patients/${p.id}`)}>
-                <td>#{p.id}</td>
+                <td>#{(p as any).referenceId || (p as any).reference_id || p.id}</td>
                 <td>{p.nom}</td>
                 <td>{p.prenom}</td>
                 <td>{(p as any).sexe === 'M' ? <span className="tag tag-blue">M</span> : (p as any).sexe === 'F' ? <span className="tag tag-purple">F</span> : '-'}</td>

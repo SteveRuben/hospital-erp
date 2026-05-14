@@ -142,10 +142,17 @@ model Medecin {
 
 model Service {
   id          Int       @id @default(autoincrement())
-  nom         String    @db.VarChar(100)
+  nom         String    @db.VarChar(200)
   description String?
+  parentId    Int?      @map("parent_id")
+  prix        Decimal?  @default(0) @db.Decimal(12, 2)
+  poids       Int?      @default(0)
+  code        String?   @db.VarChar(50)
+  actif       Boolean   @default(true)
   createdAt   DateTime  @default(now()) @map("created_at")
 
+  parent        Service?  @relation("ServiceHierarchy", fields: [parentId], references: [id])
+  children      Service[] @relation("ServiceHierarchy")
   consultations Consultation[]
   recettes      Recette[]
   rendezVous    RendezVous[]

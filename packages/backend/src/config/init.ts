@@ -62,8 +62,13 @@ export const initDB = async (): Promise<void> => {
       -- Services
       CREATE TABLE IF NOT EXISTS services (
         id SERIAL PRIMARY KEY,
-        nom VARCHAR(100) NOT NULL,
+        nom VARCHAR(200) NOT NULL,
         description TEXT,
+        parent_id INTEGER REFERENCES services(id) ON DELETE SET NULL,
+        prix DECIMAL(12,2) DEFAULT 0,
+        poids INTEGER DEFAULT 0,
+        code VARCHAR(50),
+        actif BOOLEAN DEFAULT TRUE,
         created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
       );
 
@@ -963,6 +968,11 @@ export const initDB = async (): Promise<void> => {
       ALTER TABLE depenses ADD COLUMN IF NOT EXISTS annulee_par INTEGER REFERENCES users(id);
       ALTER TABLE users ADD COLUMN IF NOT EXISTS mfa_enabled BOOLEAN DEFAULT FALSE;
       ALTER TABLE users ADD COLUMN IF NOT EXISTS mfa_secret VARCHAR(255);
+      ALTER TABLE services ADD COLUMN IF NOT EXISTS parent_id INTEGER REFERENCES services(id) ON DELETE SET NULL;
+      ALTER TABLE services ADD COLUMN IF NOT EXISTS prix DECIMAL(12,2) DEFAULT 0;
+      ALTER TABLE services ADD COLUMN IF NOT EXISTS poids INTEGER DEFAULT 0;
+      ALTER TABLE services ADD COLUMN IF NOT EXISTS code VARCHAR(50);
+      ALTER TABLE services ADD COLUMN IF NOT EXISTS actif BOOLEAN DEFAULT TRUE;
     `);
 
     // Patient-medecin attribution (need-to-know access control)

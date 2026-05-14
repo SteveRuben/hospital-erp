@@ -15,6 +15,7 @@ const CATEGORIES = [
   { code: 'type_examen', label: 'Types d\'examen labo', icon: 'bi-flask' },
   { code: 'type_programme', label: 'Types de programme', icon: 'bi-heart-pulse' },
   { code: 'concept_classe', label: 'Classes de concept', icon: 'bi-book-half' },
+  { code: 'medicaments', label: 'Médicaments (import)', icon: 'bi-capsule' },
 ];
 
 export default function Configuration() {
@@ -96,6 +97,19 @@ export default function Configuration() {
       setShowImport(false);
       loadItems();
     } catch { showSnackbar('Erreur d\'import', 'error'); }
+    e.target.value = '';
+  };
+
+  const handleImportMedicaments = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    const fd = new FormData();
+    fd.append('file', file);
+    try {
+      const { data } = await api.post('/pharmacie/import', fd, { headers: { 'Content-Type': 'multipart/form-data' } });
+      showSnackbar(`${data.imported} médicaments importés`, 'success');
+      setShowImport(false);
+    } catch { showSnackbar('Erreur d\'import médicaments', 'error'); }
     e.target.value = '';
   };
 
@@ -182,9 +196,13 @@ export default function Configuration() {
             </div>
 
             {showImport && (
-              <div className="notification notification-info mb-2" style={{ display: 'flex', alignItems: 'center', gap: '0.75rem' }}>
-                <span style={{ fontSize: '0.75rem' }}>Format CSV : <code>code;libelle;parent_code;ordre</code></span>
-                <input type="file" accept=".csv,.txt" onChange={handleImport} style={{ fontSize: '0.75rem' }} />
+              <div className="notification notification-info mb-2" style={{ display: 'flex', alignItems: 'center', gap: '0.75rem', flexWrap: 'wrap' }}>
+                <span style={{ fontSize: '0.75rem' }}>
+                  {selectedCat === 'medicaments'
+                    ? 'Format CSV médicaments : nom;dci;forme;dosage;categorie;prix;code_barre'
+                    : 'Format CSV : code;libelle;parent_code;ordre'}
+                </span>
+                <input type="file" accept=".csv,.txt" onChange={selectedCat === 'medicaments' ? handleImportMedicaments : handleImport} style={{ fontSize: '0.75rem' }} />
               </div>
             )}
 
@@ -197,6 +215,20 @@ export default function Configuration() {
             </div>
 
             {/* Items table */}
+            {selectedCat === 'medicaments' ? (
+              <div style={{ textAlign: 'center', padding: '2rem' }}>
+                <i className="bi bi-capsule" style={{ fontSize: '3rem', color: 'var(--cds-interactive)', display: 'block', marginBottom: '1rem' }}></i>
+                <h4 style={{ fontWeight: 600, marginBottom: '0.5rem' }}>Import de médicaments</h4>
+                <p className="text-muted" style={{ fontSize: '0.8125rem', marginBottom: '1rem' }}>Importez vos médicaments via un fichier CSV. Les médicaments sont gérés dans la page Pharmacie.</p>
+                <p style={{ fontSize: '0.75rem', background: 'var(--cds-ui-01)', padding: '0.75rem', borderRadius: '4px', fontFamily: 'monospace', marginBottom: '1rem' }}>
+                  Format : nom;dci;forme;dosage;categorie;prix;code_barre
+                </p>
+                <div className="d-flex gap-1" style={{ justifyContent: 'center' }}>
+                  <button className="btn-primary" onClick={() => setShowImport(true)}><i className="bi bi-upload"></i> Importer un fichier CSV</button>
+                  <a href="/app/pharmacie" className="btn-secondary"><i className="bi bi-capsule"></i> Aller à la Pharmacie</a>
+                </div>
+              </div>
+            ) : (
             <table className="data-table">
               <thead><tr><th>Code</th><th>Libellé</th><th>Parent</th><th>Actif</th><th>Défaut</th><th></th></tr></thead>
               <tbody>
@@ -221,6 +253,7 @@ export default function Configuration() {
                 {items.length === 0 && <tr><td colSpan={6} className="table-empty">Aucun élément dans cette catégorie</td></tr>}
               </tbody>
             </table>
+            )}
           </div>
         </div>
       )}
