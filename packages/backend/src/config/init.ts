@@ -884,18 +884,18 @@ export const initDB = async (): Promise<void> => {
       ['pays', 'SN', 'Sénégal'],
       ['pays', 'FR', 'France'],
       // Villes Cameroun
-      ['ville', 'DLA', 'Douala', true],
-      ['ville', 'YDE', 'Yaoundé'],
-      ['ville', 'BAF', 'Bafoussam'],
-      ['ville', 'BAM', 'Bamenda'],
-      ['ville', 'GAR', 'Garoua'],
-      ['ville', 'MAR', 'Maroua'],
-      ['ville', 'BER', 'Bertoua'],
-      ['ville', 'EBO', 'Ebolowa'],
-      ['ville', 'NGD', 'Ngaoundéré'],
-      ['ville', 'BUE', 'Buea'],
-      ['ville', 'LIM', 'Limbé'],
-      ['ville', 'KRI', 'Kribi'],
+      ['ville', 'DLA', 'Douala', true, 'CM'],
+      ['ville', 'YDE', 'Yaoundé', false, 'CM'],
+      ['ville', 'BAF', 'Bafoussam', false, 'CM'],
+      ['ville', 'BAM', 'Bamenda', false, 'CM'],
+      ['ville', 'GAR', 'Garoua', false, 'CM'],
+      ['ville', 'MAR', 'Maroua', false, 'CM'],
+      ['ville', 'BER', 'Bertoua', false, 'CM'],
+      ['ville', 'EBO', 'Ebolowa', false, 'CM'],
+      ['ville', 'NGD', 'Ngaoundéré', false, 'CM'],
+      ['ville', 'BUE', 'Buea', false, 'CM'],
+      ['ville', 'LIM', 'Limbé', false, 'CM'],
+      ['ville', 'KRI', 'Kribi', false, 'CM'],
       // Spécialités médicales
       ['specialite', 'MED_GEN', 'Médecine générale', true],
       ['specialite', 'CARDIO', 'Cardiologie'],
@@ -951,10 +951,10 @@ export const initDB = async (): Promise<void> => {
       ['concept_classe', 'REPONSE', 'Réponse'],
       ['concept_classe', 'MISC', 'Divers'],
     ];
-    for (const [categorie, code, libelle, parDefaut] of refLists) {
+    for (const [categorie, code, libelle, parDefaut, parentCode] of refLists) {
       await client.query(
-        'INSERT INTO reference_lists (categorie, code, libelle, par_defaut) SELECT $1::varchar, $2::varchar, $3::varchar, $4::boolean WHERE NOT EXISTS (SELECT 1 FROM reference_lists WHERE categorie = $1::varchar AND code = $2::varchar)',
-        [categorie, code, libelle, parDefaut || false]
+        'INSERT INTO reference_lists (categorie, code, libelle, par_defaut, parent_code) SELECT $1::varchar, $2::varchar, $3::varchar, $4::boolean, $5::varchar WHERE NOT EXISTS (SELECT 1 FROM reference_lists WHERE categorie = $1::varchar AND code = $2::varchar)',
+        [categorie, code, libelle, parDefaut || false, parentCode || null]
       );
     }
 
@@ -974,6 +974,9 @@ export const initDB = async (): Promise<void> => {
       ALTER TABLE services ADD COLUMN IF NOT EXISTS code VARCHAR(50);
       ALTER TABLE services ADD COLUMN IF NOT EXISTS actif BOOLEAN DEFAULT TRUE;
     `);
+
+    // Migration: link existing villes to Cameroun
+    await client.query("UPDATE reference_lists SET parent_code = 'CM' WHERE categorie = 'ville' AND parent_code IS NULL");
 
     // Patient-medecin attribution (need-to-know access control)
     await client.query(`

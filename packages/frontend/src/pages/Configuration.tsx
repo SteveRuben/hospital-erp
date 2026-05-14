@@ -249,8 +249,25 @@ function RefListSection({ items, selectedParent, setSelectedParent, newItem, set
   addItem: () => void; toggleItem: (code: string) => void; setDefault: (code: string) => void;
   deleteItem: (code: string) => void; loadItems: () => void; selectedCat: string; showSnackbar: (msg: string, type: any) => void;
 }) {
-  const parents = items.filter(i => !i.parent_code);
+  // For "ville", parents come from "pays" category
+  const crossCategoryParents: Record<string, string> = { ville: 'pays' };
+  const parentCategory = crossCategoryParents[selectedCat];
+
+  const [externalParents, setExternalParents] = useState<RefItem[]>([]);
+
+  useEffect(() => {
+    if (parentCategory) {
+      api.get(`/reference-lists/${parentCategory}`).then(({ data }) => setExternalParents(data)).catch(() => {});
+    }
+  }, [parentCategory]);
+
+  // Determine parents: either from same category (no parent_code) or from external category
+  const parents = parentCategory ? externalParents : items.filter(i => !i.parent_code);
   const childrenOf = (parentCode: string) => items.filter(i => i.parent_code === parentCode);
+
+  // For categories without hierarchy (no parents, no children), show flat list
+  const hasHierarchy = parentCategory || items.some(i => !!i.parent_code) || items.some(i => !i.parent_code && items.some(c => c.parent_code === i.code));
+  const flatItems = !hasHierarchy ? items : [];
 
   const [newChild, setNewChild] = useState({ code: '', libelle: '' });
 
@@ -258,20 +275,60 @@ function RefListSection({ items, selectedParent, setSelectedParent, newItem, set
     if (!selectedParent || !newChild.code || !newChild.libelle) { showSnackbar('Code et libellé requis', 'warning'); return; }
     try {
       await api.post(`/reference-lists/${selectedCat}`, { code: newChild.code.toUpperCase(), libelle: newChild.libelle, parent_code: selectedParent });
-      showSnackbar('Sous-type ajouté', 'success');
+      showSnackbar('Élément ajouté', 'success');
       setNewChild({ code: '', libelle: '' });
       loadItems();
     } catch (err: any) { showSnackbar(err.response?.data?.error || 'Erreur', 'error'); }
   };
 
+  // Flat list (no hierarchy — e.g. modes de paiement, spécialités without sub-types)
+  if (!hasHierarchy && flatItems.length >= 0) {
+    return (
+      <div>
+        <div className="d-flex gap-1 mb-2" style={{ padding: '0.75rem', background: 'var(--cds-ui-01)', borderRadius: '4px' }}>
+          <input type="text" className="form-input" value={newItem.code} onChange={e => setNewItem({ ...newItem, code: e.target.value.toUpperCase(), parent_code: '' })} placeholder="Code" style={{ width: '120px', fontSize: '0.8125rem' }} />
+          <input type="text" className="form-input" value={newItem.libelle} onChange={e => setNewItem({ ...newItem, libelle: e.target.value, parent_code: '' })} placeholder="Libellé" style={{ flex: 1, fontSize: '0.8125rem' }} />
+          <button className="btn-primary btn-sm" onClick={addItem}><i className="bi bi-plus"></i> Ajouter</button>
+        </div>
+        <table className="data-table" style={{ fontSize: '0.8125rem' }}>
+          <thead><tr><th>Code</th><th>Libellé</th><th>Actif</th><th>Défaut</th><th></th></tr></thead>
+          <tbody>
+            {items.map(item => (
+              <tr key={item.id} style={{ opacity: item.actif ? 1 : 0.5 }}>
+                <td style={{ fontFamily: 'monospace', fontSize: '0.6875rem' }}>{item.code}</td>
+                <td>{item.libelle}</td>
+                <td><button className={`btn-ghost btn-sm ${item.actif ? 'text-success' : 'text-danger'}`} onClick={() => toggleItem(item.code)} style={{ fontSize: '0.6875rem' }}>{item.actif ? '✓ Actif' : '✗ Inactif'}</button></td>
+                <td>{item.par_defaut ? <span className="tag tag-blue" style={{ fontSize: '0.5625rem' }}>Défaut</span> : <button className="btn-ghost btn-sm" onClick={() => setDefault(item.code)} style={{ fontSize: '0.625rem' }}>Définir</button>}</td>
+                <td><button className="btn-icon" onClick={() => deleteItem(item.code)}><i className="bi bi-trash"></i></button></td>
+              </tr>
+            ))}
+            {items.length === 0 && <tr><td colSpan={5} className="table-empty">Aucun élément</td></tr>}
+          </tbody>
+        </table>
+      </div>
+    );
+  }
+
   return (
     <div>
-      {/* Add new parent */}
-      <div className="d-flex gap-1 mb-2" style={{ padding: '0.75rem', background: 'var(--cds-ui-01)', borderRadius: '4px' }}>
-        <input type="text" className="form-input" value={newItem.code} onChange={e => setNewItem({ ...newItem, code: e.target.value.toUpperCase(), parent_code: '' })} placeholder="Code" style={{ width: '120px', fontSize: '0.8125rem' }} />
-        <input type="text" className="form-input" value={newItem.libelle} onChange={e => setNewItem({ ...newItem, libelle: e.target.value, parent_code: '' })} placeholder="Libellé du type principal" style={{ flex: 1, fontSize: '0.8125rem' }} />
-        <button className="btn-primary btn-sm" onClick={addItem}><i className="bi bi-plus"></i> Ajouter type</button>
-      </div>
+      {/* Add new item — for cross-category (ville), show parent selector */}
+      {parentCategory ? (
+        <div className="d-flex gap-1 mb-2" style={{ padding: '0.75rem', background: 'var(--cds-ui-01)', borderRadius: '4px' }}>
+          <select className="form-select" value={newItem.parent_code} onChange={e => setNewItem({ ...newItem, parent_code: e.target.value })} style={{ width: '150px', fontSize: '0.8125rem' }}>
+            <option value="">— Pays —</option>
+            {externalParents.map(p => <option key={p.code} value={p.code}>{p.libelle}</option>)}
+          </select>
+          <input type="text" className="form-input" value={newItem.code} onChange={e => setNewItem({ ...newItem, code: e.target.value.toUpperCase() })} placeholder="Code ville" style={{ width: '80px', fontSize: '0.8125rem' }} />
+          <input type="text" className="form-input" value={newItem.libelle} onChange={e => setNewItem({ ...newItem, libelle: e.target.value })} placeholder="Nom de la ville" style={{ flex: 1, fontSize: '0.8125rem' }} />
+          <button className="btn-primary btn-sm" onClick={addItem}><i className="bi bi-plus"></i> Ajouter</button>
+        </div>
+      ) : (
+        <div className="d-flex gap-1 mb-2" style={{ padding: '0.75rem', background: 'var(--cds-ui-01)', borderRadius: '4px' }}>
+          <input type="text" className="form-input" value={newItem.code} onChange={e => setNewItem({ ...newItem, code: e.target.value.toUpperCase(), parent_code: '' })} placeholder="Code" style={{ width: '120px', fontSize: '0.8125rem' }} />
+          <input type="text" className="form-input" value={newItem.libelle} onChange={e => setNewItem({ ...newItem, libelle: e.target.value, parent_code: '' })} placeholder="Libellé du type principal" style={{ flex: 1, fontSize: '0.8125rem' }} />
+          <button className="btn-primary btn-sm" onClick={addItem}><i className="bi bi-plus"></i> Ajouter type</button>
+        </div>
+      )}
 
       {/* Parents list */}
       <div style={{ display: 'grid', gap: '0.5rem' }}>
