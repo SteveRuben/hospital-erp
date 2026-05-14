@@ -706,7 +706,7 @@ export const initDB = async (): Promise<void> => {
     }
 
     // Seed default habilitations
-    const modules = ['dashboard','patients','medecins','consultations','rendezvous','laboratoire','visites','file-attente','finances','services','listes-patients','documentation','utilisateurs','habilitations','import','lits','programmes','facturation','paiement-mobile','imagerie','orders','concepts','pharmacie','patient-merge','rapports','formulaires','cohort-builder'];
+    const modules = ['dashboard','patients','medecins','consultations','rendezvous','laboratoire','visites','file-attente','finances','services','listes-patients','documentation','utilisateurs','habilitations','import','lits','programmes','facturation','paiement-mobile','imagerie','orders','concepts','pharmacie','patient-merge','rapports','formulaires','cohort-builder','configuration'];
     const roleAccess: Record<string, string[]> = {
       admin: modules,
       medecin: ['dashboard','patients','medecins','consultations','rendezvous','visites','file-attente','listes-patients','documentation','lits','programmes','imagerie','orders','pharmacie','cohort-builder'],
@@ -749,6 +749,7 @@ export const initDB = async (): Promise<void> => {
       ['Administration', 2, 'rapports', 'Rapports', 'bi-graph-up', '/app/rapports', 11],
       ['Administration', 2, 'formulaires', 'Formulaires', 'bi-ui-checks-grid', '/app/formulaires', 12],
       ['Clinique', 1, 'cohort-builder', 'Cohort Builder', 'bi-funnel', '/app/cohort-builder', 12],
+      ['Administration', 2, 'configuration', 'Configuration', 'bi-gear', '/app/configuration', 13],
     ];
     for (const [groupe, groupe_ordre, module, label, icon, path, ordre] of menuItems) {
       await client.query('INSERT INTO menu_config (groupe, groupe_ordre, module, label, icon, path, ordre) SELECT $1::varchar, $2::int, $3::varchar, $4::varchar, $5::varchar, $6::varchar, $7::int WHERE NOT EXISTS (SELECT 1 FROM menu_config WHERE module = $3::varchar)', [groupe, groupe_ordre, module, label, icon, path, ordre]);
@@ -925,6 +926,25 @@ export const initDB = async (): Promise<void> => {
       ['type_examen', 'NFS', 'NFS (Numération Formule Sanguine)'],
       ['type_examen', 'VS', 'Vitesse de sédimentation'],
       ['type_examen', 'PARASITO', 'Parasitologie'],
+      // Types de programme
+      ['type_programme', 'VIH', 'Programme VIH/SIDA'],
+      ['type_programme', 'TB', 'Programme Tuberculose'],
+      ['type_programme', 'PALU', 'Programme Paludisme'],
+      ['type_programme', 'MATERNITE', 'Suivi maternité'],
+      ['type_programme', 'DIABETE', 'Programme Diabète'],
+      ['type_programme', 'VACCINATION', 'Programme de vaccination'],
+      ['type_programme', 'NUTRITION', 'Programme Nutrition'],
+      ['type_programme', 'PEDIATRIE', 'Suivi pédiatrique'],
+      // Classes de concept (pour le dictionnaire)
+      ['concept_classe', 'DIAGNOSTIC', 'Diagnostic'],
+      ['concept_classe', 'SYMPTOME', 'Symptôme'],
+      ['concept_classe', 'TEST', 'Test / Examen'],
+      ['concept_classe', 'MEDICAMENT', 'Médicament'],
+      ['concept_classe', 'PROCEDURE', 'Procédure'],
+      ['concept_classe', 'FINDING', 'Observation / Finding'],
+      ['concept_classe', 'QUESTION', 'Question'],
+      ['concept_classe', 'REPONSE', 'Réponse'],
+      ['concept_classe', 'MISC', 'Divers'],
     ];
     for (const [categorie, code, libelle, parDefaut] of refLists) {
       await client.query(

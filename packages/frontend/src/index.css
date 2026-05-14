@@ -401,3 +401,8 @@ body {
   .main-content { margin-left: 0; }
   .grid-2, .grid-3, .grid-4 { grid-template-columns: 1fr; }
 }
+
+
+/* ===== SIDEBAR GRID (Configuration page) ===== */
+.grid-sidebar { display: grid; grid-template-columns: 220px 1fr; gap: 1.5rem; }
+@media (max-width: 768px) { .grid-sidebar { grid-template-columns: 1fr; } }

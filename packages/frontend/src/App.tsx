@@ -33,6 +33,7 @@ const Documentation = lazy(() => import('./pages/Documentation'));
 const Utilisateurs = lazy(() => import('./pages/Utilisateurs'));
 const Import = lazy(() => import('./pages/Import'));
 const Habilitations = lazy(() => import('./pages/Habilitations'));
+const Configuration = lazy(() => import('./pages/Configuration'));
 const Lits = lazy(() => import('./pages/Lits'));
 const AdmissionForm = lazy(() => import('./pages/AdmissionForm'));
 const Programmes = lazy(() => import('./pages/Programmes'));
@@ -155,6 +156,7 @@ function App() {
                         <Route path="/documentation" element={<Documentation />} />
                         <Route path="/utilisateurs" element={<RoleGuard roles={['admin']}><Utilisateurs /></RoleGuard>} />
                         <Route path="/habilitations" element={<RoleGuard roles={['admin']}><Habilitations /></RoleGuard>} />
+                        <Route path="/configuration" element={<RoleGuard roles={['admin']}><Configuration /></RoleGuard>} />
                         <Route path="/import" element={<RoleGuard roles={['admin']}><Import /></RoleGuard>} />
                         <Route path="/lits" element={<RoleGuard roles={['admin','medecin']}><Lits /></RoleGuard>} />
                         <Route path="/lits/admission" element={<RoleGuard roles={['admin','medecin']}><AdmissionForm /></RoleGuard>} />
