@@ -46,6 +46,7 @@ export const updateService = (id: number, data: unknown) => api.put<Service>(`/s
 export const deleteService = (id: number) => api.delete(`/services/${id}`);
 
 export const getConsultations = (params?: unknown) => api.get<Consultation[]>('/consultations', { params });
+export const getConsultation = (id: number) => api.get<Consultation>(`/consultations/${id}`);
 export const createConsultation = (data: unknown) => api.post<Consultation>('/consultations', data);
 export const updateConsultation = (id: number, data: unknown) => api.put<Consultation>(`/consultations/${id}`, data);
 export const deleteConsultation = (id: number) => api.delete(`/consultations/${id}`);

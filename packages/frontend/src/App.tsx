@@ -12,10 +12,12 @@ const ChangePassword = lazy(() => import('./pages/ChangePassword'));
 const Portail = lazy(() => import('./pages/Portail'));
 const Dashboard = lazy(() => import('./pages/Dashboard'));
 const Patients = lazy(() => import('./pages/Patients'));
+const PatientForm = lazy(() => import('./pages/PatientForm'));
 const PatientDetail = lazy(() => import('./pages/PatientDetail'));
 const Medecins = lazy(() => import('./pages/Medecins'));
 const Services = lazy(() => import('./pages/Services'));
 const Consultations = lazy(() => import('./pages/Consultations'));
+const ConsultationForm = lazy(() => import('./pages/ConsultationForm'));
 const Finances = lazy(() => import('./pages/Finances'));
 const Laboratoire = lazy(() => import('./pages/Laboratoire'));
 const RendezVous = lazy(() => import('./pages/RendezVous'));
@@ -122,10 +124,14 @@ function App() {
                         <Route path="/" element={<Dashboard />} />
                         <Route path="/recherche" element={<Recherche />} />
                         <Route path="/patients" element={<RoleGuard roles={['admin','medecin','reception']}><Patients /></RoleGuard>} />
+                        <Route path="/patients/nouveau" element={<RoleGuard roles={['admin','medecin','reception']}><PatientForm /></RoleGuard>} />
+                        <Route path="/patients/:id/modifier" element={<RoleGuard roles={['admin','medecin','reception']}><PatientForm /></RoleGuard>} />
                         <Route path="/patients/:id" element={<RoleGuard roles={['admin','medecin','reception']}><PatientDetail /></RoleGuard>} />
                         <Route path="/medecins" element={<RoleGuard roles={['admin','medecin']}><Medecins /></RoleGuard>} />
                         <Route path="/services" element={<RoleGuard roles={['admin']}><Services /></RoleGuard>} />
                         <Route path="/consultations" element={<RoleGuard roles={['admin','medecin']}><Consultations /></RoleGuard>} />
+                        <Route path="/consultations/nouvelle" element={<RoleGuard roles={['admin','medecin']}><ConsultationForm /></RoleGuard>} />
+                        <Route path="/consultations/:id/modifier" element={<RoleGuard roles={['admin','medecin']}><ConsultationForm /></RoleGuard>} />
                         <Route path="/finances" element={<RoleGuard roles={['admin','comptable']}><Finances /></RoleGuard>} />
                         <Route path="/laboratoire" element={<RoleGuard roles={['admin','laborantin']}><Laboratoire /></RoleGuard>} />
                         <Route path="/rendezvous" element={<RoleGuard roles={['admin','medecin','reception']}><RendezVous /></RoleGuard>} />
