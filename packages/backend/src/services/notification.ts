@@ -1,5 +1,5 @@
 import nodemailer from 'nodemailer';
-import { query } from '../config/db.js';
+import { prisma } from '../config/db.js';
 
 // SMS provider interface — plug any provider (Twilio, Africa's Talking, etc.)
 interface SmsResult { success: boolean; messageId?: string; error?: string }
@@ -73,11 +73,11 @@ export const sendNotification = async (
   message: string,
   htmlMessage?: string
 ): Promise<{ channel: string; success: boolean; error?: string }> => {
-  // Get patient contact info
-  const result = await query('SELECT telephone, email, nom, prenom FROM patients WHERE id = $1', [patientId]);
-  if (result.rows.length === 0) return { channel: 'none', success: false, error: 'Patient non trouvé' };
-
-  const patient = result.rows[0];
+  const patient = await prisma.patient.findUnique({
+    where: { id: patientId },
+    select: { telephone: true, email: true, nom: true, prenom: true },
+  });
+  if (!patient) return { channel: 'none', success: false, error: 'Patient non trouvé' };
   const fullMessage = `${patient.prenom} ${patient.nom}, ${message}`;
 
   // Try SMS first
@@ -106,10 +106,9 @@ export const sendNotification = async (
 
 const logNotification = async (patientId: number, channel: string, subject: string, message: string, success: boolean) => {
   try {
-    await query(
-      'INSERT INTO notifications_log (patient_id, channel, subject, message, success) VALUES ($1,$2,$3,$4,$5)',
-      [patientId, channel, subject, message, success]
-    );
+    await prisma.notificationLog.create({
+      data: { patientId, channel, subject, message, success },
+    });
   } catch (err) {
     console.error('[NOTIFICATION LOG] Failed:', err);
   }

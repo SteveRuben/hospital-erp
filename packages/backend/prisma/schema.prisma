@@ -25,6 +25,8 @@ model User {
   prenom              String?   @db.VarChar(100)
   telephone           String?   @db.VarChar(20)
   must_change_password Boolean  @default(true)
+  mfaEnabled          Boolean   @default(false) @map("mfa_enabled")
+  mfaSecret           String?   @map("mfa_secret") @db.VarChar(255)
   createdAt           DateTime  @default(now()) @map("created_at")
 
   notes               Note[]
@@ -90,6 +92,7 @@ model Patient {
   contactUrgenceTelephone String?   @map("contact_urgence_telephone") @db.VarChar(20)
   photoUrl                String?   @map("photo_url")
   archived                Boolean   @default(false)
+  referenceId             String?   @unique @map("reference_id") @db.VarChar(30)
   createdAt               DateTime  @default(now()) @map("created_at")
 
   consultations   Consultation[]
@@ -315,17 +318,20 @@ model Order {
 // ===== Simplified models for remaining tables =====
 
 model Recette {
-  id           Int      @id @default(autoincrement())
-  patientId    Int?     @map("patient_id")
-  serviceId    Int?     @map("service_id")
-  typeActe     String   @map("type_acte") @db.VarChar(100)
-  montant      Decimal  @db.Decimal(12, 2)
-  modePaiement String?  @map("mode_paiement") @db.VarChar(50)
-  dateRecette  DateTime @default(now()) @map("date_recette") @db.Date
-  description  String?
-  createdAt    DateTime @default(now()) @map("created_at")
-  patient      Patient? @relation(fields: [patientId], references: [id])
-  service      Service? @relation(fields: [serviceId], references: [id])
+  id              Int       @id @default(autoincrement())
+  patientId       Int?      @map("patient_id")
+  serviceId       Int?      @map("service_id")
+  typeActe        String    @map("type_acte") @db.VarChar(100)
+  montant         Decimal   @db.Decimal(12, 2)
+  modePaiement    String?   @map("mode_paiement") @db.VarChar(50)
+  dateRecette     DateTime  @default(now()) @map("date_recette") @db.Date
+  description     String?
+  annulee         Boolean?  @default(false)
+  dateAnnulation  DateTime? @map("date_annulation")
+  annuleePar      Int?      @map("annulee_par")
+  createdAt       DateTime  @default(now()) @map("created_at")
+  patient         Patient?  @relation(fields: [patientId], references: [id])
+  service         Service?  @relation(fields: [serviceId], references: [id])
   @@map("recettes")
 }
 
@@ -531,4 +537,400 @@ model AuditLog {
   createdAt DateTime @default(now()) @map("created_at")
   user      User?    @relation(fields: [userId], references: [id])
   @@map("audit_log")
+}
+
+// ===== FINANCES =====
+
+model Depense {
+  id             Int       @id @default(autoincrement())
+  typeDepense    String    @map("type_depense") @db.VarChar(100)
+  nature         String?   @db.VarChar(100)
+  montant        Decimal   @db.Decimal(12, 2)
+  fournisseur    String?   @db.VarChar(100)
+  description    String?
+  dateDepense    DateTime  @default(now()) @map("date_depense") @db.Date
+  annulee        Boolean?  @default(false)
+  dateAnnulation DateTime? @map("date_annulation")
+  annuleePar     Int?      @map("annulee_par")
+  createdAt      DateTime  @default(now()) @map("created_at")
+  @@map("depenses")
+}
+
+model Document {
+  id           Int      @id @default(autoincrement())
+  patientId    Int?     @map("patient_id")
+  typeDocument String?  @map("type_document") @db.VarChar(50)
+  fichierUrl   String?  @map("fichier_url")
+  description  String?
+  createdAt    DateTime @default(now()) @map("created_at")
+  @@map("documents")
+}
+
+model Formulaire {
+  id          Int      @id @default(autoincrement())
+  nom         String   @db.VarChar(200)
+  description String?
+  schemaJson  String   @map("schema_json")
+  serviceId   Int?     @map("service_id")
+  actif       Boolean  @default(true)
+  createdAt   DateTime @default(now()) @map("created_at")
+  @@map("formulaires")
+}
+
+model FormulaireReponse {
+  id            Int      @id @default(autoincrement())
+  formulaireId  Int?     @map("formulaire_id")
+  patientId     Int?     @map("patient_id")
+  rempliPar     Int?     @map("rempli_par")
+  donneesJson   String   @map("donnees_json")
+  createdAt     DateTime @default(now()) @map("created_at")
+  @@map("formulaire_reponses")
+}
+
+model FileAttente {
+  id                 Int       @id @default(autoincrement())
+  patientId          Int?      @map("patient_id")
+  serviceId          Int?      @map("service_id")
+  priorite           String    @default("normal") @db.VarChar(20)
+  statut             String    @default("en_attente") @db.VarChar(50)
+  numeroOrdre        Int?      @map("numero_ordre")
+  dateArrivee        DateTime  @default(now()) @map("date_arrivee")
+  datePriseEnCharge  DateTime? @map("date_prise_en_charge")
+  notes              String?
+  @@map("file_attente")
+}
+
+model ListePatient {
+  id          Int      @id @default(autoincrement())
+  nom         String   @db.VarChar(200)
+  description String?
+  createdBy   Int?     @map("created_by")
+  createdAt   DateTime @default(now()) @map("created_at")
+  @@map("listes_patients")
+}
+
+model ListePatientMembre {
+  id        Int      @id @default(autoincrement())
+  listeId   Int?     @map("liste_id")
+  patientId Int?     @map("patient_id")
+  addedAt   DateTime @default(now()) @map("added_at")
+  @@unique([listeId, patientId])
+  @@map("liste_patient_membres")
+}
+
+model Pavillon {
+  id          Int      @id @default(autoincrement())
+  nom         String   @db.VarChar(100)
+  etage       String?  @db.VarChar(50)
+  serviceId   Int?     @map("service_id")
+  capacite    Int?     @default(0)
+  description String?
+  createdAt   DateTime @default(now()) @map("created_at")
+  @@map("pavillons")
+}
+
+model Lit {
+  id         Int      @id @default(autoincrement())
+  pavillonId Int?     @map("pavillon_id")
+  numero     String   @db.VarChar(20)
+  typeLit    String   @default("standard") @map("type_lit") @db.VarChar(50)
+  statut     String   @default("disponible") @db.VarChar(50)
+  createdAt  DateTime @default(now()) @map("created_at")
+  @@map("lits")
+}
+
+model Programme {
+  id             Int      @id @default(autoincrement())
+  nom            String   @db.VarChar(200)
+  description    String?
+  typeProgramme  String?  @map("type_programme") @db.VarChar(100)
+  actif          Boolean  @default(true)
+  createdAt      DateTime @default(now()) @map("created_at")
+  @@map("programmes")
+}
+
+model ProgrammePatient {
+  id              Int       @id @default(autoincrement())
+  programmeId     Int?      @map("programme_id")
+  patientId       Int?      @map("patient_id")
+  dateInscription DateTime  @default(now()) @map("date_inscription") @db.Date
+  dateSortie      DateTime? @map("date_sortie") @db.Date
+  statut          String    @default("actif") @db.VarChar(50)
+  notes           String?
+  createdAt       DateTime  @default(now()) @map("created_at")
+  @@map("programme_patients")
+}
+
+model Tarif {
+  id        Int      @id @default(autoincrement())
+  code      String   @unique @db.VarChar(50)
+  libelle   String   @db.VarChar(200)
+  categorie String   @db.VarChar(100)
+  montant   Decimal  @db.Decimal(12, 2)
+  serviceId Int?     @map("service_id")
+  actif     Boolean  @default(true)
+  createdAt DateTime @default(now()) @map("created_at")
+  @@map("tarifs")
+}
+
+model Facture {
+  id           Int      @id @default(autoincrement())
+  numero       String   @unique @db.VarChar(50)
+  patientId    Int?     @map("patient_id")
+  dateFacture  DateTime @default(now()) @map("date_facture") @db.Date
+  montantTotal Decimal  @default(0) @map("montant_total") @db.Decimal(12, 2)
+  montantPaye  Decimal  @default(0) @map("montant_paye") @db.Decimal(12, 2)
+  statut       String   @default("en_attente") @db.VarChar(50)
+  notes        String?
+  createdBy    Int?     @map("created_by")
+  createdAt    DateTime @default(now()) @map("created_at")
+  @@map("factures")
+}
+
+model FactureLigne {
+  id            Int      @id @default(autoincrement())
+  factureId     Int?     @map("facture_id")
+  tarifId       Int?     @map("tarif_id")
+  libelle       String   @db.VarChar(200)
+  quantite      Int      @default(1)
+  prixUnitaire  Decimal  @map("prix_unitaire") @db.Decimal(12, 2)
+  montant       Decimal  @db.Decimal(12, 2)
+  createdAt     DateTime @default(now()) @map("created_at")
+  @@map("facture_lignes")
+}
+
+model Paiement {
+  id           Int      @id @default(autoincrement())
+  factureId    Int?     @map("facture_id")
+  montant      Decimal  @db.Decimal(12, 2)
+  modePaiement String?  @map("mode_paiement") @db.VarChar(50)
+  reference    String?  @db.VarChar(100)
+  datePaiement DateTime @default(now()) @map("date_paiement")
+  recuPar      Int?     @map("recu_par")
+  notes        String?
+  createdAt    DateTime @default(now()) @map("created_at")
+  @@map("paiements")
+}
+
+// ===== ADMIN / RBAC =====
+
+model Habilitation {
+  id     Int     @id @default(autoincrement())
+  role   String  @db.VarChar(50)
+  module String  @db.VarChar(100)
+  acces  Boolean @default(true)
+  @@unique([role, module])
+  @@map("habilitations")
+}
+
+model MenuConfig {
+  id          Int     @id @default(autoincrement())
+  groupe      String  @db.VarChar(100)
+  groupeOrdre Int     @default(0) @map("groupe_ordre")
+  module      String  @db.VarChar(100)
+  label       String  @db.VarChar(100)
+  icon        String  @db.VarChar(50)
+  path        String  @db.VarChar(200)
+  ordre       Int     @default(0)
+  actif       Boolean @default(true)
+  @@map("menu_config")
+}
+
+// ===== PHARMACIE =====
+
+model Medicament {
+  id             Int      @id @default(autoincrement())
+  nom            String   @db.VarChar(200)
+  dci            String?  @db.VarChar(200)
+  forme          String?  @db.VarChar(50)
+  dosageStandard String?  @map("dosage_standard") @db.VarChar(100)
+  codeBarre      String?  @map("code_barre") @db.VarChar(50)
+  categorie      String?  @db.VarChar(100)
+  prixUnitaire   Decimal? @map("prix_unitaire") @db.Decimal(12, 2)
+  actif          Boolean  @default(true)
+  createdAt      DateTime @default(now()) @map("created_at")
+  @@map("medicaments")
+}
+
+model Stock {
+  id             Int       @id @default(autoincrement())
+  medicamentId   Int?      @map("medicament_id")
+  lot            String?   @db.VarChar(100)
+  dateExpiration DateTime? @map("date_expiration") @db.Date
+  quantite       Int       @default(0)
+  quantiteMin    Int       @default(10) @map("quantite_min")
+  prixAchat      Decimal?  @map("prix_achat") @db.Decimal(12, 2)
+  fournisseur    String?   @db.VarChar(200)
+  dateEntree     DateTime  @default(now()) @map("date_entree") @db.Date
+  createdAt      DateTime  @default(now()) @map("created_at")
+  @@map("stock")
+}
+
+model StockMouvement {
+  id            Int      @id @default(autoincrement())
+  medicamentId  Int?     @map("medicament_id")
+  typeMouvement String   @map("type_mouvement") @db.VarChar(20)
+  quantite      Int
+  lot           String?  @db.VarChar(100)
+  motif         String?
+  userId        Int?     @map("user_id")
+  createdAt     DateTime @default(now()) @map("created_at")
+  @@map("stock_mouvements")
+}
+
+model Dispensation {
+  id               Int      @id @default(autoincrement())
+  patientId        Int?     @map("patient_id")
+  prescriptionId   Int?     @map("prescription_id")
+  medicamentId     Int?     @map("medicament_id")
+  quantiteDelivree Int?     @map("quantite_delivree")
+  dispenseurId     Int?     @map("dispenseur_id")
+  dateDispensation DateTime @default(now()) @map("date_dispensation")
+  notes            String?
+  @@map("dispensations")
+}
+
+// ===== FACILITIES / MULTI-SITE =====
+
+model Facility {
+  id           Int      @id @default(autoincrement())
+  nom          String   @db.VarChar(200)
+  code         String?  @unique @db.VarChar(50)
+  typeFacility String?  @map("type_facility") @db.VarChar(50)
+  adresse      String?
+  ville        String?  @db.VarChar(100)
+  telephone    String?  @db.VarChar(20)
+  email        String?  @db.VarChar(150)
+  actif        Boolean  @default(true)
+  createdAt    DateTime @default(now()) @map("created_at")
+  @@map("facilities")
+}
+
+// ===== PLANNING =====
+
+model PlanningMedecin {
+  id            Int      @id @default(autoincrement())
+  medecinId     Int?     @map("medecin_id")
+  serviceId     Int?     @map("service_id")
+  jourSemaine   Int      @map("jour_semaine")
+  heureDebut    DateTime @map("heure_debut") @db.Time
+  heureFin      DateTime @map("heure_fin") @db.Time
+  dureeCreneau  Int      @default(30) @map("duree_creneau")
+  actif         Boolean  @default(true)
+  createdAt     DateTime @default(now()) @map("created_at")
+  @@map("planning_medecins")
+}
+
+model PlanningBlocage {
+  id        Int      @id @default(autoincrement())
+  medecinId Int?     @map("medecin_id")
+  dateDebut DateTime @map("date_debut")
+  dateFin   DateTime @map("date_fin")
+  motif     String?  @db.VarChar(200)
+  createdAt DateTime @default(now()) @map("created_at")
+  @@map("planning_blocages")
+}
+
+// ===== IMAGERIE =====
+
+model Imagerie {
+  id           Int      @id @default(autoincrement())
+  patientId    Int?     @map("patient_id")
+  typeExamen   String?  @map("type_examen") @db.VarChar(100)
+  description  String?
+  fichierUrl   String?  @map("fichier_url")
+  fichierNom   String?  @map("fichier_nom") @db.VarChar(200)
+  fichierType  String?  @map("fichier_type") @db.VarChar(50)
+  dateExamen   DateTime @default(now()) @map("date_examen") @db.Date
+  medecinId    Int?     @map("medecin_id")
+  createdAt    DateTime @default(now()) @map("created_at")
+  @@map("imagerie")
+}
+
+// ===== CONCEPT EXTENSIONS =====
+
+model ConceptNom {
+  id        Int    @id @default(autoincrement())
+  conceptId Int?   @map("concept_id")
+  nom       String @db.VarChar(200)
+  langue    String @default("fr") @db.VarChar(10)
+  typeNom   String @default("complet") @map("type_nom") @db.VarChar(20)
+  @@unique([conceptId, nom, langue])
+  @@map("concept_noms")
+}
+
+model ConceptReponse {
+  id               Int  @id @default(autoincrement())
+  conceptId        Int? @map("concept_id")
+  reponseConceptId Int? @map("reponse_concept_id")
+  ordre            Int  @default(0)
+  @@map("concept_reponses")
+}
+
+model ConceptMapping {
+  id           Int    @id @default(autoincrement())
+  conceptId    Int?   @map("concept_id")
+  source       String @db.VarChar(50)
+  codeExterne  String @map("code_externe") @db.VarChar(50)
+  @@unique([conceptId, source, codeExterne])
+  @@map("concept_mappings")
+}
+
+// ===== NOTIFICATIONS =====
+
+model NotificationLog {
+  id        Int      @id @default(autoincrement())
+  patientId Int?     @map("patient_id")
+  channel   String   @db.VarChar(20)
+  subject   String?  @db.VarChar(200)
+  message   String?
+  success   Boolean  @default(false)
+  createdAt DateTime @default(now()) @map("created_at")
+  @@map("notifications_log")
+}
+
+// ===== PATIENT ATTRIBUTIONS / WEBHOOKS =====
+
+model PatientAttribution {
+  id              Int      @id @default(autoincrement())
+  patientId       Int?     @map("patient_id")
+  medecinUserId   Int?     @map("medecin_user_id")
+  dateAttribution DateTime @default(now()) @map("date_attribution")
+  actif           Boolean  @default(true)
+  @@unique([patientId, medecinUserId])
+  @@map("patient_attributions")
+}
+
+model WebhookEvent {
+  id          Int      @id @default(autoincrement())
+  eventId     String   @unique @map("event_id") @db.VarChar(100)
+  source      String   @db.VarChar(50)
+  payload     String?
+  processedAt DateTime @default(now()) @map("processed_at")
+  @@map("webhook_events")
+}
+
+model Setting {
+  id          Int      @id @default(autoincrement())
+  cle         String   @unique @db.VarChar(100)
+  valeur      String
+  description String?
+  categorie   String?  @default("general") @db.VarChar(50)
+  updatedAt   DateTime @default(now()) @map("updated_at")
+  @@map("settings")
+}
+
+model ReferenceList {
+  id         Int      @id @default(autoincrement())
+  categorie  String   @db.VarChar(50)
+  code       String   @db.VarChar(100)
+  libelle    String   @db.VarChar(200)
+  actif      Boolean  @default(true)
+  parDefaut  Boolean  @default(false) @map("par_defaut")
+  ordre      Int      @default(0)
+  parentCode String?  @map("parent_code") @db.VarChar(100)
+  metadata   Json?
+  createdAt  DateTime @default(now()) @map("created_at")
+  @@unique([categorie, code])
+  @@map("reference_lists")
 }

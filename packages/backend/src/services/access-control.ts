@@ -9,7 +9,7 @@
  *       2. consultations history (medecin name/prenom matches user) — legacy fallback
  */
 
-import { query } from '../config/db.js';
+import { prisma } from '../config/db.js';
 
 export interface AccessUser {
   id: number;
@@ -24,17 +24,18 @@ export interface AccessUser {
 export async function canAccessPatient(user: AccessUser, patientId: number): Promise<boolean> {
   if (user.role !== 'medecin') return true;
 
-  const result = await query(
-    `SELECT 1 FROM patient_attributions WHERE medecin_user_id = $1 AND patient_id = $2 AND actif = TRUE
-     UNION ALL
-     SELECT 1 FROM consultations c JOIN medecins m ON c.medecin_id = m.id
-       JOIN users u ON u.nom = m.nom AND u.prenom = m.prenom AND u.id = $1
-       WHERE c.patient_id = $2
-     LIMIT 1`,
-    [user.id, patientId]
-  );
+  const rows = await prisma.$queryRaw<Array<{ ok: number }>>`
+    SELECT 1 AS ok FROM patient_attributions
+      WHERE medecin_user_id = ${user.id} AND patient_id = ${patientId} AND actif = TRUE
+    UNION ALL
+    SELECT 1 AS ok FROM consultations c
+      JOIN medecins m ON c.medecin_id = m.id
+      JOIN users u ON u.nom = m.nom AND u.prenom = m.prenom AND u.id = ${user.id}
+      WHERE c.patient_id = ${patientId}
+    LIMIT 1
+  `;
 
-  return result.rows.length > 0;
+  return rows.length > 0;
 }
 
 export default { canAccessPatient };

@@ -52,6 +52,8 @@ import planningRoutes from './routes/planning.js';
 import facilitiesRoutes from './routes/facilities.js';
 import contentPackagesRoutes from './routes/content-packages.js';
 import paiementRemitaRoutes from './routes/paiement-remita.js';
+import settingsRoutes from './routes/settings.js';
+import referenceListsRoutes from './routes/reference-lists.js';
 
 const app = express();
 const PORT = process.env.PORT || 5000;
@@ -161,6 +163,8 @@ app.use('/api/planning', planningRoutes);
 app.use('/api/facilities', facilitiesRoutes);
 app.use('/api/content-packages', contentPackagesRoutes);
 app.use('/api/paiement-remita', paiementRemitaRoutes);
+app.use('/api/settings', settingsRoutes);
+app.use('/api/reference-lists', referenceListsRoutes);
 
 // Serve uploaded files
 import { fileURLToPath as fu } from 'url';

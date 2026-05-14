@@ -3,7 +3,7 @@ import multer from 'multer';
 import path from 'path';
 import fs from 'fs';
 import { fileURLToPath } from 'url';
-import { query } from '../config/db.js';
+import { prisma } from '../config/db.js';
 import { authenticate, authorize, AuthRequest } from '../middleware/auth.js';
 import { validate, createImagerieSchema } from '../middleware/validation.js';
 
@@ -26,8 +26,22 @@ const router = Router();
 // Get images for a patient
 router.get('/:patientId', authenticate, async (req: AuthRequest, res: Response): Promise<void> => {
   try {
-    const result = await query(`SELECT i.*, m.nom as medecin_nom, m.prenom as medecin_prenom FROM imagerie i LEFT JOIN medecins m ON i.medecin_id = m.id WHERE i.patient_id = $1 ORDER BY i.date_examen DESC`, [req.params.patientId]);
-    res.json(result.rows);
+    const rows = await prisma.imagerie.findMany({
+      where: { patientId: Number(req.params.patientId) },
+      orderBy: { dateExamen: 'desc' },
+    });
+    // Pull medecin info separately to mirror the LEFT JOIN
+    const medecinIds = Array.from(new Set(rows.map(r => r.medecinId).filter((v): v is number => v != null)));
+    const medecins = medecinIds.length > 0
+      ? await prisma.medecin.findMany({ where: { id: { in: medecinIds } }, select: { id: true, nom: true, prenom: true } })
+      : [];
+    const medMap = new Map(medecins.map(m => [m.id, m]));
+    const mapped = rows.map(r => ({
+      ...r,
+      medecin_nom: r.medecinId != null ? (medMap.get(r.medecinId)?.nom ?? null) : null,
+      medecin_prenom: r.medecinId != null ? (medMap.get(r.medecinId)?.prenom ?? null) : null,
+    }));
+    res.json(mapped);
   } catch (err) { res.status(500).json({ error: 'Erreur serveur' }); }
 });
 
@@ -38,9 +52,18 @@ router.post('/', authenticate, authorize('admin', 'medecin'), upload.single('fil
     if (!patient_id || !req.file) { res.status(400).json({ error: 'Patient et fichier requis' }); return; }
     const n = (v: unknown) => (v === '' || v === undefined) ? null : v;
     const fichier_url = `/uploads/imagerie/${req.file.filename}`;
-    const result = await query(`INSERT INTO imagerie (patient_id, type_examen, description, fichier_url, fichier_nom, fichier_type, date_examen, medecin_id) VALUES ($1,$2,$3,$4,$5,$6,$7,$8) RETURNING *`,
-      [patient_id, n(type_examen), n(description), fichier_url, req.file.originalname, req.file.mimetype, n(date_examen), n(medecin_id)]);
-    res.status(201).json(result.rows[0]);
+    const data: Parameters<typeof prisma.imagerie.create>[0]['data'] = {
+      patientId: Number(patient_id),
+      typeExamen: n(type_examen) as string | null,
+      description: n(description) as string | null,
+      fichierUrl: fichier_url,
+      fichierNom: req.file.originalname,
+      fichierType: req.file.mimetype,
+      medecinId: n(medecin_id) as number | null,
+    };
+    if (date_examen) data.dateExamen = new Date(date_examen);
+    const created = await prisma.imagerie.create({ data });
+    res.status(201).json(created);
   } catch (err) { console.error(err); res.status(500).json({ error: 'Erreur serveur' }); }
 });
 
@@ -54,11 +77,13 @@ router.get('/file/:filename', authenticate, (req: AuthRequest, res: Response): v
 // Delete image
 router.delete('/:id', authenticate, authorize('admin'), async (req: AuthRequest, res: Response): Promise<void> => {
   try {
-    const result = await query('DELETE FROM imagerie WHERE id = $1 RETURNING fichier_url', [req.params.id]);
-    if (result.rows.length > 0 && result.rows[0].fichier_url) {
-      const filePath = path.resolve(__dirname, '../..', result.rows[0].fichier_url.replace(/^\//, ''));
-      if (fs.existsSync(filePath)) fs.unlinkSync(filePath);
-    }
+    try {
+      const deleted = await prisma.imagerie.delete({ where: { id: Number(req.params.id) } });
+      if (deleted?.fichierUrl) {
+        const filePath = path.resolve(__dirname, '../..', deleted.fichierUrl.replace(/^\//, ''));
+        if (fs.existsSync(filePath)) fs.unlinkSync(filePath);
+      }
+    } catch { /* not found */ }
     res.json({ message: 'Supprimé' });
   } catch (err) { res.status(500).json({ error: 'Erreur serveur' }); }
 });

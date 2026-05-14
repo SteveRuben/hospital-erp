@@ -1,5 +1,5 @@
 import { Router, Request, Response } from 'express';
-import { query } from '../config/db.js';
+import { prisma } from '../config/db.js';
 import { authenticate, AuthRequest } from '../middleware/auth.js';
 import { collectPayment, checkTransactionStatus } from '../services/remita.js';
 
@@ -23,10 +23,24 @@ function normalizePhone(phone: string): string {
   return digits;
 }
 
+async function recomputeFactureStatus(factureId: number) {
+  const agg = await prisma.paiement.aggregate({
+    where: { factureId },
+    _sum: { montant: true },
+  });
+  const facture = await prisma.facture.findUnique({ where: { id: factureId }, select: { montantTotal: true } });
+  if (!facture) return;
+  const paye = Number(agg._sum.montant ?? 0);
+  const total = Number(facture.montantTotal);
+  const statut = paye >= total ? 'payee' : paye > 0 ? 'partielle' : 'en_attente';
+  await prisma.facture.update({ where: { id: factureId }, data: { montantPaye: paye, statut } });
+}
+
 // Initiate payment via Remita (Orange Money / MTN MoMo)
 router.post('/collect', authenticate, async (req: AuthRequest, res: Response): Promise<void> => {
   try {
     const { phoneNumber, amount, provider, transferMethod, countryName, facture_id, description } = req.body;
+    void description;
 
     if (!phoneNumber || !amount) {
       res.status(400).json({ error: 'Numéro de téléphone et montant requis' });
@@ -41,9 +55,16 @@ router.post('/collect', authenticate, async (req: AuthRequest, res: Response): P
     // Get customer name from facture if linked
     let customerName = normalizedPhone;
     if (facture_id) {
-      const factureResult = await query('SELECT p.nom, p.prenom FROM factures f LEFT JOIN patients p ON f.patient_id = p.id WHERE f.id = $1', [facture_id]);
-      if (factureResult.rows.length > 0) {
-        customerName = `${factureResult.rows[0].prenom} ${factureResult.rows[0].nom}`;
+      const facture = await prisma.facture.findUnique({
+        where: { id: Number(facture_id) },
+        select: { patientId: true },
+      });
+      if (facture?.patientId) {
+        const patient = await prisma.patient.findUnique({
+          where: { id: facture.patientId },
+          select: { nom: true, prenom: true },
+        });
+        if (patient) customerName = `${patient.prenom} ${patient.nom}`;
       }
     }
 
@@ -57,20 +78,19 @@ router.post('/collect', authenticate, async (req: AuthRequest, res: Response): P
 
     // Log the transaction in DB
     if (facture_id && result.success) {
-      await query(
-        `INSERT INTO paiements (facture_id, montant, mode_paiement, reference, recu_par, notes) VALUES ($1,$2,$3,$4,$5,$6)`,
-        [facture_id, amount, 'mobile_money', result.transactionId, req.user!.id, `Remita ${resolvedMethod} - ${normalizedPhone}${result.simulated ? ' [SIMULATION]' : ''}`]
-      );
+      await prisma.paiement.create({
+        data: {
+          factureId: Number(facture_id),
+          montant: amount,
+          modePaiement: 'mobile_money',
+          reference: result.transactionId,
+          recuPar: req.user!.id,
+          notes: `Remita ${resolvedMethod} - ${normalizedPhone}${result.simulated ? ' [SIMULATION]' : ''}`,
+        },
+      });
 
       // Update facture paid amount
-      const totalPaye = await query('SELECT COALESCE(SUM(montant), 0) as total FROM paiements WHERE facture_id = $1', [facture_id]);
-      const facture = await query('SELECT montant_total FROM factures WHERE id = $1', [facture_id]);
-      if (facture.rows.length > 0) {
-        const paye = parseFloat(totalPaye.rows[0].total as string);
-        const total = parseFloat(facture.rows[0].montant_total as string);
-        const statut = paye >= total ? 'payee' : 'partielle';
-        await query('UPDATE factures SET montant_paye = $1, statut = $2 WHERE id = $3', [paye, statut, facture_id]);
-      }
+      await recomputeFactureStatus(Number(facture_id));
     }
 
     console.log(`[REMITA] Payment ${result.success ? 'initiated' : 'failed'}: ${normalizedPhone} ${amount} XAF via ${resolvedMethod} - txn: ${result.transactionId}`);
@@ -87,6 +107,7 @@ router.post('/collect', authenticate, async (req: AuthRequest, res: Response): P
 router.post('/webhook', async (req: Request, res: Response): Promise<void> => {
   try {
     const { transactionId, externalId, transactionStatus, amount, phoneNumber } = req.body;
+    void amount; void phoneNumber;
     console.log(`[REMITA WEBHOOK] Received: txn=${transactionId} status=${transactionStatus} externalId=${externalId}`);
 
     if (!transactionId && !externalId) {
@@ -96,40 +117,43 @@ router.post('/webhook', async (req: Request, res: Response): Promise<void> => {
 
     // Idempotence check: skip if already processed
     const eventId = `${transactionId || externalId}_${transactionStatus}`;
-    const existing = await query('SELECT id FROM webhook_events WHERE event_id = $1', [eventId]);
-    if (existing.rows.length > 0) {
+    const existing = await prisma.webhookEvent.findUnique({ where: { eventId }, select: { id: true } });
+    if (existing) {
       console.log(`[REMITA WEBHOOK] Duplicate event ${eventId} — skipping`);
       res.json({ received: true, duplicate: true });
       return;
     }
 
     // Record the event for idempotence
-    await query('INSERT INTO webhook_events (event_id, source, payload) VALUES ($1, $2, $3) ON CONFLICT (event_id) DO NOTHING',
-      [eventId, 'remita', JSON.stringify(req.body).substring(0, 2000)]);
+    try {
+      await prisma.webhookEvent.create({
+        data: {
+          eventId,
+          source: 'remita',
+          payload: JSON.stringify(req.body).substring(0, 2000),
+        },
+      });
+    } catch {
+      // Unique violation race — proceed
+    }
 
     // Find the payment by reference (transactionId)
     const ref = transactionId || externalId;
-    const paiement = await query('SELECT id, facture_id, montant FROM paiements WHERE reference = $1', [ref]);
+    const paiement = await prisma.paiement.findFirst({
+      where: { reference: ref },
+      select: { id: true, factureId: true, montant: true },
+    });
 
-    if (paiement.rows.length > 0) {
+    if (paiement) {
       const status = transactionStatus?.toUpperCase();
       if (status === 'SUCCESS' || status === 'COMPLETED') {
         console.log(`[REMITA WEBHOOK] Payment ${ref} confirmed SUCCESS`);
         // Payment already recorded at initiation — nothing extra needed
       } else if (status === 'FAILED' || status === 'CANCELLED' || status === 'EXPIRED') {
         // Reverse the payment record
-        const p = paiement.rows[0];
-        await query('DELETE FROM paiements WHERE id = $1', [p.id]);
-        // Recalculate facture
-        if (p.facture_id) {
-          const totalPaye = await query('SELECT COALESCE(SUM(montant), 0) as total FROM paiements WHERE facture_id = $1', [p.facture_id]);
-          const facture = await query('SELECT montant_total FROM factures WHERE id = $1', [p.facture_id]);
-          if (facture.rows.length > 0) {
-            const paye = parseFloat(totalPaye.rows[0].total as string);
-            const total = parseFloat(facture.rows[0].montant_total as string);
-            const statut = paye >= total ? 'payee' : paye > 0 ? 'partielle' : 'en_attente';
-            await query('UPDATE factures SET montant_paye = $1, statut = $2 WHERE id = $3', [paye, statut, p.facture_id]);
-          }
+        await prisma.paiement.delete({ where: { id: paiement.id } });
+        if (paiement.factureId) {
+          await recomputeFactureStatus(paiement.factureId);
         }
         console.log(`[REMITA WEBHOOK] Payment ${ref} FAILED/CANCELLED — reversed`);
       }

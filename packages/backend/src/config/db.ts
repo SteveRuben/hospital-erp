@@ -1,17 +1,37 @@
 import pg from 'pg';
 import dotenv from 'dotenv';
+import { PrismaClient } from '@prisma/client';
+import { PrismaPg } from '@prisma/adapter-pg';
 
 dotenv.config();
 
 const { Pool } = pg;
 
+const connectionString = process.env.DATABASE_URL || 'postgresql://postgres:postgres@localhost:5432/hospital_erp';
+const useSsl = connectionString.includes('neon.tech') || process.env.NODE_ENV === 'production';
+
 export const pool = new Pool({
-  connectionString: process.env.DATABASE_URL || 'postgresql://postgres:postgres@localhost:5432/hospital_erp',
-  ssl: process.env.DATABASE_URL?.includes('neon.tech') || process.env.NODE_ENV === 'production' ? { rejectUnauthorized: true } : false,
+  connectionString,
+  ssl: useSsl ? { rejectUnauthorized: true } : false,
   max: 20,
   idleTimeoutMillis: 30000,
   connectionTimeoutMillis: 5000,
 });
+
+const adapter = new PrismaPg({ connectionString, ssl: useSsl ? { rejectUnauthorized: true } : false });
+
+declare global {
+  var __prisma: PrismaClient | undefined;
+}
+
+export const prisma: PrismaClient =
+  globalThis.__prisma ??
+  new PrismaClient({
+    adapter,
+    log: process.env.NODE_ENV === 'development' ? ['warn', 'error'] : ['error'],
+  });
+
+if (process.env.NODE_ENV !== 'production') globalThis.__prisma = prisma;
 
 export const query = async (text: string, params?: unknown[]) => {
   const start = Date.now();
@@ -42,4 +62,4 @@ export const getClient = async () => {
   return client;
 };
 
-export default { pool, query, getClient };
+export default { pool, query, getClient, prisma };

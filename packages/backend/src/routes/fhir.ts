@@ -1,5 +1,5 @@
 import { Router, Response, Request } from 'express';
-import { query } from '../config/db.js';
+import { prisma } from '../config/db.js';
 import { authenticate, AuthRequest } from '../middleware/auth.js';
 
 const router = Router();
@@ -27,16 +27,15 @@ router.get('/metadata', (_req: Request, res: Response): void => {
 // FHIR Patient — SECURED
 router.get('/Patient/:id', authenticate, async (req: AuthRequest, res: Response): Promise<void> => {
   try {
-    const result = await query('SELECT * FROM patients WHERE id = $1', [req.params.id]);
-    if (result.rows.length === 0) { res.status(404).json({ resourceType: 'OperationOutcome', issue: [{ severity: 'error', code: 'not-found' }] }); return; }
-    const p = result.rows[0];
+    const p = await prisma.patient.findUnique({ where: { id: Number(req.params.id) } });
+    if (!p) { res.status(404).json({ resourceType: 'OperationOutcome', issue: [{ severity: 'error', code: 'not-found' }] }); return; }
     res.json({
       resourceType: 'Patient',
       id: String(p.id),
-      identifier: [{ system: 'urn:hospital-erp', value: String(p.id) }, ...(p.numero_identite ? [{ system: 'urn:national-id', value: p.numero_identite }] : [])],
-      name: [{ family: p.nom, given: [p.prenom, p.deuxieme_prenom].filter(Boolean) }],
+      identifier: [{ system: 'urn:hospital-erp', value: String(p.id) }, ...(p.numeroIdentite ? [{ system: 'urn:national-id', value: p.numeroIdentite }] : [])],
+      name: [{ family: p.nom, given: [p.prenom, p.deuxiemePrenom].filter(Boolean) }],
       gender: p.sexe === 'M' ? 'male' : p.sexe === 'F' ? 'female' : 'unknown',
-      birthDate: p.date_naissance ? new Date(p.date_naissance).toISOString().split('T')[0] : undefined,
+      birthDate: p.dateNaissance ? new Date(p.dateNaissance).toISOString().split('T')[0] : undefined,
       telecom: [...(p.telephone ? [{ system: 'phone', value: p.telephone }] : []), ...(p.email ? [{ system: 'email', value: p.email }] : [])],
       address: [{ city: p.ville, state: p.province, country: p.pays, line: [p.adresse].filter(Boolean) }],
       active: !p.archived,
@@ -48,19 +47,23 @@ router.get('/Patient/:id', authenticate, async (req: AuthRequest, res: Response)
 router.get('/Patient', authenticate, async (req: AuthRequest, res: Response): Promise<void> => {
   try {
     const { name, _count = '20' } = req.query;
-    let sql = 'SELECT * FROM patients WHERE archived = FALSE';
-    const params: unknown[] = [];
-    if (name) { params.push(`%${name}%`); sql += ` AND (nom ILIKE $1 OR prenom ILIKE $1)`; }
-    sql += ` LIMIT ${Math.min(100, parseInt(_count as string) || 20)}`;
-    const result = await query(sql, params);
+    const take = Math.min(100, parseInt(_count as string) || 20);
+    const where: any = { archived: false };
+    if (name) {
+      where.OR = [
+        { nom: { contains: String(name), mode: 'insensitive' } },
+        { prenom: { contains: String(name), mode: 'insensitive' } },
+      ];
+    }
+    const rows = await prisma.patient.findMany({ where, take });
     res.json({
-      resourceType: 'Bundle', type: 'searchset', total: result.rows.length,
-      entry: result.rows.map((p: any) => ({
+      resourceType: 'Bundle', type: 'searchset', total: rows.length,
+      entry: rows.map(p => ({
         resource: {
           resourceType: 'Patient', id: String(p.id),
           name: [{ family: p.nom, given: [p.prenom] }],
           gender: p.sexe === 'M' ? 'male' : p.sexe === 'F' ? 'female' : 'unknown',
-          birthDate: p.date_naissance ? new Date(p.date_naissance).toISOString().split('T')[0] : undefined,
+          birthDate: p.dateNaissance ? new Date(p.dateNaissance).toISOString().split('T')[0] : undefined,
         }
       })),
     });
@@ -72,10 +75,17 @@ router.get('/Observation', authenticate, async (req: AuthRequest, res: Response)
   try {
     const { patient } = req.query;
     if (!patient) { res.status(400).json({ resourceType: 'OperationOutcome', issue: [{ severity: 'error', code: 'required', details: { text: 'patient parameter required' } }] }); return; }
-    const result = await query(`SELECT o.*, c.nom as concept_nom, c.code as concept_code, c.unite FROM observations o LEFT JOIN concepts c ON o.concept_id = c.id WHERE o.patient_id = $1 AND o.voided = FALSE ORDER BY o.date_obs DESC LIMIT 50`, [patient]);
+    const rows = await prisma.$queryRaw<any[]>`
+      SELECT o.*, c.nom AS concept_nom, c.code AS concept_code, c.unite
+      FROM observations o
+      LEFT JOIN concepts c ON o.concept_id = c.id
+      WHERE o.patient_id = ${Number(patient)} AND o.voided = FALSE
+      ORDER BY o.date_obs DESC
+      LIMIT 50
+    `;
     res.json({
-      resourceType: 'Bundle', type: 'searchset', total: result.rows.length,
-      entry: result.rows.map((o: any) => ({
+      resourceType: 'Bundle', type: 'searchset', total: rows.length,
+      entry: rows.map((o: any) => ({
         resource: {
           resourceType: 'Observation', id: String(o.id), status: 'final',
           code: { coding: [{ system: 'urn:hospital-erp:concepts', code: o.concept_code || String(o.concept_id), display: o.concept_nom }] },

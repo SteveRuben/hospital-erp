@@ -1,5 +1,5 @@
 import { Router } from 'express';
-import { query } from '../config/db.js';
+import { prisma } from '../config/db.js';
 import { authenticate, authorize } from '../middleware/auth.js';
 import { validate, createVitalSchema } from '../middleware/validation.js';
 import { asyncHandler } from '../middleware/asyncHandler.js';
@@ -7,26 +7,48 @@ import { asyncHandler } from '../middleware/asyncHandler.js';
 const router = Router();
 
 router.get('/:patientId', authenticate, asyncHandler(async (req, res) => {
-  const result = await query(
-    'SELECT v.*, m.nom as medecin_nom, m.prenom as medecin_prenom FROM vitaux v LEFT JOIN medecins m ON v.medecin_id = m.id WHERE v.patient_id = $1 ORDER BY v.date_mesure DESC',
-    [req.params.patientId]
-  );
-  res.json(result.rows);
+  const rows = await prisma.vital.findMany({
+    where: { patientId: Number(req.params.patientId) },
+    include: { medecin: { select: { nom: true, prenom: true } } },
+    orderBy: { dateMesure: 'desc' },
+  });
+  // Flatten medecin to mirror the prior LEFT JOIN shape (medecin_nom / medecin_prenom)
+  const mapped = rows.map(v => ({
+    ...v,
+    medecin_nom: v.medecin?.nom ?? null,
+    medecin_prenom: v.medecin?.prenom ?? null,
+  }));
+  res.json(mapped);
 }));
 
 router.post('/', authenticate, authorize('admin', 'medecin'), validate(createVitalSchema), asyncHandler(async (req, res) => {
   const { patient_id, medecin_id, temperature, tension_systolique, tension_diastolique, pouls, frequence_respiratoire, saturation_o2, poids, taille, glycemie, notes } = req.body;
-  const result = await query(
-    `INSERT INTO vitaux (patient_id, medecin_id, temperature, tension_systolique, tension_diastolique, pouls, frequence_respiratoire, saturation_o2, poids, taille, glycemie, notes) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12) RETURNING *`,
-    [patient_id, medecin_id, temperature, tension_systolique, tension_diastolique, pouls, frequence_respiratoire, saturation_o2, poids, taille, glycemie, notes]
-  );
-  res.status(201).json(result.rows[0]);
+  const created = await prisma.vital.create({
+    data: {
+      patientId: Number(patient_id),
+      medecinId: medecin_id ?? null,
+      temperature: temperature ?? null,
+      tensionSystolique: tension_systolique ?? null,
+      tensionDiastolique: tension_diastolique ?? null,
+      pouls: pouls ?? null,
+      frequenceRespiratoire: frequence_respiratoire ?? null,
+      saturationO2: saturation_o2 ?? null,
+      poids: poids ?? null,
+      taille: taille ?? null,
+      glycemie: glycemie ?? null,
+      notes: notes ?? null,
+    },
+  });
+  res.status(201).json(created);
 }));
 
 router.delete('/:id', authenticate, authorize('admin'), asyncHandler(async (req, res) => {
-  const result = await query('DELETE FROM vitaux WHERE id = $1 RETURNING *', [req.params.id]);
-  if (result.rows.length === 0) { res.status(404).json({ error: 'Non trouvé' }); return; }
-  res.json({ message: 'Supprimé' });
+  try {
+    await prisma.vital.delete({ where: { id: Number(req.params.id) } });
+    res.json({ message: 'Supprimé' });
+  } catch {
+    res.status(404).json({ error: 'Non trouvé' });
+  }
 }));
 
 export default router;

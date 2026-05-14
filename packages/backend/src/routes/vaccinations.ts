@@ -1,5 +1,5 @@
 import { Router } from 'express';
-import { query } from '../config/db.js';
+import { prisma } from '../config/db.js';
 import { authenticate, authorize } from '../middleware/auth.js';
 import { validate, createVaccinationSchema } from '../middleware/validation.js';
 import { asyncHandler } from '../middleware/asyncHandler.js';
@@ -7,24 +7,40 @@ import { asyncHandler } from '../middleware/asyncHandler.js';
 const router = Router();
 
 router.get('/:patientId', authenticate, asyncHandler(async (req, res) => {
-  const result = await query(
-    `SELECT v.*, m.nom as medecin_nom, m.prenom as medecin_prenom FROM vaccinations v LEFT JOIN medecins m ON v.medecin_id = m.id WHERE v.patient_id = $1 ORDER BY v.date_vaccination DESC`,
-    [req.params.patientId]
-  );
-  res.json(result.rows);
+  const rows = await prisma.vaccination.findMany({
+    where: { patientId: Number(req.params.patientId) },
+    include: { medecin: { select: { nom: true, prenom: true } } },
+    orderBy: { dateVaccination: 'desc' },
+  });
+  const mapped = rows.map(v => ({
+    ...v,
+    medecin_nom: v.medecin?.nom ?? null,
+    medecin_prenom: v.medecin?.prenom ?? null,
+  }));
+  res.json(mapped);
 }));
 
 router.post('/', authenticate, authorize('admin', 'medecin'), validate(createVaccinationSchema), asyncHandler(async (req, res) => {
   const { patient_id, medecin_id, vaccin, lot, dose, site_injection, date_vaccination, date_rappel, notes } = req.body;
-  const result = await query(
-    `INSERT INTO vaccinations (patient_id, medecin_id, vaccin, lot, dose, site_injection, date_vaccination, date_rappel, notes) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9) RETURNING *`,
-    [patient_id, medecin_id, vaccin, lot, dose, site_injection, date_vaccination, date_rappel, notes]
-  );
-  res.status(201).json(result.rows[0]);
+  const data: Parameters<typeof prisma.vaccination.create>[0]['data'] = {
+    patientId: Number(patient_id),
+    medecinId: medecin_id ?? null,
+    vaccin,
+    lot: lot ?? null,
+    dose: dose ?? null,
+    siteInjection: site_injection ?? null,
+    notes: notes ?? null,
+  };
+  if (date_vaccination) data.dateVaccination = new Date(date_vaccination);
+  if (date_rappel) data.dateRappel = new Date(date_rappel);
+  const created = await prisma.vaccination.create({ data });
+  res.status(201).json(created);
 }));
 
 router.delete('/:id', authenticate, authorize('admin'), asyncHandler(async (req, res) => {
-  await query('DELETE FROM vaccinations WHERE id = $1', [req.params.id]);
+  try {
+    await prisma.vaccination.delete({ where: { id: Number(req.params.id) } });
+  } catch { /* ignore */ }
   res.json({ message: 'Supprimé' });
 }));
 

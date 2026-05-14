@@ -1,6 +1,7 @@
 import { Router, Response, Request } from 'express';
 import crypto from 'crypto';
-import { query } from '../config/db.js';
+import { Prisma } from '@prisma/client';
+import { prisma } from '../config/db.js';
 import jwt from 'jsonwebtoken';
 import rateLimit from 'express-rate-limit';
 
@@ -26,10 +27,15 @@ router.post('/request-otp', validate(requestOtpSchema), async (req: Request, res
     const { contact } = req.body; // phone or email
     if (!contact) { res.status(400).json({ error: 'Téléphone ou email requis' }); return; }
 
-    const result = await query('SELECT id, nom, prenom FROM patients WHERE (telephone = $1 OR email = $1) AND archived = FALSE', [contact]);
-    if (result.rows.length === 0) { res.status(404).json({ error: 'Aucun patient trouvé avec ce contact' }); return; }
+    const patient = await prisma.patient.findFirst({
+      where: {
+        archived: false,
+        OR: [{ telephone: contact }, { email: contact }],
+      },
+      select: { id: true, nom: true, prenom: true },
+    });
+    if (!patient) { res.status(404).json({ error: 'Aucun patient trouvé avec ce contact' }); return; }
 
-    const patient = result.rows[0];
     // SECURITY: Use crypto.randomInt() instead of Math.random() for OTP generation
     const code = String(crypto.randomInt(100000, 999999)); // 6 digits, cryptographically secure
     otpStore.set(contact, { code, patientId: patient.id, expires: Date.now() + 5 * 60 * 1000, attempts: 0 }); // 5 min
@@ -70,8 +76,11 @@ router.post('/verify-otp', otpVerifyLimiter, validate(verifyOtpSchema), async (r
       { algorithm: 'HS256', expiresIn: '1h', issuer: 'hospital-erp' }
     );
 
-    const patient = await query('SELECT id, nom, prenom, telephone, email FROM patients WHERE id = $1', [stored.patientId]);
-    res.json({ token, patient: patient.rows[0] });
+    const patient = await prisma.patient.findUnique({
+      where: { id: stored.patientId },
+      select: { id: true, nom: true, prenom: true, telephone: true, email: true },
+    });
+    res.json({ token, patient });
   } catch (err) { res.status(500).json({ error: 'Erreur serveur' }); }
 });
 
@@ -90,8 +99,21 @@ const portalAuth = (req: Request, res: Response, next: () => void) => {
 // Get my appointments
 router.get('/mes-rdv', portalAuth, async (req: Request, res: Response): Promise<void> => {
   try {
-    const result = await query(`SELECT r.*, m.nom as medecin_nom, m.prenom as medecin_prenom, m.specialite, s.nom as service_nom FROM rendez_vous r LEFT JOIN medecins m ON r.medecin_id = m.id LEFT JOIN services s ON r.service_id = s.id WHERE r.patient_id = $1 ORDER BY r.date_rdv DESC`, [(req as any).patientId]);
-    res.json(result.rows);
+    const rows = await prisma.rendezVous.findMany({
+      where: { patientId: (req as any).patientId },
+      orderBy: { dateRdv: 'desc' },
+      include: {
+        medecin: { select: { nom: true, prenom: true, specialite: true } },
+        service: { select: { nom: true } },
+      },
+    });
+    res.json(rows.map(r => ({
+      ...r,
+      medecin_nom: r.medecin?.nom ?? null,
+      medecin_prenom: r.medecin?.prenom ?? null,
+      specialite: r.medecin?.specialite ?? null,
+      service_nom: r.service?.nom ?? null,
+    })));
   } catch (err) { res.status(500).json({ error: 'Erreur serveur' }); }
 });
 
@@ -101,12 +123,19 @@ router.get('/creneaux', async (req: Request, res: Response): Promise<void> => {
     const { service_id, date } = req.query;
     if (!date) { res.status(400).json({ error: 'Date requise' }); return; }
 
-    // Get existing RDVs for that date/service
-    let sql = `SELECT date_rdv FROM rendez_vous WHERE DATE(date_rdv) = $1 AND statut NOT IN ('annule', 'absent')`;
-    const params: unknown[] = [date];
-    if (service_id) { params.push(service_id); sql += ` AND service_id = $${params.length}`; }
-    const existing = await query(sql, params);
-    const taken = existing.rows.map((r: { date_rdv: string }) => new Date(r.date_rdv).getHours() + ':' + String(new Date(r.date_rdv).getMinutes()).padStart(2, '0'));
+    // Get existing RDVs for that date/service via raw SQL (DATE() function)
+    const dateStr = String(date);
+    const serviceFilter = service_id ? Prisma.sql`AND service_id = ${Number(service_id)}` : Prisma.empty;
+    const existing = await prisma.$queryRaw<Array<{ date_rdv: Date }>>`
+      SELECT date_rdv FROM rendez_vous
+      WHERE DATE(date_rdv) = ${dateStr}::date
+        AND statut NOT IN ('annule', 'absent')
+        ${serviceFilter}
+    `;
+    const taken = existing.map(r => {
+      const d = new Date(r.date_rdv);
+      return d.getHours() + ':' + String(d.getMinutes()).padStart(2, '0');
+    });
 
     // Generate slots 8h-17h, every 30min
     const slots: string[] = [];
@@ -124,21 +153,23 @@ router.get('/creneaux', async (req: Request, res: Response): Promise<void> => {
 // Get services list (public)
 router.get('/services', async (_req: Request, res: Response): Promise<void> => {
   try {
-    const result = await query('SELECT id, nom FROM services ORDER BY nom');
-    res.json(result.rows);
+    const rows = await prisma.service.findMany({
+      select: { id: true, nom: true },
+      orderBy: { nom: 'asc' },
+    });
+    res.json(rows);
   } catch (err) { res.status(500).json({ error: 'Erreur serveur' }); }
 });
 
 // Get medecins list (public)
-router.get('/medecins', async (req: Request, res: Response): Promise<void> => {
+router.get('/medecins', async (_req: Request, res: Response): Promise<void> => {
   try {
-    const { service_id } = req.query;
-    let sql = 'SELECT id, nom, prenom, specialite FROM medecins';
-    const params: unknown[] = [];
     // No direct service link on medecins table, return all
-    sql += ' ORDER BY nom';
-    const result = await query(sql, params);
-    res.json(result.rows);
+    const rows = await prisma.medecin.findMany({
+      select: { id: true, nom: true, prenom: true, specialite: true },
+      orderBy: { nom: 'asc' },
+    });
+    res.json(rows);
   } catch (err) { res.status(500).json({ error: 'Erreur serveur' }); }
 });
 
@@ -149,8 +180,16 @@ router.post('/rdv', portalAuth, validate(bookRendezVousPortalSchema), async (req
     if (!date_rdv) { res.status(400).json({ error: 'Date requise' }); return; }
 
     const n = (v: unknown) => (v === '' || v === undefined) ? null : v;
-    const result = await query(`INSERT INTO rendez_vous (patient_id, medecin_id, service_id, date_rdv, motif) VALUES ($1,$2,$3,$4,$5) RETURNING *`, [(req as any).patientId, n(medecin_id), n(service_id), date_rdv, n(motif)]);
-    res.status(201).json(result.rows[0]);
+    const created = await prisma.rendezVous.create({
+      data: {
+        patientId: (req as any).patientId,
+        medecinId: n(medecin_id) as number | null,
+        serviceId: n(service_id) as number | null,
+        dateRdv: new Date(date_rdv),
+        motif: n(motif) as string | null,
+      },
+    });
+    res.status(201).json(created);
   } catch (err) { console.error(err); res.status(500).json({ error: 'Erreur serveur' }); }
 });
 

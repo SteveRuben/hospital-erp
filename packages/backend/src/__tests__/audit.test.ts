@@ -2,36 +2,40 @@
  * Audit Service Tests
  *
  * Covers:
- * - logAudit writes to audit_log with parameters in the right slots
+ * - logAudit writes to audit_log with the right fields
  * - update action computes diff (only changed fields)
  * - sensitive fields (password, token, secret, otp, mfa_secret) are redacted
  * - Long detail strings are truncated to 2000 chars + suffix
  * - DB errors are swallowed (audit must never break the main flow)
  * - auditCreate / auditUpdate / auditDelete helpers
  *
- * The DB query is mocked — we verify the right SQL is sent, not Postgres execution.
+ * Prisma is mocked — we verify the right data is sent, not Postgres execution.
  */
 
 import { describe, it, expect, beforeEach, jest } from '@jest/globals';
 
-const mockQuery = jest.fn<(text: string, params?: unknown[]) => Promise<{ rows: unknown[]; rowCount?: number }>>();
+type CreateArgs = { data: { userId: number; action: string; tableName: string; recordId: number | null; details: string | null } };
+const mockCreate = jest.fn<(args: CreateArgs) => Promise<unknown>>();
 
 jest.unstable_mockModule('../config/db.js', () => ({
-  query: mockQuery,
+  prisma: { auditLog: { create: mockCreate } },
+  query: jest.fn(),
   pool: {},
   getClient: jest.fn(),
-  default: { query: mockQuery, pool: {}, getClient: jest.fn() },
+  default: { prisma: { auditLog: { create: mockCreate } }, query: jest.fn(), pool: {}, getClient: jest.fn() },
 }));
 
 const { logAudit, auditCreate, auditUpdate, auditDelete } = await import('../services/audit.js');
 
-describe('logAudit — basic INSERT', () => {
+const lastData = () => (mockCreate.mock.calls[0]![0] as CreateArgs).data;
+
+describe('logAudit — basic create', () => {
   beforeEach(() => {
-    mockQuery.mockReset();
-    mockQuery.mockResolvedValue({ rows: [], rowCount: 1 });
+    mockCreate.mockReset();
+    mockCreate.mockResolvedValue({});
   });
 
-  it('inserts into audit_log with the right params', async () => {
+  it('writes the right fields to auditLog', async () => {
     await logAudit({
       userId: 42,
       action: 'create',
@@ -40,30 +44,31 @@ describe('logAudit — basic INSERT', () => {
       details: 'Created patient X',
     });
 
-    expect(mockQuery).toHaveBeenCalledTimes(1);
-    const [sql, params] = mockQuery.mock.calls[0];
-    expect(sql).toContain('INSERT INTO audit_log');
-    expect(sql).toContain('user_id, action, table_name, record_id, details');
-    expect(params).toEqual([42, 'create', 'patients', 100, 'Created patient X']);
+    expect(mockCreate).toHaveBeenCalledTimes(1);
+    expect(lastData()).toEqual({
+      userId: 42,
+      action: 'create',
+      tableName: 'patients',
+      recordId: 100,
+      details: 'Created patient X',
+    });
   });
 
   it('sends null for missing recordId', async () => {
     await logAudit({ userId: 1, action: 'login', tableName: 'users' });
-    const [, params] = mockQuery.mock.calls[0];
-    expect(params![3]).toBeNull();
+    expect(lastData().recordId).toBeNull();
   });
 
   it('sends null for missing details', async () => {
     await logAudit({ userId: 1, action: 'login', tableName: 'users', recordId: 1 });
-    const [, params] = mockQuery.mock.calls[0];
-    expect(params![4]).toBeNull();
+    expect(lastData().details).toBeNull();
   });
 });
 
 describe('logAudit — update diff', () => {
   beforeEach(() => {
-    mockQuery.mockReset();
-    mockQuery.mockResolvedValue({ rows: [], rowCount: 1 });
+    mockCreate.mockReset();
+    mockCreate.mockResolvedValue({});
   });
 
   it('computes diff: only changed fields appear in details', async () => {
@@ -73,11 +78,10 @@ describe('logAudit — update diff', () => {
       tableName: 'patients',
       recordId: 5,
       before: { nom: 'Doe', prenom: 'John', telephone: '+1234' },
-      after: { nom: 'Smith', prenom: 'John', telephone: '+1234' }, // only nom changed
+      after: { nom: 'Smith', prenom: 'John', telephone: '+1234' },
     });
 
-    const [, params] = mockQuery.mock.calls[0];
-    const details = params![4] as string;
+    const details = lastData().details!;
     expect(details).toContain('nom');
     expect(details).toContain('"Doe"');
     expect(details).toContain('"Smith"');
@@ -94,13 +98,13 @@ describe('logAudit — update diff', () => {
       before: { montant: 1000 },
       after: { montant: 1500 },
     });
-    const details = mockQuery.mock.calls[0][1]![4] as string;
+    const details = lastData().details!;
     expect(details).toContain('1000');
     expect(details).toContain('1500');
     expect(details).toContain('→');
   });
 
-  it('returns empty string in details if no fields changed', async () => {
+  it('returns null in details if no fields changed', async () => {
     await logAudit({
       userId: 1,
       action: 'update',
@@ -109,16 +113,14 @@ describe('logAudit — update diff', () => {
       before: { nom: 'Same', prenom: 'Same' },
       after: { nom: 'Same', prenom: 'Same' },
     });
-    const details = mockQuery.mock.calls[0][1]![4];
-    // Empty diff produces empty details (falsy → null in INSERT)
-    expect(details).toBeNull();
+    expect(lastData().details).toBeNull();
   });
 });
 
 describe('logAudit — sensitive field redaction', () => {
   beforeEach(() => {
-    mockQuery.mockReset();
-    mockQuery.mockResolvedValue({ rows: [], rowCount: 1 });
+    mockCreate.mockReset();
+    mockCreate.mockResolvedValue({});
   });
 
   it('redacts password changes', async () => {
@@ -130,7 +132,7 @@ describe('logAudit — sensitive field redaction', () => {
       before: { nom: 'Foo', password: 'old-hash' },
       after: { nom: 'Foo', password: 'new-hash' },
     });
-    const details = mockQuery.mock.calls[0][1]![4] as string;
+    const details = lastData().details!;
     expect(details).toContain('password');
     expect(details).toContain('[REDACTED]');
     expect(details).not.toContain('old-hash');
@@ -146,7 +148,7 @@ describe('logAudit — sensitive field redaction', () => {
       before: { mfa_secret: 'AAAA' },
       after: { mfa_secret: 'BBBB' },
     });
-    const details = mockQuery.mock.calls[0][1]![4] as string;
+    const details = lastData().details!;
     expect(details).toContain('[REDACTED]');
     expect(details).not.toContain('AAAA');
     expect(details).not.toContain('BBBB');
@@ -154,8 +156,8 @@ describe('logAudit — sensitive field redaction', () => {
 
   it('redacts token, secret, otp fields', async () => {
     for (const field of ['token', 'secret', 'otp']) {
-      mockQuery.mockReset();
-      mockQuery.mockResolvedValue({ rows: [], rowCount: 1 });
+      mockCreate.mockReset();
+      mockCreate.mockResolvedValue({});
       await logAudit({
         userId: 1,
         action: 'update',
@@ -164,7 +166,7 @@ describe('logAudit — sensitive field redaction', () => {
         before: { [field]: 'old' },
         after: { [field]: 'new' },
       });
-      const details = mockQuery.mock.calls[0][1]![4] as string;
+      const details = lastData().details!;
       expect(details).toContain('[REDACTED]');
       expect(details).not.toContain('old');
       expect(details).not.toContain('new');
@@ -174,8 +176,8 @@ describe('logAudit — sensitive field redaction', () => {
 
 describe('logAudit — detail truncation', () => {
   beforeEach(() => {
-    mockQuery.mockReset();
-    mockQuery.mockResolvedValue({ rows: [], rowCount: 1 });
+    mockCreate.mockReset();
+    mockCreate.mockResolvedValue({});
   });
 
   it('truncates details > 2000 chars', async () => {
@@ -187,8 +189,8 @@ describe('logAudit — detail truncation', () => {
       recordId: 1,
       details: longString,
     });
-    const details = mockQuery.mock.calls[0][1]![4] as string;
-    expect(details.length).toBeLessThanOrEqual(2030); // 2000 + suffix
+    const details = lastData().details!;
+    expect(details.length).toBeLessThanOrEqual(2030);
     expect(details).toContain('[truncated]');
   });
 
@@ -200,7 +202,7 @@ describe('logAudit — detail truncation', () => {
       recordId: 1,
       details: 'short',
     });
-    const details = mockQuery.mock.calls[0][1]![4] as string;
+    const details = lastData().details!;
     expect(details).toBe('short');
     expect(details).not.toContain('[truncated]');
   });
@@ -208,11 +210,11 @@ describe('logAudit — detail truncation', () => {
 
 describe('logAudit — error swallowing', () => {
   beforeEach(() => {
-    mockQuery.mockReset();
+    mockCreate.mockReset();
   });
 
   it('does not throw when DB query fails (audit must never break the main flow)', async () => {
-    mockQuery.mockRejectedValue(new Error('connection refused'));
+    mockCreate.mockRejectedValue(new Error('connection refused'));
     await expect(
       logAudit({ userId: 1, action: 'create', tableName: 'x', recordId: 1 })
     ).resolves.toBeUndefined();
@@ -221,34 +223,30 @@ describe('logAudit — error swallowing', () => {
 
 describe('audit helpers', () => {
   beforeEach(() => {
-    mockQuery.mockReset();
-    mockQuery.mockResolvedValue({ rows: [], rowCount: 1 });
+    mockCreate.mockReset();
+    mockCreate.mockResolvedValue({});
   });
 
   it('auditCreate sends action=create', async () => {
     await auditCreate(7, 'patients', 99, 'Created');
-    const [, params] = mockQuery.mock.calls[0];
-    expect(params).toEqual([7, 'create', 'patients', 99, 'Created']);
+    expect(lastData()).toEqual({ userId: 7, action: 'create', tableName: 'patients', recordId: 99, details: 'Created' });
   });
 
   it('auditDelete sends action=delete', async () => {
     await auditDelete(7, 'patients', 99, 'Archived');
-    const [, params] = mockQuery.mock.calls[0];
-    expect(params).toEqual([7, 'delete', 'patients', 99, 'Archived']);
+    expect(lastData()).toEqual({ userId: 7, action: 'delete', tableName: 'patients', recordId: 99, details: 'Archived' });
   });
 
   it('auditUpdate sends action=update with computed diff', async () => {
     await auditUpdate(7, 'patients', 99, { nom: 'A' }, { nom: 'B' });
-    const [, params] = mockQuery.mock.calls[0];
-    expect(params![1]).toBe('update');
-    expect(params![4]).toContain('nom');
-    expect(params![4]).toContain('"A"');
-    expect(params![4]).toContain('"B"');
+    expect(lastData().action).toBe('update');
+    expect(lastData().details).toContain('nom');
+    expect(lastData().details).toContain('"A"');
+    expect(lastData().details).toContain('"B"');
   });
 
   it('auditCreate without details still works', async () => {
     await auditCreate(1, 'x', 1);
-    const [, params] = mockQuery.mock.calls[0];
-    expect(params![4]).toBeNull();
+    expect(lastData().details).toBeNull();
   });
 });

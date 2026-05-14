@@ -1,5 +1,5 @@
 import { Router } from 'express';
-import { query } from '../config/db.js';
+import { prisma } from '../config/db.js';
 import { authenticate, authorize } from '../middleware/auth.js';
 import { validate, createServiceSchema } from '../middleware/validation.js';
 import { asyncHandler } from '../middleware/asyncHandler.js';
@@ -7,37 +7,58 @@ import { asyncHandler } from '../middleware/asyncHandler.js';
 const router = Router();
 
 router.get('/', authenticate, asyncHandler(async (_req, res) => {
-  const result = await query('SELECT * FROM services ORDER BY nom');
-  res.json(result.rows);
+  const services = await prisma.service.findMany({ orderBy: { nom: 'asc' } });
+  res.json(services);
 }));
 
 router.get('/:id', authenticate, asyncHandler(async (req, res) => {
-  const service = await query('SELECT * FROM services WHERE id = $1', [req.params.id]);
-  if (service.rows.length === 0) { res.status(404).json({ error: 'Service non trouvé' }); return; }
-  const stats = await query(
-    `SELECT COUNT(DISTINCT c.id) as nb_consultations, COUNT(DISTINCT c.patient_id) as nb_patients, COALESCE(SUM(r.montant), 0) as recettes FROM consultations c LEFT JOIN recettes r ON r.service_id = c.service_id WHERE c.service_id = $1`,
-    [req.params.id]
-  );
-  res.json({ ...service.rows[0], stats: stats.rows[0] });
+  const id = Number(req.params.id);
+  const service = await prisma.service.findUnique({ where: { id } });
+  if (!service) { res.status(404).json({ error: 'Service non trouvé' }); return; }
+  const stats = await prisma.$queryRaw<Array<{ nb_consultations: bigint; nb_patients: bigint; recettes: string | number }>>`
+    SELECT COUNT(DISTINCT c.id)::bigint as nb_consultations,
+           COUNT(DISTINCT c.patient_id)::bigint as nb_patients,
+           COALESCE(SUM(r.montant), 0) as recettes
+    FROM consultations c
+    LEFT JOIN recettes r ON r.service_id = c.service_id
+    WHERE c.service_id = ${id}
+  `;
+  const s = stats[0] || { nb_consultations: 0n, nb_patients: 0n, recettes: 0 };
+  res.json({
+    ...service,
+    stats: {
+      nb_consultations: Number(s.nb_consultations),
+      nb_patients: Number(s.nb_patients),
+      recettes: Number(s.recettes),
+    },
+  });
 }));
 
 router.post('/', authenticate, authorize('admin'), validate(createServiceSchema), asyncHandler(async (req, res) => {
   const { nom, description } = req.body;
-  const result = await query('INSERT INTO services (nom, description) VALUES ($1, $2) RETURNING *', [nom, description]);
-  res.status(201).json(result.rows[0]);
+  const created = await prisma.service.create({ data: { nom, description } });
+  res.status(201).json(created);
 }));
 
 router.put('/:id', authenticate, authorize('admin'), asyncHandler(async (req, res) => {
+  const id = Number(req.params.id);
   const { nom, description } = req.body;
-  const result = await query('UPDATE services SET nom = $1, description = $2 WHERE id = $3 RETURNING *', [nom, description, req.params.id]);
-  if (result.rows.length === 0) { res.status(404).json({ error: 'Service non trouvé' }); return; }
-  res.json(result.rows[0]);
+  try {
+    const updated = await prisma.service.update({ where: { id }, data: { nom, description } });
+    res.json(updated);
+  } catch {
+    res.status(404).json({ error: 'Service non trouvé' });
+  }
 }));
 
 router.delete('/:id', authenticate, authorize('admin'), asyncHandler(async (req, res) => {
-  const result = await query('DELETE FROM services WHERE id = $1 RETURNING *', [req.params.id]);
-  if (result.rows.length === 0) { res.status(404).json({ error: 'Service non trouvé' }); return; }
-  res.json({ message: 'Service supprimé' });
+  const id = Number(req.params.id);
+  try {
+    await prisma.service.delete({ where: { id } });
+    res.json({ message: 'Service supprimé' });
+  } catch {
+    res.status(404).json({ error: 'Service non trouvé' });
+  }
 }));
 
 export default router;

@@ -1,7 +1,9 @@
 import { Router, Response } from 'express';
-import { query } from '../config/db.js';
+import { Prisma } from '@prisma/client';
+import { prisma } from '../config/db.js';
 import { authenticate, authorize, AuthRequest } from '../middleware/auth.js';
 import { auditCreate, auditUpdate, auditDelete } from '../services/audit.js';
+import { generatePatientReferenceId } from '../services/reference.js';
 import { canAccessPatient } from '../services/access-control.js';
 import { validate, createPatientSchema } from '../middleware/validation.js';
 
@@ -11,25 +13,34 @@ const router = Router();
 router.get('/', authenticate, async (req: AuthRequest, res: Response): Promise<void> => {
   try {
     const { search, archived = 'false', page = '1', limit = '20' } = req.query;
-    let sql = 'SELECT * FROM patients WHERE archived = $1';
-    const params: unknown[] = [archived === 'true'];
-    
-    if (search) {
-      params.push(`%${search}%`);
-      sql += ` AND (nom ILIKE $2 OR prenom ILIKE $2 OR telephone ILIKE $2 OR CAST(id AS TEXT) ILIKE $2)`;
-    }
+    const where: Prisma.PatientWhereInput = { archived: archived === 'true' };
 
-    // Count
-    const countResult = await query(`SELECT COUNT(*) as total FROM (${sql}) sub`, params);
-    const total = parseInt(countResult.rows[0].total as string);
+    if (search) {
+      const s = String(search);
+      const idNum = Number(s);
+      const or: Prisma.PatientWhereInput[] = [
+        { nom: { contains: s, mode: 'insensitive' } },
+        { prenom: { contains: s, mode: 'insensitive' } },
+        { telephone: { contains: s, mode: 'insensitive' } },
+      ];
+      if (Number.isInteger(idNum) && idNum > 0) or.push({ id: idNum });
+      where.OR = or;
+    }
 
     const pg = Math.max(1, Number(page));
     const lim = Math.min(100, Math.max(1, Number(limit)));
-    params.push(lim); sql += ` ORDER BY created_at DESC LIMIT $${params.length}`;
-    params.push((pg - 1) * lim); sql += ` OFFSET $${params.length}`;
-    
-    const result = await query(sql, params);
-    res.json({ data: result.rows, total, page: pg, limit: lim, totalPages: Math.ceil(total / lim) });
+
+    const [total, rows] = await Promise.all([
+      prisma.patient.count({ where }),
+      prisma.patient.findMany({
+        where,
+        orderBy: { createdAt: 'desc' },
+        take: lim,
+        skip: (pg - 1) * lim,
+      }),
+    ]);
+
+    res.json({ data: rows, total, page: pg, limit: lim, totalPages: Math.ceil(total / lim) });
   } catch (err) {
     console.error('[ERROR] Get patients:', err);
     res.status(500).json({ error: 'Erreur serveur' });
@@ -41,12 +52,23 @@ router.get('/search/quick', authenticate, async (req: AuthRequest, res: Response
   try {
     const { q } = req.query;
     if (!q || String(q).length < 2) { res.json([]); return; }
-    const term = `%${q}%`;
-    const result = await query(
-      `SELECT id, nom, prenom, sexe, telephone, ville, date_naissance FROM patients WHERE archived = FALSE AND (nom ILIKE $1 OR prenom ILIKE $1 OR telephone ILIKE $1 OR email ILIKE $1 OR numero_identite ILIKE $1 OR CAST(id AS TEXT) = $2) ORDER BY nom LIMIT 10`,
-      [term, String(q)]
-    );
-    res.json(result.rows);
+    const s = String(q);
+    const idNum = Number(s);
+    const or: Prisma.PatientWhereInput[] = [
+      { nom: { contains: s, mode: 'insensitive' } },
+      { prenom: { contains: s, mode: 'insensitive' } },
+      { telephone: { contains: s, mode: 'insensitive' } },
+      { email: { contains: s, mode: 'insensitive' } },
+      { numeroIdentite: { contains: s, mode: 'insensitive' } },
+    ];
+    if (Number.isInteger(idNum) && idNum > 0) or.push({ id: idNum });
+    const rows = await prisma.patient.findMany({
+      where: { archived: false, OR: or },
+      select: { id: true, nom: true, prenom: true, sexe: true, telephone: true, ville: true, dateNaissance: true },
+      orderBy: { nom: 'asc' },
+      take: 10,
+    });
+    res.json(rows);
   } catch (err) { res.status(500).json({ error: 'Erreur serveur' }); }
 });
 
@@ -54,32 +76,78 @@ router.get('/search/quick', authenticate, async (req: AuthRequest, res: Response
 router.get('/search/advanced', authenticate, async (req: AuthRequest, res: Response): Promise<void> => {
   try {
     const { nom, prenom, telephone, ville, sexe, age_min, age_max, medecin_id, reference, contact_urgence, page = '1', limit = '20' } = req.query;
-    let sql = 'SELECT p.* FROM patients p WHERE p.archived = FALSE';
-    const params: unknown[] = [];
 
-    if (nom) { params.push(`%${nom}%`); sql += ` AND p.nom ILIKE $${params.length}`; }
-    if (prenom) { params.push(`%${prenom}%`); sql += ` AND p.prenom ILIKE $${params.length}`; }
-    if (telephone) { params.push(`%${telephone}%`); sql += ` AND p.telephone ILIKE $${params.length}`; }
-    if (ville) { params.push(`%${ville}%`); sql += ` AND p.ville ILIKE $${params.length}`; }
-    if (sexe) { params.push(sexe); sql += ` AND p.sexe = $${params.length}`; }
-    if (age_min) { params.push(Number(age_min)); sql += ` AND EXTRACT(YEAR FROM AGE(COALESCE(p.date_naissance, CURRENT_DATE))) >= $${params.length}`; }
-    if (age_max) { params.push(Number(age_max)); sql += ` AND EXTRACT(YEAR FROM AGE(COALESCE(p.date_naissance, CURRENT_DATE))) <= $${params.length}`; }
-    if (contact_urgence) { params.push(`%${contact_urgence}%`); sql += ` AND (p.contact_urgence_nom ILIKE $${params.length} OR p.contact_urgence_telephone ILIKE $${params.length})`; }
-    if (reference) { params.push(`%${reference}%`); sql += ` AND p.id IN (SELECT patient_id FROM consultations WHERE reference ILIKE $${params.length})`; }
-    if (medecin_id) { params.push(Number(medecin_id)); sql += ` AND p.id IN (SELECT patient_id FROM consultations WHERE medecin_id = $${params.length})`; }
+    const where: Prisma.PatientWhereInput = { archived: false };
+    const ands: Prisma.PatientWhereInput[] = [];
 
-    // Count total
-    const countResult = await query(`SELECT COUNT(*) as total FROM (${sql}) sub`, params);
-    const total = parseInt(countResult.rows[0].total as string);
+    if (nom) ands.push({ nom: { contains: String(nom), mode: 'insensitive' } });
+    if (prenom) ands.push({ prenom: { contains: String(prenom), mode: 'insensitive' } });
+    if (telephone) ands.push({ telephone: { contains: String(telephone), mode: 'insensitive' } });
+    if (ville) ands.push({ ville: { contains: String(ville), mode: 'insensitive' } });
+    if (sexe) ands.push({ sexe: sexe as Prisma.PatientWhereInput['sexe'] });
 
-    // Paginate
+    // Age filters need raw SQL via a sub-query for EXTRACT(YEAR FROM AGE(date_naissance))
+    // We do those by computing a date cutoff:
+    //   age >= age_min  ⇔  date_naissance <= today - age_min years
+    //   age <= age_max  ⇔  date_naissance >= today - (age_max + 1) years + 1 day
+    if (age_min) {
+      const minYears = Number(age_min);
+      const cutoff = new Date();
+      cutoff.setFullYear(cutoff.getFullYear() - minYears);
+      ands.push({ dateNaissance: { lte: cutoff } });
+    }
+    if (age_max) {
+      const maxYears = Number(age_max);
+      const cutoff = new Date();
+      cutoff.setFullYear(cutoff.getFullYear() - maxYears - 1);
+      cutoff.setDate(cutoff.getDate() + 1);
+      ands.push({ dateNaissance: { gte: cutoff } });
+    }
+
+    if (contact_urgence) {
+      const s = String(contact_urgence);
+      ands.push({
+        OR: [
+          { contactUrgenceNom: { contains: s, mode: 'insensitive' } },
+          { contactUrgenceTelephone: { contains: s, mode: 'insensitive' } },
+        ],
+      });
+    }
+
+    if (reference) {
+      const s = String(reference);
+      const consults = await prisma.consultation.findMany({
+        where: { reference: { contains: s, mode: 'insensitive' } },
+        select: { patientId: true },
+      });
+      const ids = Array.from(new Set(consults.map(c => c.patientId)));
+      ands.push({ id: { in: ids.length ? ids : [-1] } });
+    }
+    if (medecin_id) {
+      const consults = await prisma.consultation.findMany({
+        where: { medecinId: Number(medecin_id) },
+        select: { patientId: true },
+      });
+      const ids = Array.from(new Set(consults.map(c => c.patientId)));
+      ands.push({ id: { in: ids.length ? ids : [-1] } });
+    }
+
+    if (ands.length) where.AND = ands;
+
     const pg = Math.max(1, Number(page));
     const lim = Math.min(100, Math.max(1, Number(limit)));
-    params.push(lim); sql += ` ORDER BY p.created_at DESC LIMIT $${params.length}`;
-    params.push((pg - 1) * lim); sql += ` OFFSET $${params.length}`;
 
-    const result = await query(sql, params);
-    res.json({ data: result.rows, total, page: pg, limit: lim, totalPages: Math.ceil(total / lim) });
+    const [total, rows] = await Promise.all([
+      prisma.patient.count({ where }),
+      prisma.patient.findMany({
+        where,
+        orderBy: { createdAt: 'desc' },
+        take: lim,
+        skip: (pg - 1) * lim,
+      }),
+    ]);
+
+    res.json({ data: rows, total, page: pg, limit: lim, totalPages: Math.ceil(total / lim) });
   } catch (err) { console.error('[ERROR] Advanced search:', err); res.status(500).json({ error: 'Erreur serveur' }); }
 });
 
@@ -87,21 +155,18 @@ router.get('/search/advanced', authenticate, async (req: AuthRequest, res: Respo
 router.get('/:id', authenticate, async (req: AuthRequest, res: Response): Promise<void> => {
   try {
     const patientId = Number(req.params.id);
-    
-    // Access control: medecins can only see their own patients
+
     if (!(await canAccessPatient(req.user!, patientId))) {
       res.status(403).json({ error: 'Accès refusé — ce patient ne vous est pas attribué' });
       return;
     }
 
-    const result = await query('SELECT * FROM patients WHERE id = $1', [patientId]);
-    
-    if (result.rows.length === 0) {
+    const patient = await prisma.patient.findUnique({ where: { id: patientId } });
+    if (!patient) {
       res.status(404).json({ error: 'Patient non trouvé' });
       return;
     }
-    
-    res.json(result.rows[0]);
+    res.json(patient);
   } catch (err) {
     res.status(500).json({ error: 'Erreur serveur' });
   }
@@ -111,25 +176,47 @@ router.get('/:id', authenticate, async (req: AuthRequest, res: Response): Promis
 router.post('/', authenticate, authorize('admin', 'medecin', 'reception'), validate(createPatientSchema), async (req: AuthRequest, res: Response): Promise<void> => {
   try {
     const { nom, prenom, deuxieme_prenom, sexe, date_naissance, age_estime, lieu_naissance, nationalite, numero_identite, statut_matrimonial, groupe_sanguin, pays, province, ville, commune, quartier, adresse, profession, telephone, email, contact_urgence_nom, contact_urgence_relation, contact_urgence_telephone } = req.body;
-    
+
     if (!nom || !prenom) {
       res.status(400).json({ error: 'Nom et prénom requis' });
       return;
     }
 
-    // Convert empty strings to null for CHECK constraints
-    const n = (v: unknown) => (v === '' || v === undefined) ? null : v;
+    const n = <T,>(v: T): T | null => (v === '' || v === undefined ? null : v) as T | null;
+    const reference_id = await generatePatientReferenceId(nom, prenom);
 
-    const result = await query(
-      `INSERT INTO patients (nom, prenom, deuxieme_prenom, sexe, date_naissance, age_estime, lieu_naissance, nationalite, numero_identite, statut_matrimonial, groupe_sanguin, pays, province, ville, commune, quartier, adresse, profession, telephone, email, contact_urgence_nom, contact_urgence_relation, contact_urgence_telephone) 
-       VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19,$20,$21,$22,$23) 
-       RETURNING *`,
-      [nom, prenom, n(deuxieme_prenom), n(sexe), n(date_naissance), n(age_estime), n(lieu_naissance), n(nationalite), n(numero_identite), n(statut_matrimonial), n(groupe_sanguin), n(pays), n(province), n(ville), n(commune), n(quartier), n(adresse), n(profession), n(telephone), n(email), n(contact_urgence_nom), n(contact_urgence_relation), n(contact_urgence_telephone)]
-    );
+    const data: Prisma.PatientCreateInput = {
+      referenceId: reference_id,
+      nom,
+      prenom,
+      deuxiemePrenom: n(deuxieme_prenom),
+      sexe: n(sexe) as Prisma.PatientCreateInput['sexe'],
+      ageEstime: n(age_estime),
+      lieuNaissance: n(lieu_naissance),
+      nationalite: n(nationalite),
+      numeroIdentite: n(numero_identite),
+      statutMatrimonial: n(statut_matrimonial) as Prisma.PatientCreateInput['statutMatrimonial'],
+      groupeSanguin: n(groupe_sanguin) as Prisma.PatientCreateInput['groupeSanguin'],
+      pays: n(pays),
+      province: n(province),
+      ville: n(ville),
+      commune: n(commune),
+      quartier: n(quartier),
+      adresse: n(adresse),
+      profession: n(profession),
+      telephone: n(telephone),
+      email: n(email),
+      contactUrgenceNom: n(contact_urgence_nom),
+      contactUrgenceRelation: n(contact_urgence_relation),
+      contactUrgenceTelephone: n(contact_urgence_telephone),
+    };
+    if (date_naissance) data.dateNaissance = new Date(date_naissance);
 
-    auditCreate(req.user!.id, 'patients', result.rows[0].id, `Created patient ${prenom} ${nom}`);
-    
-    res.status(201).json(result.rows[0]);
+    const created = await prisma.patient.create({ data });
+
+    auditCreate(req.user!.id, 'patients', created.id, `Created patient ${prenom} ${nom}`);
+
+    res.status(201).json(created);
   } catch (err) {
     console.error('[ERROR] Create patient:', err);
     res.status(500).json({ error: 'Erreur serveur' });
@@ -141,36 +228,49 @@ router.put('/:id', authenticate, authorize('admin', 'medecin', 'reception'), asy
   try {
     const patientId = Number(req.params.id);
 
-    // IDOR check
     if (!(await canAccessPatient(req.user!, patientId))) {
       res.status(403).json({ error: 'Accès refusé — ce patient ne vous est pas attribué' });
       return;
     }
 
     const { nom, prenom, deuxieme_prenom, sexe, date_naissance, age_estime, lieu_naissance, nationalite, numero_identite, statut_matrimonial, groupe_sanguin, pays, province, ville, commune, quartier, adresse, profession, telephone, email, contact_urgence_nom, contact_urgence_relation, contact_urgence_telephone } = req.body;
-    
-    const n = (v: unknown) => (v === '' || v === undefined) ? null : v;
 
-    // Fetch before state for audit
-    const beforeResult = await query('SELECT * FROM patients WHERE id = $1', [req.params.id]);
-    if (beforeResult.rows.length === 0) { res.status(404).json({ error: 'Patient non trouvé' }); return; }
-    const before = beforeResult.rows[0];
+    const n = <T,>(v: T): T | null => (v === '' || v === undefined ? null : v) as T | null;
 
-    const result = await query(
-      `UPDATE patients SET nom=$1, prenom=$2, deuxieme_prenom=$3, sexe=$4, date_naissance=$5, age_estime=$6, lieu_naissance=$7, nationalite=$8, numero_identite=$9, statut_matrimonial=$10, groupe_sanguin=$11, pays=$12, province=$13, ville=$14, commune=$15, quartier=$16, adresse=$17, profession=$18, telephone=$19, email=$20, contact_urgence_nom=$21, contact_urgence_relation=$22, contact_urgence_telephone=$23
-       WHERE id = $24 
-       RETURNING *`,
-      [nom, prenom, n(deuxieme_prenom), n(sexe), n(date_naissance), n(age_estime), n(lieu_naissance), n(nationalite), n(numero_identite), n(statut_matrimonial), n(groupe_sanguin), n(pays), n(province), n(ville), n(commune), n(quartier), n(adresse), n(profession), n(telephone), n(email), n(contact_urgence_nom), n(contact_urgence_relation), n(contact_urgence_telephone), req.params.id]
-    );
-    
-    if (result.rows.length === 0) {
-      res.status(404).json({ error: 'Patient non trouvé' });
-      return;
-    }
+    const before = await prisma.patient.findUnique({ where: { id: patientId } });
+    if (!before) { res.status(404).json({ error: 'Patient non trouvé' }); return; }
 
-    auditUpdate(req.user!.id, 'patients', Number(req.params.id), before, result.rows[0]);
-    
-    res.json(result.rows[0]);
+    const data: Prisma.PatientUpdateInput = {
+      nom,
+      prenom,
+      deuxiemePrenom: n(deuxieme_prenom),
+      sexe: n(sexe) as Prisma.PatientUpdateInput['sexe'],
+      dateNaissance: date_naissance ? new Date(date_naissance) : null,
+      ageEstime: n(age_estime),
+      lieuNaissance: n(lieu_naissance),
+      nationalite: n(nationalite),
+      numeroIdentite: n(numero_identite),
+      statutMatrimonial: n(statut_matrimonial) as Prisma.PatientUpdateInput['statutMatrimonial'],
+      groupeSanguin: n(groupe_sanguin) as Prisma.PatientUpdateInput['groupeSanguin'],
+      pays: n(pays),
+      province: n(province),
+      ville: n(ville),
+      commune: n(commune),
+      quartier: n(quartier),
+      adresse: n(adresse),
+      profession: n(profession),
+      telephone: n(telephone),
+      email: n(email),
+      contactUrgenceNom: n(contact_urgence_nom),
+      contactUrgenceRelation: n(contact_urgence_relation),
+      contactUrgenceTelephone: n(contact_urgence_telephone),
+    };
+
+    const updated = await prisma.patient.update({ where: { id: patientId }, data });
+
+    auditUpdate(req.user!.id, 'patients', patientId, before, updated);
+
+    res.json(updated);
   } catch (err) {
     console.error('[ERROR] Update patient:', err);
     res.status(500).json({ error: 'Erreur serveur' });
@@ -182,25 +282,21 @@ router.delete('/:id', authenticate, authorize('admin'), async (req: AuthRequest,
   try {
     const patientId = Number(req.params.id);
 
-    // IDOR check (even admin goes through this for consistency)
     if (!(await canAccessPatient(req.user!, patientId))) {
       res.status(403).json({ error: 'Accès refusé' });
       return;
     }
 
-    const result = await query(
-      'UPDATE patients SET archived = TRUE WHERE id = $1 RETURNING *', 
-      [req.params.id]
-    );
-    
-    if (result.rows.length === 0) {
+    try {
+      const archived = await prisma.patient.update({
+        where: { id: patientId },
+        data: { archived: true },
+      });
+      auditDelete(req.user!.id, 'patients', patientId, `Archived patient ${archived.prenom} ${archived.nom}`);
+      res.json({ message: 'Patient archivé' });
+    } catch {
       res.status(404).json({ error: 'Patient non trouvé' });
-      return;
     }
-
-    auditDelete(req.user!.id, 'patients', Number(req.params.id), `Archived patient ${result.rows[0].prenom} ${result.rows[0].nom}`);
-    
-    res.json({ message: 'Patient archivé' });
   } catch (err) {
     res.status(500).json({ error: 'Erreur serveur' });
   }
@@ -211,42 +307,58 @@ router.get('/:id/historique', authenticate, async (req: AuthRequest, res: Respon
   try {
     const patientId = Number(req.params.id);
 
-    // IDOR check
     if (!(await canAccessPatient(req.user!, patientId))) {
       res.status(403).json({ error: 'Accès refusé — ce patient ne vous est pas attribué' });
       return;
     }
 
-    // Parallel queries (D2 fix: was sequential, now ~3x faster)
-    const [consultations, examens, recettes, documents] = await Promise.all([
-      query(
-        `SELECT c.id, c.reference, c.date_consultation, c.diagnostic, c.statut, c.motif, m.nom as medecin_nom, m.prenom as medecin_prenom, s.nom as service_nom 
-         FROM consultations c 
-         LEFT JOIN medecins m ON c.medecin_id = m.id 
-         LEFT JOIN services s ON c.service_id = s.id 
-         WHERE c.patient_id = $1 
-         ORDER BY c.date_consultation DESC`,
-        [patientId]
-      ),
-      query(
-        'SELECT id, reference, type_examen, resultat, date_examen, statut FROM examens WHERE patient_id = $1 ORDER BY date_examen DESC',
-        [patientId]
-      ),
-      query(
-        'SELECT id, type_acte, montant, mode_paiement, date_recette FROM recettes WHERE patient_id = $1 AND (annulee = FALSE OR annulee IS NULL) ORDER BY date_recette DESC',
-        [patientId]
-      ),
-      query(
-        'SELECT id, type_document, description, fichier_url, created_at FROM documents WHERE patient_id = $1 ORDER BY created_at DESC',
-        [patientId]
-      ),
+    const [consultationsRows, examensRows, recettesRows, documentsRows] = await Promise.all([
+      prisma.consultation.findMany({
+        where: { patientId },
+        select: {
+          id: true, reference: true, dateConsultation: true, diagnostic: true, statut: true, motif: true,
+          medecin: { select: { nom: true, prenom: true } },
+          service: { select: { nom: true } },
+        },
+        orderBy: { dateConsultation: 'desc' },
+      }),
+      prisma.examen.findMany({
+        where: { patientId },
+        select: { id: true, reference: true, typeExamen: true, resultat: true, dateExamen: true, statut: true },
+        orderBy: { dateExamen: 'desc' },
+      }),
+      prisma.recette.findMany({
+        where: {
+          patientId,
+          OR: [{ annulee: false }, { annulee: null }],
+        },
+        select: { id: true, typeActe: true, montant: true, modePaiement: true, dateRecette: true },
+        orderBy: { dateRecette: 'desc' },
+      }),
+      prisma.document.findMany({
+        where: { patientId },
+        select: { id: true, typeDocument: true, description: true, fichierUrl: true, createdAt: true },
+        orderBy: { createdAt: 'desc' },
+      }),
     ]);
-    
-    res.json({ 
-      consultations: consultations.rows, 
-      examens: examens.rows, 
-      recettes: recettes.rows, 
-      documents: documents.rows 
+
+    const consultations = consultationsRows.map(c => ({
+      id: c.id,
+      reference: c.reference,
+      date_consultation: c.dateConsultation,
+      diagnostic: c.diagnostic,
+      statut: c.statut,
+      motif: c.motif,
+      medecin_nom: c.medecin?.nom ?? null,
+      medecin_prenom: c.medecin?.prenom ?? null,
+      service_nom: c.service?.nom ?? null,
+    }));
+
+    res.json({
+      consultations,
+      examens: examensRows,
+      recettes: recettesRows,
+      documents: documentsRows,
     });
   } catch (err) {
     res.status(500).json({ error: 'Erreur serveur' });

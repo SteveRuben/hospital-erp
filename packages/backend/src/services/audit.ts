@@ -4,7 +4,7 @@
  * Stores in audit_log table with before/after diff
  */
 
-import { query } from '../config/db.js';
+import { prisma } from '../config/db.js';
 
 export interface AuditEntry {
   userId: number;
@@ -47,10 +47,15 @@ export async function logAudit(entry: AuditEntry): Promise<void> {
       details = details.substring(0, 2000) + '... [truncated]';
     }
 
-    await query(
-      `INSERT INTO audit_log (user_id, action, table_name, record_id, details) VALUES ($1, $2, $3, $4, $5)`,
-      [entry.userId, entry.action, entry.tableName, entry.recordId || null, details || null]
-    );
+    await prisma.auditLog.create({
+      data: {
+        userId: entry.userId,
+        action: entry.action,
+        tableName: entry.tableName,
+        recordId: entry.recordId || null,
+        details: details || null,
+      },
+    });
   } catch (err) {
     // Never let audit failures break the main flow
     console.error('[AUDIT] Failed to log:', err);

@@ -6,7 +6,7 @@
 
 import crypto from 'crypto';
 import QRCode from 'qrcode';
-import { query } from '../config/db.js';
+import { prisma } from '../config/db.js';
 
 const TOTP_PERIOD = 30; // seconds
 const TOTP_DIGITS = 6;
@@ -94,31 +94,30 @@ export function verifyToken(token: string, secret: string): boolean {
  * Check if a user has MFA enabled
  */
 export async function isMfaEnabled(userId: number): Promise<boolean> {
-  const result = await query('SELECT mfa_enabled FROM users WHERE id = $1', [userId]);
-  return result.rows.length > 0 && result.rows[0].mfa_enabled === true;
+  const u = await prisma.user.findUnique({ where: { id: userId }, select: { mfaEnabled: true } });
+  return u?.mfaEnabled === true;
 }
 
 /**
  * Get user's MFA secret (for verification)
  */
 export async function getMfaSecret(userId: number): Promise<string | null> {
-  const result = await query('SELECT mfa_secret FROM users WHERE id = $1', [userId]);
-  if (result.rows.length === 0) return null;
-  return result.rows[0].mfa_secret || null;
+  const u = await prisma.user.findUnique({ where: { id: userId }, select: { mfaSecret: true } });
+  return u?.mfaSecret ?? null;
 }
 
 /**
  * Enable MFA for a user (store secret, mark as enabled)
  */
 export async function enableMfa(userId: number, secret: string): Promise<void> {
-  await query('UPDATE users SET mfa_secret = $1, mfa_enabled = TRUE WHERE id = $2', [secret, userId]);
+  await prisma.user.update({ where: { id: userId }, data: { mfaSecret: secret, mfaEnabled: true } });
 }
 
 /**
  * Disable MFA for a user
  */
 export async function disableMfa(userId: number): Promise<void> {
-  await query('UPDATE users SET mfa_secret = NULL, mfa_enabled = FALSE WHERE id = $1', [userId]);
+  await prisma.user.update({ where: { id: userId }, data: { mfaSecret: null, mfaEnabled: false } });
 }
 
 /**

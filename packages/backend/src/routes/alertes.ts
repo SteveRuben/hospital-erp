@@ -1,5 +1,6 @@
 import { Router } from 'express';
-import { query } from '../config/db.js';
+import { Prisma } from '@prisma/client';
+import { prisma } from '../config/db.js';
 import { authenticate, AuthRequest } from '../middleware/auth.js';
 import { validate, createAlerteSchema } from '../middleware/validation.js';
 import { asyncHandler } from '../middleware/asyncHandler.js';
@@ -8,32 +9,47 @@ const router = Router();
 
 router.get('/:patientId', authenticate, asyncHandler(async (req, res) => {
   const { active } = req.query;
-  let sql = 'SELECT a.*, u.nom as created_nom, u.prenom as created_prenom FROM alertes a LEFT JOIN users u ON a.created_by = u.id WHERE a.patient_id = $1';
-  const params: unknown[] = [req.params.patientId];
-  if (active === 'true') { sql += ' AND a.active = TRUE'; }
-  sql += ' ORDER BY a.created_at DESC';
-  const result = await query(sql, params);
-  res.json(result.rows);
+  const where: Prisma.AlerteWhereInput = { patientId: Number(req.params.patientId) };
+  if (active === 'true') where.active = true;
+  const rows = await prisma.alerte.findMany({
+    where,
+    orderBy: { createdAt: 'desc' },
+    include: { creator: { select: { nom: true, prenom: true } } },
+  });
+  res.json(rows.map(r => ({
+    ...r,
+    created_nom: r.creator?.nom ?? null,
+    created_prenom: r.creator?.prenom ?? null,
+  })));
 }));
 
 router.post('/', authenticate, validate(createAlerteSchema), asyncHandler(async (req, res) => {
   const authReq = req as AuthRequest;
   const { patient_id, type_alerte, message, severite } = req.body;
-  const result = await query(
-    `INSERT INTO alertes (patient_id, type_alerte, message, severite, created_by) VALUES ($1,$2,$3,$4,$5) RETURNING *`,
-    [patient_id, type_alerte, message, severite || 'info', authReq.user!.id]
-  );
-  res.status(201).json(result.rows[0]);
+  const created = await prisma.alerte.create({
+    data: {
+      patientId: patient_id,
+      typeAlerte: type_alerte,
+      message,
+      severite: severite || 'info',
+      createdBy: authReq.user!.id,
+    },
+  });
+  res.status(201).json(created);
 }));
 
 router.put('/:id/toggle', authenticate, asyncHandler(async (req, res) => {
-  const result = await query('UPDATE alertes SET active = NOT active WHERE id = $1 RETURNING *', [req.params.id]);
-  if (result.rows.length === 0) { res.status(404).json({ error: 'Non trouvé' }); return; }
-  res.json(result.rows[0]);
+  const id = Number(req.params.id);
+  const current = await prisma.alerte.findUnique({ where: { id }, select: { active: true } });
+  if (!current) { res.status(404).json({ error: 'Non trouvé' }); return; }
+  const updated = await prisma.alerte.update({ where: { id }, data: { active: !current.active } });
+  res.json(updated);
 }));
 
 router.delete('/:id', authenticate, asyncHandler(async (req, res) => {
-  await query('DELETE FROM alertes WHERE id = $1', [req.params.id]);
+  try {
+    await prisma.alerte.delete({ where: { id: Number(req.params.id) } });
+  } catch { /* ignore not found */ }
   res.json({ message: 'Supprimé' });
 }));
 

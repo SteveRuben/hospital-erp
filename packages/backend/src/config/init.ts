@@ -780,6 +780,159 @@ export const initDB = async (): Promise<void> => {
       await client.query('INSERT INTO concepts (code, nom, datatype, classe, unite, valeur_min, valeur_max) SELECT $1::varchar,$2::varchar,$3::varchar,$4::varchar,$5::varchar,$6::decimal,$7::decimal WHERE NOT EXISTS (SELECT 1 FROM concepts WHERE code = $1::varchar)', [code, nom, datatype, classe, unite, vmin, vmax]);
     }
 
+    // Settings table (configurable parameters)
+    await client.query(`
+      CREATE TABLE IF NOT EXISTS settings (
+        id SERIAL PRIMARY KEY,
+        cle VARCHAR(100) UNIQUE NOT NULL,
+        valeur TEXT NOT NULL,
+        description TEXT,
+        categorie VARCHAR(50) DEFAULT 'general',
+        updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+      );
+    `);
+
+    // Reference lists (lookup tables — configurable dropdowns)
+    await client.query(`
+      CREATE TABLE IF NOT EXISTS reference_lists (
+        id SERIAL PRIMARY KEY,
+        categorie VARCHAR(50) NOT NULL,
+        code VARCHAR(100) NOT NULL,
+        libelle VARCHAR(200) NOT NULL,
+        actif BOOLEAN DEFAULT TRUE,
+        par_defaut BOOLEAN DEFAULT FALSE,
+        ordre INTEGER DEFAULT 0,
+        parent_code VARCHAR(100),
+        metadata JSONB,
+        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+        UNIQUE(categorie, code)
+      );
+      CREATE INDEX IF NOT EXISTS idx_ref_lists_categorie ON reference_lists(categorie, actif);
+      CREATE INDEX IF NOT EXISTS idx_ref_lists_parent ON reference_lists(parent_code);
+    `);
+
+    // Add reference_id column to patients
+    await client.query(`
+      ALTER TABLE patients ADD COLUMN IF NOT EXISTS reference_id VARCHAR(30) UNIQUE;
+    `);
+
+    // Seed default settings
+    const defaultSettings = [
+      ['patient_id_format', 'PAT-{YYMM}-{NP}-{SEQ:4}', 'Format de l\'ID patient. Variables: {YYYY}, {YY}, {MM}, {DD}, {NP} (initiales nom+prénom), {SEQ:N} (séquentiel sur N chiffres)', 'patients'],
+      ['patient_id_prefix', 'PAT', 'Préfixe de l\'ID patient', 'patients'],
+      ['pavillons_defaut', 'Médecine Générale,Chirurgie,Maternité,Pédiatrie,Urgences,VIP,Réanimation', 'Liste des pavillons par défaut (séparés par virgule)', 'lits'],
+      ['services_defaut', 'Consultation générale,Consultation spécialisée,Urgence,Contrôle médical,Hospitalisation,Laboratoire,Imagerie médicale,Soins infirmiers,Vaccination,Soins dentaires,Chirurgie,Maternité,Téléconsultation', 'Liste des services par défaut (séparés par virgule)', 'services'],
+      ['devise', 'XAF', 'Devise utilisée', 'general'],
+      ['nom_etablissement', 'Hospital ERP', 'Nom de l\'établissement', 'general'],
+      ['session_timeout_minutes', '30', 'Timeout de session en minutes', 'securite'],
+    ];
+    for (const [cle, valeur, description, categorie] of defaultSettings) {
+      await client.query('INSERT INTO settings (cle, valeur, description, categorie) SELECT $1::varchar, $2::text, $3::text, $4::varchar WHERE NOT EXISTS (SELECT 1 FROM settings WHERE cle = $1::varchar)', [cle, valeur, description, categorie]);
+    }
+
+    // Seed default services (configurable)
+    const defaultServices = ['Consultation générale', 'Consultation spécialisée', 'Urgence', 'Contrôle médical', 'Hospitalisation', 'Laboratoire', 'Imagerie médicale', 'Soins infirmiers', 'Vaccination', 'Soins dentaires', 'Chirurgie', 'Maternité', 'Téléconsultation'];
+    for (const nom of defaultServices) {
+      await client.query('INSERT INTO services (nom) SELECT $1::varchar WHERE NOT EXISTS (SELECT 1 FROM services WHERE nom = $1::varchar)', [nom]);
+    }
+
+    // Seed default pavillons
+    const defaultPavillons = ['Médecine Générale', 'Chirurgie', 'Maternité', 'Pédiatrie', 'Urgences', 'VIP', 'Réanimation'];
+    for (const nom of defaultPavillons) {
+      await client.query('INSERT INTO pavillons (nom) SELECT $1::varchar WHERE NOT EXISTS (SELECT 1 FROM pavillons WHERE nom = $1::varchar)', [nom]);
+    }
+
+    // Seed reference lists (lookup tables for all dropdowns)
+    const refLists: Array<[string, string, string, boolean?]> = [
+      // Pavillons
+      ['pavillon', 'MED_GEN', 'Médecine Générale'],
+      ['pavillon', 'CHIRURGIE', 'Chirurgie'],
+      ['pavillon', 'MATERNITE', 'Maternité'],
+      ['pavillon', 'PEDIATRIE', 'Pédiatrie'],
+      ['pavillon', 'URGENCES', 'Urgences'],
+      ['pavillon', 'VIP', 'VIP'],
+      ['pavillon', 'REANIMATION', 'Réanimation'],
+      // Services / Types de visite
+      ['service', 'CONS_GEN', 'Consultation générale', true],
+      ['service', 'CONS_SPEC', 'Consultation spécialisée'],
+      ['service', 'URGENCE', 'Urgence'],
+      ['service', 'CONTROLE', 'Contrôle médical'],
+      ['service', 'HOSPIT', 'Hospitalisation'],
+      ['service', 'LABO', 'Laboratoire'],
+      ['service', 'IMAGERIE', 'Imagerie médicale'],
+      ['service', 'SOINS_INF', 'Soins infirmiers'],
+      ['service', 'VACCINATION', 'Vaccination'],
+      ['service', 'DENTAIRE', 'Soins dentaires'],
+      ['service', 'CHIRURGIE', 'Chirurgie'],
+      ['service', 'MATERNITE', 'Maternité'],
+      ['service', 'TELECONS', 'Téléconsultation'],
+      // Pays
+      ['pays', 'CM', 'Cameroun', true],
+      ['pays', 'GA', 'Gabon'],
+      ['pays', 'CG', 'Congo'],
+      ['pays', 'TD', 'Tchad'],
+      ['pays', 'CF', 'Centrafrique'],
+      ['pays', 'GQ', 'Guinée Équatoriale'],
+      ['pays', 'NG', 'Nigeria'],
+      ['pays', 'CI', 'Côte d\'Ivoire'],
+      ['pays', 'SN', 'Sénégal'],
+      ['pays', 'FR', 'France'],
+      // Villes Cameroun
+      ['ville', 'DLA', 'Douala', true],
+      ['ville', 'YDE', 'Yaoundé'],
+      ['ville', 'BAF', 'Bafoussam'],
+      ['ville', 'BAM', 'Bamenda'],
+      ['ville', 'GAR', 'Garoua'],
+      ['ville', 'MAR', 'Maroua'],
+      ['ville', 'BER', 'Bertoua'],
+      ['ville', 'EBO', 'Ebolowa'],
+      ['ville', 'NGD', 'Ngaoundéré'],
+      ['ville', 'BUE', 'Buea'],
+      ['ville', 'LIM', 'Limbé'],
+      ['ville', 'KRI', 'Kribi'],
+      // Spécialités médicales
+      ['specialite', 'MED_GEN', 'Médecine générale', true],
+      ['specialite', 'CARDIO', 'Cardiologie'],
+      ['specialite', 'DERMATO', 'Dermatologie'],
+      ['specialite', 'GASTRO', 'Gastro-entérologie'],
+      ['specialite', 'GYNECO', 'Gynécologie'],
+      ['specialite', 'NEURO', 'Neurologie'],
+      ['specialite', 'OPH', 'Ophtalmologie'],
+      ['specialite', 'ORL', 'ORL'],
+      ['specialite', 'ORTHO', 'Orthopédie'],
+      ['specialite', 'PEDIATRIE', 'Pédiatrie'],
+      ['specialite', 'PNEUMO', 'Pneumologie'],
+      ['specialite', 'RADIO', 'Radiologie'],
+      ['specialite', 'URO', 'Urologie'],
+      ['specialite', 'CHIR_GEN', 'Chirurgie générale'],
+      ['specialite', 'ANESTH', 'Anesthésie-Réanimation'],
+      // Modes de paiement
+      ['mode_paiement', 'ESPECES', 'Espèces', true],
+      ['mode_paiement', 'MOBILE_MONEY', 'Mobile Money'],
+      ['mode_paiement', 'CARTE', 'Carte bancaire'],
+      ['mode_paiement', 'VIREMENT', 'Virement'],
+      ['mode_paiement', 'ASSURANCE', 'Assurance'],
+      // Types d'examen labo
+      ['type_examen', 'SANG', 'Analyse de sang', true],
+      ['type_examen', 'URINE', 'Analyse d\'urine'],
+      ['type_examen', 'GLYCEMIE', 'Glycémie'],
+      ['type_examen', 'CREATININE', 'Créatinine'],
+      ['type_examen', 'UREE', 'Urée'],
+      ['type_examen', 'CHOLESTEROL', 'Cholestérol'],
+      ['type_examen', 'GRP_SANG', 'Groupe sanguin'],
+      ['type_examen', 'SEROLOGIE', 'Sérologie'],
+      ['type_examen', 'GROSSESSE', 'Test de grossesse'],
+      ['type_examen', 'NFS', 'NFS (Numération Formule Sanguine)'],
+      ['type_examen', 'VS', 'Vitesse de sédimentation'],
+      ['type_examen', 'PARASITO', 'Parasitologie'],
+    ];
+    for (const [categorie, code, libelle, parDefaut] of refLists) {
+      await client.query(
+        'INSERT INTO reference_lists (categorie, code, libelle, par_defaut) SELECT $1::varchar, $2::varchar, $3::varchar, $4::boolean WHERE NOT EXISTS (SELECT 1 FROM reference_lists WHERE categorie = $1::varchar AND code = $2::varchar)',
+        [categorie, code, libelle, parDefaut || false]
+      );
+    }
+
     // Migrations: add soft-delete columns to recettes and depenses
     await client.query(`
       ALTER TABLE recettes ADD COLUMN IF NOT EXISTS annulee BOOLEAN DEFAULT FALSE;

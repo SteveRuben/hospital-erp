@@ -1,5 +1,5 @@
 import { Router, Response } from 'express';
-import { query } from '../config/db.js';
+import { prisma } from '../config/db.js';
 import { authenticate, authorize, AuthRequest } from '../middleware/auth.js';
 
 const router = Router();
@@ -96,26 +96,38 @@ router.post('/:id/install', authenticate, authorize('admin'), async (req: AuthRe
     let conceptsAdded = 0;
     let typesAdded = 0;
 
-    // Install concepts
+    // Install concepts — ON CONFLICT DO NOTHING via raw SQL (code is unique)
     for (const c of pkg.concepts) {
       try {
-        await query('INSERT INTO concepts (code, nom, datatype, classe, unite, valeur_min, valeur_max) VALUES ($1::varchar,$2::varchar,$3::varchar,$4::varchar,$5::varchar,$6::decimal,$7::decimal) ON CONFLICT (code) DO NOTHING',
-          [c.code, c.nom, c.datatype, c.classe, c.unite || null, c.valeur_min ?? null, c.valeur_max ?? null]);
+        await prisma.$executeRaw`
+          INSERT INTO concepts (code, nom, datatype, classe, unite, valeur_min, valeur_max)
+          VALUES (${c.code}::varchar, ${c.nom}::varchar, ${c.datatype}::concept_datatype, ${c.classe}::concept_classe, ${c.unite || null}, ${c.valeur_min ?? null}::decimal, ${c.valeur_max ?? null}::decimal)
+          ON CONFLICT (code) DO NOTHING
+        `;
         conceptsAdded++;
       } catch { /* skip duplicates */ }
     }
 
-    // Install encounter types
+    // Install encounter types — skip duplicates
     for (const et of pkg.encounter_types) {
       try {
-        await query('INSERT INTO encounter_types (nom) SELECT $1::varchar WHERE NOT EXISTS (SELECT 1 FROM encounter_types WHERE nom = $1::varchar)', [et]);
-        typesAdded++;
+        const existing = await prisma.encounterType.findFirst({ where: { nom: et }, select: { id: true } });
+        if (!existing) {
+          await prisma.encounterType.create({ data: { nom: et } });
+          typesAdded++;
+        }
       } catch { /* skip */ }
     }
 
     // Audit log
-    await query('INSERT INTO audit_log (user_id, action, table_name, details) VALUES ($1,$2,$3,$4)',
-      [req.user!.id, 'install_package', 'content_packages', `Installed ${pkg.nom}: ${conceptsAdded} concepts, ${typesAdded} encounter types`]);
+    await prisma.auditLog.create({
+      data: {
+        userId: req.user!.id,
+        action: 'install_package',
+        tableName: 'content_packages',
+        details: `Installed ${pkg.nom}: ${conceptsAdded} concepts, ${typesAdded} encounter types`,
+      },
+    });
 
     res.json({ message: `Package "${pkg.nom}" installé`, conceptsAdded, typesAdded });
   } catch (err) { console.error(err); res.status(500).json({ error: 'Erreur serveur' }); }

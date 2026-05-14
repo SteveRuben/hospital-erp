@@ -1,8 +1,10 @@
 import { Router, Response } from 'express';
 import multer from 'multer';
 import argon2 from 'argon2';
-import { query } from '../config/db.js';
+import { prisma } from '../config/db.js';
 import { authenticate, authorize, AuthRequest } from '../middleware/auth.js';
+import { UserRole } from '../types/index.js';
+import { Sexe } from '@prisma/client';
 import { parseCsv, mapPatientFields, mapMedecinFields, mapTarifFields, mapUserFields } from '../services/import.js';
 
 const router = Router();
@@ -21,9 +23,23 @@ router.post('/patients', authenticate, authorize('admin', 'reception'), upload.s
       try {
         const p = mapPatientFields(rows[i]);
         if (!p.nom || !p.prenom) { errors.push(`Ligne ${i + 2}: nom et prénom requis`); continue; }
-        const n = (v: string | null) => v || null;
-        await query(`INSERT INTO patients (nom, prenom, sexe, date_naissance, telephone, email, adresse, ville, profession, nationalite, contact_urgence_nom, contact_urgence_telephone) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12)`,
-          [p.nom, p.prenom, n(p.sexe), n(p.date_naissance), n(p.telephone), n(p.email), n(p.adresse), n(p.ville), n(p.profession), n(p.nationalite), n(p.contact_urgence_nom), n(p.contact_urgence_telephone)]);
+        const n = (v: string | null | undefined) => v || null;
+        await prisma.patient.create({
+          data: {
+            nom: p.nom,
+            prenom: p.prenom,
+            sexe: (n(p.sexe) as Sexe | null) ?? undefined,
+            dateNaissance: p.date_naissance ? new Date(p.date_naissance) : null,
+            telephone: n(p.telephone),
+            email: n(p.email),
+            adresse: n(p.adresse),
+            ville: n(p.ville),
+            profession: n(p.profession),
+            nationalite: n(p.nationalite),
+            contactUrgenceNom: n(p.contact_urgence_nom),
+            contactUrgenceTelephone: n(p.contact_urgence_telephone),
+          },
+        });
         imported++;
       } catch (err) { errors.push(`Ligne ${i + 2}: ${(err as Error).message}`); }
     }
@@ -41,7 +57,9 @@ router.post('/medecins', authenticate, authorize('admin'), upload.single('file')
       try {
         const m = mapMedecinFields(rows[i]);
         if (!m.nom || !m.prenom) { errors.push(`Ligne ${i + 2}: nom et prénom requis`); continue; }
-        await query('INSERT INTO medecins (nom, prenom, specialite, telephone) VALUES ($1,$2,$3,$4)', [m.nom, m.prenom, m.specialite, m.telephone]);
+        await prisma.medecin.create({
+          data: { nom: m.nom, prenom: m.prenom, specialite: m.specialite, telephone: m.telephone },
+        });
         imported++;
       } catch (err) { errors.push(`Ligne ${i + 2}: ${(err as Error).message}`); }
     }
@@ -59,8 +77,12 @@ router.post('/tarifs', authenticate, authorize('admin', 'comptable'), upload.sin
       try {
         const t = mapTarifFields(rows[i]);
         if (!t.code || !t.libelle) { errors.push(`Ligne ${i + 2}: code et libellé requis`); continue; }
-        await query('INSERT INTO tarifs (code, libelle, categorie, montant) VALUES ($1,$2,$3,$4) ON CONFLICT (code) DO UPDATE SET libelle=$2, categorie=$3, montant=$4',
-          [t.code, t.libelle, t.categorie, parseFloat(t.montant || '0')]);
+        const montant = parseFloat(t.montant || '0');
+        await prisma.tarif.upsert({
+          where: { code: t.code },
+          create: { code: t.code, libelle: t.libelle, categorie: t.categorie ?? '', montant },
+          update: { libelle: t.libelle, categorie: t.categorie ?? '', montant },
+        });
         imported++;
       } catch (err) { errors.push(`Ligne ${i + 2}: ${(err as Error).message}`); }
     }
@@ -80,9 +102,21 @@ router.post('/users', authenticate, authorize('admin'), upload.single('file'), a
         const u = mapUserFields(rows[i]);
         if (!u.username) { errors.push(`Ligne ${i + 2}: username requis`); continue; }
         const validRoles = ['admin', 'medecin', 'comptable', 'laborantin', 'reception'];
-        const role = validRoles.includes(u.role || '') ? u.role : 'reception';
-        await query('INSERT INTO users (username, password, role, nom, prenom, telephone) VALUES ($1,$2,$3,$4,$5,$6) ON CONFLICT (username) DO NOTHING',
-          [u.username, defaultPassword, role, u.nom, u.prenom, u.telephone]);
+        const role = (validRoles.includes(u.role || '') ? u.role : 'reception') as UserRole;
+        // ON CONFLICT DO NOTHING via findFirst + create
+        const existing = await prisma.user.findUnique({ where: { username: u.username }, select: { id: true } });
+        if (!existing) {
+          await prisma.user.create({
+            data: {
+              username: u.username,
+              password: defaultPassword,
+              role,
+              nom: u.nom,
+              prenom: u.prenom,
+              telephone: u.telephone,
+            },
+          });
+        }
         imported++;
       } catch (err) { errors.push(`Ligne ${i + 2}: ${(err as Error).message}`); }
     }
