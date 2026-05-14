@@ -1,12 +1,14 @@
 import { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { getConsultations, deleteConsultation } from '../services/api';
+import { useConfirm } from '../components/ConfirmDialog';
 import type { Consultation } from '../types';
 
 export default function Consultations() {
   const [consultations, setConsultations] = useState<Consultation[]>([]);
   const [loading, setLoading] = useState(true);
   const navigate = useNavigate();
+  const { confirm } = useConfirm();
 
   useEffect(() => { loadData(); }, []);
 
@@ -16,7 +18,10 @@ export default function Consultations() {
     finally { setLoading(false); }
   };
 
-  const handleDelete = async (id: number) => { if (confirm('Supprimer cette consultation ?')) { await deleteConsultation(id); loadData(); }};
+  const handleDelete = async (id: number) => {
+    const ok = await confirm({ title: 'Supprimer la consultation', message: 'Cette consultation sera définitivement supprimée.', confirmLabel: 'Supprimer', variant: 'danger' });
+    if (ok) { await deleteConsultation(id); loadData(); }
+  };
 
   return (
     <div>

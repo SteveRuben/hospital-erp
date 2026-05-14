@@ -1,6 +1,7 @@
 import { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { getPatients, deletePatient } from '../services/api';
+import { useConfirm } from '../components/ConfirmDialog';
 import type { Patient } from '../types';
 
 export default function Patients() {
@@ -8,6 +9,7 @@ export default function Patients() {
   const [loading, setLoading] = useState(true);
   const [search, setSearch] = useState('');
   const navigate = useNavigate();
+  const { confirm } = useConfirm();
 
   useEffect(() => { loadPatients(); }, [search]);
 
@@ -17,7 +19,10 @@ export default function Patients() {
     finally { setLoading(false); }
   };
 
-  const handleDelete = async (id: number) => { if (confirm('Archiver ce patient ?')) { await deletePatient(id); loadPatients(); }};
+  const handleDelete = async (id: number) => {
+    const ok = await confirm({ title: 'Archiver le patient', message: 'Ce patient sera archivé et ne sera plus visible dans la liste active. Cette action est réversible.', confirmLabel: 'Archiver', variant: 'warning' });
+    if (ok) { await deletePatient(id); loadPatients(); }
+  };
 
   return (
     <div>

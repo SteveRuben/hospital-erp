@@ -14,6 +14,7 @@
     "db:reset": "tsx src/config/reset-db.ts"
   },
   "dependencies": {
+    "@prisma/adapter-pg": "^7.8.0",
     "@prisma/client": "^7.7.0",
     "@types/bcryptjs": "^2.4.6",
     "@types/cors": "^2.8.17",

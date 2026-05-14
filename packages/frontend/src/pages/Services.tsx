@@ -1,12 +1,14 @@
 import { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { getServices, deleteService } from '../services/api';
+import { useConfirm } from '../components/ConfirmDialog';
 import type { Service } from '../types';
 
 export default function Services() {
   const [services, setServices] = useState<Service[]>([]);
   const [loading, setLoading] = useState(true);
   const navigate = useNavigate();
+  const { confirm } = useConfirm();
 
   useEffect(() => { loadServices(); }, []);
 
@@ -16,7 +18,10 @@ export default function Services() {
     finally { setLoading(false); }
   };
 
-  const handleDelete = async (id: number) => { if (confirm('Supprimer ce service ?')) { await deleteService(id); loadServices(); }};
+  const handleDelete = async (id: number) => {
+    const ok = await confirm({ title: 'Supprimer le service', message: 'Ce service sera supprimé. Les données associées seront conservées.', confirmLabel: 'Supprimer', variant: 'danger' });
+    if (ok) { await deleteService(id); loadServices(); }
+  };
 
   return (
     <div>

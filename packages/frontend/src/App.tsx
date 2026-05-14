@@ -4,6 +4,7 @@ import type { User } from './types';
 import { useSessionTimeout } from './hooks/useSessionTimeout';
 import Layout from './components/Layout';
 import RoleGuard from './components/RoleGuard';
+import { ConfirmProvider } from './components/ConfirmDialog';
 
 // Lazy load all pages for code splitting
 const Landing = lazy(() => import('./pages/Landing'));
@@ -113,6 +114,7 @@ function App() {
   return (
     <AuthContext.Provider value={{ user, login, logout, loading, impersonating, originalAdminId, startImpersonate, stopImpersonate: stopImpersonateFn }}>
       <BrowserRouter>
+        <ConfirmProvider>
         <SessionManager>
           <Suspense fallback={<PageLoader />}>
             <Routes>
@@ -174,6 +176,7 @@ function App() {
             </Routes>
           </Suspense>
         </SessionManager>
+        </ConfirmProvider>
       </BrowserRouter>
     </AuthContext.Provider>
   );

@@ -1,12 +1,14 @@
 import { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { getMedecins, deleteMedecin } from '../services/api';
+import { useConfirm } from '../components/ConfirmDialog';
 import type { Medecin } from '../types';
 
 export default function Medecins() {
   const [medecins, setMedecins] = useState<Medecin[]>([]);
   const [loading, setLoading] = useState(true);
   const navigate = useNavigate();
+  const { confirm } = useConfirm();
 
   useEffect(() => { loadMedecins(); }, []);
 
@@ -16,7 +18,10 @@ export default function Medecins() {
     finally { setLoading(false); }
   };
 
-  const handleDelete = async (id: number) => { if (confirm('Supprimer ce médecin ?')) { await deleteMedecin(id); loadMedecins(); }};
+  const handleDelete = async (id: number) => {
+    const ok = await confirm({ title: 'Supprimer le médecin', message: 'Ce médecin sera supprimé du système. Les consultations associées seront conservées.', confirmLabel: 'Supprimer', variant: 'danger' });
+    if (ok) { await deleteMedecin(id); loadMedecins(); }
+  };
 
   return (
     <div>
