@@ -7,7 +7,7 @@
   "scripts": {
     "dev": "tsx watch src/index.ts",
     "start": "node dist/index.js",
-    "build": "cd ../frontend && npm run build && cd ../backend && tsc",
+    "build": "cd ../frontend && npm run build && cd ../backend && npx prisma generate && tsc",
     "typecheck": "tsc --noEmit",
     "test": "node --experimental-vm-modules ../../node_modules/jest/bin/jest.js",
     "lint": "eslint src --ext .ts",
