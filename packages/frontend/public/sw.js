@@ -1,4 +1,4 @@
-const CACHE_NAME = 'hospital-erp-v2';
+const CACHE_NAME = 'hospital-erp-v3';
 const STATIC_ASSETS = ['/', '/index.html'];
 
 // Install — cache static assets
@@ -9,12 +9,19 @@ self.addEventListener('install', (event) => {
   self.skipWaiting();
 });
 
-// Activate — clean old caches
+// Activate — clean old caches + notify clients of update
 self.addEventListener('activate', (event) => {
   event.waitUntil(
     caches.keys().then((keys) => Promise.all(
       keys.filter((key) => key !== CACHE_NAME).map((key) => caches.delete(key))
-    ))
+    )).then(() => {
+      // Notify all clients that a new version is available
+      self.clients.matchAll().then((clients) => {
+        clients.forEach((client) => {
+          client.postMessage({ type: 'SW_UPDATED', version: CACHE_NAME });
+        });
+      });
+    })
   );
   self.clients.claim();
 });
@@ -40,17 +47,14 @@ self.addEventListener('fetch', (event) => {
     return;
   }
 
-  // Static assets — cache first, then network
+  // Static assets — network first with cache fallback (avoids stale JS/CSS)
   event.respondWith(
-    caches.match(request).then((cached) => {
-      if (cached) return cached;
-      return fetch(request).then((response) => {
-        if (response.ok && request.method === 'GET') {
-          const clone = response.clone();
-          caches.open(CACHE_NAME).then((cache) => cache.put(request, clone));
-        }
-        return response;
-      }).catch(() => new Response('Offline', { status: 503 }));
-    })
+    fetch(request).then((response) => {
+      if (response.ok && request.method === 'GET') {
+        const clone = response.clone();
+        caches.open(CACHE_NAME).then((cache) => cache.put(request, clone));
+      }
+      return response;
+    }).catch(() => caches.match(request).then(r => r || new Response('Offline', { status: 503 })))
   );
 });

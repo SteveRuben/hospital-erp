@@ -19,6 +19,38 @@ router.get('/categories', authenticate, async (_req: AuthRequest, res: Response)
   } catch (err) { res.status(500).json({ error: 'Erreur serveur' }); }
 });
 
+// Get items by category as tree (parents with children nested)
+router.get('/:categorie/tree', authenticate, async (req: AuthRequest, res: Response): Promise<void> => {
+  try {
+    const where: Prisma.ReferenceListWhereInput = { categorie: req.params.categorie, actif: true };
+    const all = await prisma.referenceList.findMany({ where, orderBy: [{ ordre: 'asc' }, { libelle: 'asc' }] });
+
+    // Separate parents (no parent_code) and children
+    const parents = all.filter(i => !i.parentCode);
+    const children = all.filter(i => !!i.parentCode);
+
+    // If no hierarchy exists, return flat list
+    if (children.length === 0) {
+      res.json(all.map(i => ({ ...i, children: [] })));
+      return;
+    }
+
+    // Build tree: parents with nested children
+    const tree = parents.map(p => ({
+      ...p,
+      children: children.filter(c => c.parentCode === p.code),
+    }));
+
+    // Include orphan children (parent_code doesn't match any parent)
+    const orphans = children.filter(c => !parents.some(p => p.code === c.parentCode));
+    if (orphans.length > 0) {
+      tree.push({ code: '_AUTRES', libelle: 'Autres', id: 0, categorie: req.params.categorie, actif: true, parDefaut: false, ordre: 999, parentCode: null, metadata: null, createdAt: new Date(), children: orphans });
+    }
+
+    res.json(tree);
+  } catch (err) { res.status(500).json({ error: 'Erreur serveur' }); }
+});
+
 // Get items by category (only active by default)
 router.get('/:categorie', authenticate, async (req: AuthRequest, res: Response): Promise<void> => {
   try {
