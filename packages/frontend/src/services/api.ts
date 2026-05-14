@@ -36,11 +36,13 @@ export const deletePatient = (id: number) => api.delete(`/patients/${id}`);
 export const getPatientHistorique = (id: number) => api.get(`/patients/${id}/historique`);
 
 export const getMedecins = () => api.get<Medecin[]>('/medecins');
+export const getMedecin = (id: number) => api.get<Medecin>(`/medecins/${id}`);
 export const createMedecin = (data: unknown) => api.post<Medecin>('/medecins', data);
 export const updateMedecin = (id: number, data: unknown) => api.put<Medecin>(`/medecins/${id}`, data);
 export const deleteMedecin = (id: number) => api.delete(`/medecins/${id}`);
 
 export const getServices = () => api.get<Service[]>('/services');
+export const getService = (id: number) => api.get<Service>(`/services/${id}`);
 export const createService = (data: unknown) => api.post<Service>('/services', data);
 export const updateService = (id: number, data: unknown) => api.put<Service>(`/services/${id}`, data);
 export const deleteService = (id: number) => api.delete(`/services/${id}`);
@@ -63,6 +65,7 @@ export const getCaisse = () => api.get('/finances/caisse');
 export const getBilan = (params?: { annee?: number; mois?: number }) => api.get<Bilan>('/finances/bilan', { params });
 
 export const getExamens = (params?: unknown) => api.get<Examen[]>('/laboratoire', { params });
+export const getExamen = (id: number) => api.get<Examen>(`/laboratoire/${id}`);
 export const createExamen = (data: unknown) => api.post<Examen>('/laboratoire', data);
 export const updateExamen = (id: number, data: unknown) => api.put<Examen>(`/laboratoire/${id}`, data);
 export const deleteExamen = (id: number) => api.delete(`/laboratoire/${id}`);

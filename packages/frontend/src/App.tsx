@@ -15,11 +15,14 @@ const Patients = lazy(() => import('./pages/Patients'));
 const PatientForm = lazy(() => import('./pages/PatientForm'));
 const PatientDetail = lazy(() => import('./pages/PatientDetail'));
 const Medecins = lazy(() => import('./pages/Medecins'));
+const MedecinForm = lazy(() => import('./pages/MedecinForm'));
 const Services = lazy(() => import('./pages/Services'));
+const ServiceForm = lazy(() => import('./pages/ServiceForm'));
 const Consultations = lazy(() => import('./pages/Consultations'));
 const ConsultationForm = lazy(() => import('./pages/ConsultationForm'));
 const Finances = lazy(() => import('./pages/Finances'));
 const Laboratoire = lazy(() => import('./pages/Laboratoire'));
+const ExamenForm = lazy(() => import('./pages/ExamenForm'));
 const RendezVous = lazy(() => import('./pages/RendezVous'));
 const Visites = lazy(() => import('./pages/Visites'));
 const FileAttente = lazy(() => import('./pages/FileAttente'));
@@ -29,6 +32,7 @@ const Utilisateurs = lazy(() => import('./pages/Utilisateurs'));
 const Import = lazy(() => import('./pages/Import'));
 const Habilitations = lazy(() => import('./pages/Habilitations'));
 const Lits = lazy(() => import('./pages/Lits'));
+const AdmissionForm = lazy(() => import('./pages/AdmissionForm'));
 const Programmes = lazy(() => import('./pages/Programmes'));
 const Facturation = lazy(() => import('./pages/Facturation'));
 const Recherche = lazy(() => import('./pages/Recherche'));
@@ -128,12 +132,18 @@ function App() {
                         <Route path="/patients/:id/modifier" element={<RoleGuard roles={['admin','medecin','reception']}><PatientForm /></RoleGuard>} />
                         <Route path="/patients/:id" element={<RoleGuard roles={['admin','medecin','reception']}><PatientDetail /></RoleGuard>} />
                         <Route path="/medecins" element={<RoleGuard roles={['admin','medecin']}><Medecins /></RoleGuard>} />
+                        <Route path="/medecins/nouveau" element={<RoleGuard roles={['admin']}><MedecinForm /></RoleGuard>} />
+                        <Route path="/medecins/:id/modifier" element={<RoleGuard roles={['admin']}><MedecinForm /></RoleGuard>} />
                         <Route path="/services" element={<RoleGuard roles={['admin']}><Services /></RoleGuard>} />
+                        <Route path="/services/nouveau" element={<RoleGuard roles={['admin']}><ServiceForm /></RoleGuard>} />
+                        <Route path="/services/:id/modifier" element={<RoleGuard roles={['admin']}><ServiceForm /></RoleGuard>} />
                         <Route path="/consultations" element={<RoleGuard roles={['admin','medecin']}><Consultations /></RoleGuard>} />
                         <Route path="/consultations/nouvelle" element={<RoleGuard roles={['admin','medecin']}><ConsultationForm /></RoleGuard>} />
                         <Route path="/consultations/:id/modifier" element={<RoleGuard roles={['admin','medecin']}><ConsultationForm /></RoleGuard>} />
                         <Route path="/finances" element={<RoleGuard roles={['admin','comptable']}><Finances /></RoleGuard>} />
                         <Route path="/laboratoire" element={<RoleGuard roles={['admin','laborantin']}><Laboratoire /></RoleGuard>} />
+                        <Route path="/laboratoire/nouveau" element={<RoleGuard roles={['admin','laborantin']}><ExamenForm /></RoleGuard>} />
+                        <Route path="/laboratoire/:id/modifier" element={<RoleGuard roles={['admin','laborantin']}><ExamenForm /></RoleGuard>} />
                         <Route path="/rendezvous" element={<RoleGuard roles={['admin','medecin','reception']}><RendezVous /></RoleGuard>} />
                         <Route path="/visites" element={<RoleGuard roles={['admin','medecin','reception']}><Visites /></RoleGuard>} />
                         <Route path="/file-attente" element={<RoleGuard roles={['admin','medecin','reception']}><FileAttente /></RoleGuard>} />
@@ -143,6 +153,7 @@ function App() {
                         <Route path="/habilitations" element={<RoleGuard roles={['admin']}><Habilitations /></RoleGuard>} />
                         <Route path="/import" element={<RoleGuard roles={['admin']}><Import /></RoleGuard>} />
                         <Route path="/lits" element={<RoleGuard roles={['admin','medecin']}><Lits /></RoleGuard>} />
+                        <Route path="/lits/admission" element={<RoleGuard roles={['admin','medecin']}><AdmissionForm /></RoleGuard>} />
                         <Route path="/programmes" element={<RoleGuard roles={['admin','medecin']}><Programmes /></RoleGuard>} />
                         <Route path="/facturation" element={<RoleGuard roles={['admin','comptable']}><Facturation /></RoleGuard>} />
                         <Route path="/paiement-mobile" element={<RoleGuard roles={['admin','comptable']}><PaiementMobile /></RoleGuard>} />

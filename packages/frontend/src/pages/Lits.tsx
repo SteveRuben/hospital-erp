@@ -1,5 +1,6 @@
 import { useState, useEffect } from 'react';
-import { getPavillons, createPavillon, getLits, createLit, updateLitStatut, getHospitalisations, createHospitalisation, sortieHospitalisation, getLitsStats, getPatients, getMedecins, getServices } from '../services/api';
+import { useNavigate } from 'react-router-dom';
+import { getPavillons, createPavillon, getLits, createLit, updateLitStatut, getHospitalisations, sortieHospitalisation, getLitsStats, getPatients, getMedecins, getServices } from '../services/api';
 import type { Patient, Medecin, Service } from '../types';
 
 const statutLit: Record<string, { label: string; tag: string }> = { disponible: { label: 'Disponible', tag: 'tag-green' }, occupe: { label: 'Occupé', tag: 'tag-red' }, maintenance: { label: 'Maintenance', tag: 'tag-yellow' }, reserve: { label: 'Réservé', tag: 'tag-blue' } };
@@ -18,7 +19,7 @@ export default function Lits() {
   const [showModal, setShowModal] = useState<string | null>(null);
   const [pavForm, setPavForm] = useState({ nom: '', etage: '', service_id: '', capacite: '', description: '' });
   const [litForm, setLitForm] = useState({ pavillon_id: '', numero: '', type_lit: 'standard' });
-  const [hospForm, setHospForm] = useState({ patient_id: '', lit_id: '', medecin_id: '', service_id: '', motif: '', notes: '' });
+  const navigate = useNavigate();
 
   useEffect(() => { loadAll(); }, []);
 
@@ -32,7 +33,6 @@ export default function Lits() {
 
   const handlePavillon = async (e: React.FormEvent) => { e.preventDefault(); try { await createPavillon(pavForm); setShowModal(null); setPavForm({ nom: '', etage: '', service_id: '', capacite: '', description: '' }); loadAll(); } catch { alert('Erreur'); } };
   const handleLit = async (e: React.FormEvent) => { e.preventDefault(); try { await createLit(litForm); setShowModal(null); setLitForm({ pavillon_id: '', numero: '', type_lit: 'standard' }); loadAll(); } catch { alert('Erreur'); } };
-  const handleHosp = async (e: React.FormEvent) => { e.preventDefault(); try { await createHospitalisation(hospForm); setShowModal(null); setHospForm({ patient_id: '', lit_id: '', medecin_id: '', service_id: '', motif: '', notes: '' }); loadAll(); } catch (err: any) { alert(err.response?.data?.error || 'Erreur'); } };
   const handleSortie = async (id: number) => { try { await sortieHospitalisation(id); loadAll(); } catch { alert('Erreur'); } };
 
   if (loading) return <div className="loading"><div className="spinner"></div></div>;
@@ -46,7 +46,7 @@ export default function Lits() {
         <div className="d-flex gap-1">
           {tab === 'pavillons' && <button className="btn-primary" onClick={() => setShowModal('pavillon')}><i className="bi bi-plus"></i> Pavillon</button>}
           {tab === 'lits' && <button className="btn-primary" onClick={() => setShowModal('lit')}><i className="bi bi-plus"></i> Lit</button>}
-          {tab === 'hospitalisations' && <button className="btn-primary" onClick={() => setShowModal('hosp')}><i className="bi bi-plus"></i> Admission</button>}
+          {tab === 'hospitalisations' && <button className="btn-primary" onClick={() => navigate('/app/lits/admission')}><i className="bi bi-plus"></i> Admission</button>}
         </div>
       </div>
 
@@ -124,23 +124,6 @@ export default function Lits() {
               <div className="form-group"><label className="form-label">Type</label><select className="form-select" value={litForm.type_lit} onChange={e => setLitForm({...litForm, type_lit: e.target.value})}><option value="standard">Standard</option><option value="soins_intensifs">Soins intensifs</option><option value="pediatrique">Pédiatrique</option><option value="maternite">Maternité</option><option value="isolement">Isolement</option></select></div>
             </div>
           </div><div className="modal-footer"><button type="button" className="btn-secondary" onClick={() => setShowModal(null)}>Annuler</button><button type="submit" className="btn-primary">Créer</button></div></form>
-        </div></div>
-      )}
-
-      {showModal === 'hosp' && (
-        <div className="modal-overlay" onClick={() => setShowModal(null)}><div className="modal-container" onClick={e => e.stopPropagation()}>
-          <div className="modal-header"><h3>Nouvelle admission</h3><button className="btn-icon" onClick={() => setShowModal(null)}><i className="bi bi-x-lg"></i></button></div>
-          <form onSubmit={handleHosp}><div className="modal-body">
-            <div className="grid-2">
-              <div className="form-group"><label className="form-label">Patient *</label><select className="form-select" value={hospForm.patient_id} onChange={e => setHospForm({...hospForm, patient_id: e.target.value})} required><option value="">Sélectionner...</option>{patients.map(p => <option key={p.id} value={p.id}>{p.prenom} {p.nom}</option>)}</select></div>
-              <div className="form-group"><label className="form-label">Lit</label><select className="form-select" value={hospForm.lit_id} onChange={e => setHospForm({...hospForm, lit_id: e.target.value})}><option value="">Sélectionner...</option>{litsDisponibles.map((l: any) => <option key={l.id} value={l.id}>{l.numero} ({l.pavillon_nom})</option>)}</select></div>
-            </div>
-            <div className="grid-2">
-              <div className="form-group"><label className="form-label">Médecin</label><select className="form-select" value={hospForm.medecin_id} onChange={e => setHospForm({...hospForm, medecin_id: e.target.value})}><option value="">Sélectionner...</option>{medecins.map(m => <option key={m.id} value={m.id}>Dr. {m.prenom} {m.nom}</option>)}</select></div>
-              <div className="form-group"><label className="form-label">Service</label><select className="form-select" value={hospForm.service_id} onChange={e => setHospForm({...hospForm, service_id: e.target.value})}><option value="">Sélectionner...</option>{services.map(s => <option key={s.id} value={s.id}>{s.nom}</option>)}</select></div>
-            </div>
-            <div className="form-group"><label className="form-label">Motif</label><textarea className="form-textarea" rows={2} value={hospForm.motif} onChange={e => setHospForm({...hospForm, motif: e.target.value})} /></div>
-          </div><div className="modal-footer"><button type="button" className="btn-secondary" onClick={() => setShowModal(null)}>Annuler</button><button type="submit" className="btn-primary">Admettre</button></div></form>
         </div></div>
       )}
     </div>

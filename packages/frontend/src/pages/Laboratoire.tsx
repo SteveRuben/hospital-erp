@@ -1,5 +1,6 @@
 import { useState, useEffect } from 'react';
-import { getExamens, createExamen, updateExamen, deleteExamen, getPatients } from '../services/api';
+import { useNavigate } from 'react-router-dom';
+import { getExamens, updateExamen, deleteExamen, getPatients } from '../services/api';
 import type { Examen, Patient } from '../types';
 
 const typeExamens = ['Analyse de sang', "Analyse d'urine", 'Glycémie', 'Créatinine', 'Urée', 'Cholestérol', 'Groupe sanguin', 'Sérologie', 'Test de grossesse', 'Autres'];
@@ -17,9 +18,7 @@ export default function Laboratoire() {
   const [patients, setPatients] = useState<Patient[]>([]);
   const [loading, setLoading] = useState(true);
   const [view, setView] = useState<'table' | 'kanban'>('kanban');
-  const [showModal, setShowModal] = useState(false);
-  const [editing, setEditing] = useState<Examen | null>(null);
-  const [form, setForm] = useState({ patient_id: '', type_examen: '', resultat: '', date_examen: '', montant: '' });
+  const navigate = useNavigate();
 
   useEffect(() => { loadData(); }, []);
 
@@ -29,17 +28,6 @@ export default function Laboratoire() {
       setExamens(e.data); setPatients(p.data.data);
     } catch (err) { console.error(err); }
     finally { setLoading(false); }
-  };
-
-  const handleSubmit = async (e: React.FormEvent) => {
-    e.preventDefault();
-    try {
-      if (editing) await updateExamen(editing.id, form);
-      else await createExamen(form);
-      setShowModal(false); setEditing(null);
-      setForm({ patient_id: '', type_examen: '', resultat: '', date_examen: '', montant: '' });
-      loadData();
-    } catch { alert('Erreur'); }
   };
 
   const changeStatut = async (examen: Examen, newStatut: string) => {
@@ -64,7 +52,7 @@ export default function Laboratoire() {
         <div className="d-flex gap-1">
           <button className={view === 'kanban' ? 'btn-primary btn-sm' : 'btn-ghost btn-sm'} onClick={() => setView('kanban')}><i className="bi bi-kanban"></i> Kanban</button>
           <button className={view === 'table' ? 'btn-primary btn-sm' : 'btn-ghost btn-sm'} onClick={() => setView('table')}><i className="bi bi-table"></i> Table</button>
-          <button className="btn-primary" onClick={() => { setEditing(null); setForm({ patient_id: '', type_examen: '', resultat: '', date_examen: '', montant: '' }); setShowModal(true); }}><i className="bi bi-plus"></i> Nouvel examen</button>
+          <button className="btn-primary" onClick={() => navigate('/app/laboratoire/nouveau')}><i className="bi bi-plus"></i> Nouvel examen</button>
         </div>
       </div>
 
@@ -106,7 +94,7 @@ export default function Laboratoire() {
                 <td>{ex.resultat || '-'}</td>
                 <td>{ex.montant ? fmt(Number(ex.montant)) : '-'}</td>
                 <td>
-                  <button className="btn-icon" onClick={() => { setEditing(ex); setForm(ex as unknown as typeof form); setShowModal(true); }}><i className="bi bi-pencil"></i></button>
+                  <button className="btn-icon" onClick={() => navigate(`/app/laboratoire/${ex.id}/modifier`)}><i className="bi bi-pencil"></i></button>
                   <button className="btn-icon" onClick={async () => { if (confirm('Supprimer ?')) { await deleteExamen(ex.id); loadData(); }}}><i className="bi bi-trash"></i></button>
                 </td>
               </tr>
@@ -116,25 +104,6 @@ export default function Laboratoire() {
         </table>
       )}
 
-      {showModal && (
-        <div className="modal-overlay" onClick={() => setShowModal(false)}>
-          <div className="modal-container" onClick={e => e.stopPropagation()}>
-            <div className="modal-header"><h3>{editing ? 'Modifier' : 'Nouvel'} examen</h3><button className="btn-icon" onClick={() => setShowModal(false)}><i className="bi bi-x-lg"></i></button></div>
-            <form onSubmit={handleSubmit}>
-              <div className="modal-body">
-                <div className="form-group"><label className="form-label">Patient *</label><select className="form-select" value={form.patient_id} onChange={e => setForm({...form, patient_id: e.target.value})} required><option value="">Sélectionner...</option>{patients.map(p => <option key={p.id} value={p.id}>{p.prenom} {p.nom}</option>)}</select></div>
-                <div className="form-group"><label className="form-label">Type d'examen *</label><select className="form-select" value={form.type_examen} onChange={e => setForm({...form, type_examen: e.target.value})} required><option value="">Sélectionner...</option>{typeExamens.map(t => <option key={t} value={t}>{t}</option>)}</select></div>
-                <div className="form-group"><label className="form-label">Résultat</label><textarea className="form-textarea" rows={3} value={form.resultat} onChange={e => setForm({...form, resultat: e.target.value})} /></div>
-                <div className="grid-2">
-                  <div className="form-group"><label className="form-label">Date</label><input type="date" className="form-input" value={form.date_examen} onChange={e => setForm({...form, date_examen: e.target.value})} /></div>
-                  <div className="form-group"><label className="form-label">Montant</label><input type="number" className="form-input" value={form.montant} onChange={e => setForm({...form, montant: e.target.value})} /></div>
-                </div>
-              </div>
-              <div className="modal-footer"><button type="button" className="btn-secondary" onClick={() => setShowModal(false)}>Annuler</button><button type="submit" className="btn-primary">Enregistrer</button></div>
-            </form>
-          </div>
-        </div>
-      )}
     </div>
   );
 }
