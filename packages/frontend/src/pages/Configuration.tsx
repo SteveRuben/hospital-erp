@@ -1,4 +1,5 @@
 import { useState, useEffect } from 'react';
+import { useNavigate } from 'react-router-dom';
 import { useSnackbar } from '../components/Snackbar';
 import api from '../services/api';
 
@@ -9,7 +10,7 @@ const CATEGORIES = [
   { code: 'pays', label: 'Pays', icon: 'bi-globe' },
   { code: 'ville', label: 'Villes', icon: 'bi-geo-alt' },
   { code: 'pavillon', label: 'Pavillons', icon: 'bi-hospital' },
-  { code: 'service', label: 'Services / Types de visite', icon: 'bi-building' },
+  { code: 'service', label: 'Types de service', icon: 'bi-building', redirect: '/app/services', hint: 'Géré dans Services (avec prix et sous-services)' },
   { code: 'specialite', label: 'Spécialités médicales', icon: 'bi-heart-pulse' },
   { code: 'mode_paiement', label: 'Modes de paiement', icon: 'bi-cash' },
   { code: 'type_examen', label: 'Types d\'examen labo', icon: 'bi-flask' },
@@ -21,6 +22,7 @@ const CATEGORIES = [
 export default function Configuration() {
   const [tab, setTab] = useState<'settings' | 'lists'>('settings');
   const [settings, setSettings] = useState<Setting[]>([]);
+  const navigate = useNavigate();
   const [selectedCat, setSelectedCat] = useState('pays');
   const [items, setItems] = useState<RefItem[]>([]);
   const [loading, setLoading] = useState(true);
@@ -180,8 +182,9 @@ export default function Configuration() {
           <div className="tile" style={{ padding: '1rem' }}>
             <h4 style={{ fontSize: '0.8125rem', fontWeight: 600, marginBottom: '0.75rem', color: 'var(--cds-text-secondary)' }}>Catégories</h4>
             {CATEGORIES.map(cat => (
-              <div key={cat.code} onClick={() => setSelectedCat(cat.code)} style={{ padding: '0.625rem 0.75rem', cursor: 'pointer', borderRadius: '4px', marginBottom: '0.25rem', background: selectedCat === cat.code ? 'var(--cds-interactive)' : 'transparent', color: selectedCat === cat.code ? '#fff' : 'inherit', fontSize: '0.8125rem', display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
+              <div key={cat.code} onClick={() => { if ((cat as any).redirect) { navigate((cat as any).redirect); } else { setSelectedCat(cat.code); } }} style={{ padding: '0.625rem 0.75rem', cursor: 'pointer', borderRadius: '4px', marginBottom: '0.25rem', background: selectedCat === cat.code ? 'var(--cds-interactive)' : 'transparent', color: selectedCat === cat.code ? '#fff' : 'inherit', fontSize: '0.8125rem', display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
                 <i className={`bi ${cat.icon}`}></i> {cat.label}
+                {(cat as any).redirect && <i className="bi bi-box-arrow-up-right" style={{ fontSize: '0.625rem', marginLeft: 'auto' }}></i>}
               </div>
             ))}
           </div>
