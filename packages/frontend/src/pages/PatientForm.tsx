@@ -1,6 +1,8 @@
 import { useState, useEffect } from 'react';
 import { useNavigate, useParams } from 'react-router-dom';
 import { createPatient, updatePatient, getPatient } from '../services/api';
+import api from '../services/api';
+import { useFormPersist } from '../hooks/useFormPersist';
 
 const emptyForm = {
   nom: '', prenom: '', deuxieme_prenom: '', sexe: '', date_naissance: '', age_estime: '',
@@ -24,15 +26,27 @@ export default function PatientForm() {
   const isEdit = !!id;
   const [form, setForm] = useState(emptyForm);
   const [step, setStep] = useState(0);
-  const [loading, setLoading] = useState(isEdit);
+  const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
+  const [paysList, setPaysList] = useState<Array<{ code: string; libelle: string }>>([]);
+  const [villesList, setVillesList] = useState<Array<{ code: string; libelle: string; parent_code: string | null }>>([]);
+
+  // Persist form data across session timeouts
+  const { clearSaved } = useFormPersist(isEdit ? `patient_edit_${id}` : 'patient_new', form, setForm);
 
   useEffect(() => {
-    if (isEdit) {
-      getPatient(Number(id)).then(({ data }) => {
-        setForm({ ...emptyForm, ...data, age_estime: data.age_estime ? String(data.age_estime) : '' });
-      }).catch(() => setError('Patient non trouvé')).finally(() => setLoading(false));
-    }
+    // Load reference lists + patient data
+    Promise.all([
+      api.get('/reference-lists/pays'),
+      api.get('/reference-lists/ville'),
+      isEdit ? getPatient(Number(id)) : Promise.resolve(null),
+    ]).then(([paysRes, villesRes, patientRes]) => {
+      setPaysList(paysRes.data);
+      setVillesList(villesRes.data);
+      if (patientRes?.data) {
+        setForm({ ...emptyForm, ...patientRes.data, age_estime: patientRes.data.age_estime ? String(patientRes.data.age_estime) : '' });
+      }
+    }).catch(() => setError('Erreur de chargement')).finally(() => setLoading(false));
   }, [id]);
 
   const handleSubmit = async (e: React.FormEvent) => {
@@ -42,6 +56,7 @@ export default function PatientForm() {
       const payload = { ...form, age_estime: form.age_estime ? Number(form.age_estime) : null };
       if (isEdit) await updatePatient(Number(id), payload);
       else await createPatient(payload);
+      clearSaved(); // Clear persisted form data on success
       navigate('/app/patients');
     } catch (err: any) {
       setError(err.response?.data?.error || 'Erreur lors de l\'enregistrement');
@@ -113,11 +128,23 @@ export default function PatientForm() {
           {step === 2 && (
             <div>
               <div className="grid-2">
-                <div className="form-group"><label className="form-label">Pays</label><input type="text" className="form-input" value={form.pays} onChange={e => setForm({...form, pays: e.target.value})} /></div>
+                <div className="form-group"><label className="form-label">Pays</label>
+                  <select className="form-select" value={form.pays} onChange={e => setForm({...form, pays: e.target.value, ville: ''})}>
+                    <option value="">Sélectionner un pays...</option>
+                    {paysList.map(p => <option key={p.code} value={p.libelle}>{p.libelle}</option>)}
+                  </select>
+                </div>
                 <div className="form-group"><label className="form-label">Province / Région</label><input type="text" className="form-input" value={form.province} onChange={e => setForm({...form, province: e.target.value})} /></div>
               </div>
               <div className="grid-3">
-                <div className="form-group"><label className="form-label">Ville</label><input type="text" className="form-input" value={form.ville} onChange={e => setForm({...form, ville: e.target.value})} /></div>
+                <div className="form-group"><label className="form-label">Ville</label>
+                  <select className="form-select" value={form.ville} onChange={e => setForm({...form, ville: e.target.value})}>
+                    <option value="">Sélectionner une ville...</option>
+                    {villesList
+                      .filter(v => !form.pays || !v.parent_code || paysList.find(p => p.libelle === form.pays)?.code === v.parent_code)
+                      .map(v => <option key={v.code} value={v.libelle}>{v.libelle}</option>)}
+                  </select>
+                </div>
                 <div className="form-group"><label className="form-label">Commune</label><input type="text" className="form-input" value={form.commune} onChange={e => setForm({...form, commune: e.target.value})} /></div>
                 <div className="form-group"><label className="form-label">Quartier</label><input type="text" className="form-input" value={form.quartier} onChange={e => setForm({...form, quartier: e.target.value})} /></div>
               </div>

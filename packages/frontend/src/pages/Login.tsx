@@ -23,7 +23,10 @@ export default function Login() {
       if (data.user.must_change_password) {
         navigate('/change-password');
       } else {
-        navigate('/app');
+        // Redirect to saved path (if session expired while on a page)
+        const redirectPath = sessionStorage.getItem('redirect_after_login');
+        sessionStorage.removeItem('redirect_after_login');
+        navigate(redirectPath || '/app');
       }
     } catch (err: unknown) {
       setError((err as { response?: { data?: { error?: string } } })?.response?.data?.error || 'Erreur de connexion');

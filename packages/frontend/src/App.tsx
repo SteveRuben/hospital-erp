@@ -78,7 +78,23 @@ function ProtectedRoute({ children }: { children: React.ReactNode }) {
 function SessionManager({ children }: { children: React.ReactNode }) {
   const { user, logout } = useContext(AuthContext);
   const navigate = useNavigate();
-  const handleTimeout = useCallback(() => { logout(); navigate('/login?expired=1'); }, [logout, navigate]);
+  const handleTimeout = useCallback(() => {
+    // Save current path + form data so user can resume after re-login
+    sessionStorage.setItem('redirect_after_login', window.location.pathname + window.location.search);
+    // Save all form inputs on the current page
+    const formData: Record<string, string> = {};
+    document.querySelectorAll('input, textarea, select').forEach((el, idx) => {
+      const input = el as HTMLInputElement;
+      const name = input.name || input.id || `field_${idx}`;
+      if (input.type === 'password' || input.type === 'hidden') return;
+      if (input.value) formData[name] = input.value;
+    });
+    if (Object.keys(formData).length > 0) {
+      sessionStorage.setItem('form_data_before_timeout', JSON.stringify(formData));
+    }
+    logout();
+    navigate('/login?expired=1');
+  }, [logout, navigate]);
   useSessionTimeout(handleTimeout, !!user);
   return (
     <>
