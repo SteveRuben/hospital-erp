@@ -19,14 +19,22 @@ router.get('/', authenticate, asyncHandler(async (req, res) => {
   }
 
   // Hierarchical: return parents with nested children
-  const all = await prisma.$queryRaw<Array<Record<string, unknown>>>`
-    SELECT s.*, p.nom as parent_nom,
-           (SELECT COUNT(*) FROM services sub WHERE sub.parent_id = s.id) as nb_sous_services
-    FROM services s
-    LEFT JOIN services p ON s.parent_id = p.id
-    ${actif !== 'false' ? prisma.$queryRaw`WHERE s.actif = TRUE` : prisma.$queryRaw``}
-    ORDER BY s.poids DESC, s.nom ASC
-  `;
+  const all = actif !== 'false'
+    ? await prisma.$queryRaw<Array<Record<string, unknown>>>`
+        SELECT s.*, p.nom as parent_nom,
+               (SELECT COUNT(*) FROM services sub WHERE sub.parent_id = s.id) as nb_sous_services
+        FROM services s
+        LEFT JOIN services p ON s.parent_id = p.id
+        WHERE s.actif = TRUE
+        ORDER BY s.poids DESC, s.nom ASC
+      `
+    : await prisma.$queryRaw<Array<Record<string, unknown>>>`
+        SELECT s.*, p.nom as parent_nom,
+               (SELECT COUNT(*) FROM services sub WHERE sub.parent_id = s.id) as nb_sous_services
+        FROM services s
+        LEFT JOIN services p ON s.parent_id = p.id
+        ORDER BY s.poids DESC, s.nom ASC
+      `;
   res.json(all);
 }));
 
@@ -88,12 +96,17 @@ router.post('/', authenticate, authorize('admin'), asyncHandler(async (req, res)
   const { nom, description, parent_id, prix, poids, code } = req.body;
   if (!nom) { res.status(400).json({ error: 'Nom requis' }); return; }
 
-  const created = await prisma.$queryRaw<Array<Record<string, unknown>>>`
-    INSERT INTO services (nom, description, parent_id, prix, poids, code)
-    VALUES (${nom}, ${description || null}, ${parent_id ? Number(parent_id) : null}, ${prix ? Number(prix) : 0}::decimal, ${poids ? Number(poids) : 0}, ${code || null})
-    RETURNING *
-  `;
-  res.status(201).json(created[0]);
+  const created = await prisma.service.create({
+    data: {
+      nom,
+      description: description || null,
+      parentId: parent_id ? Number(parent_id) : null,
+      prix: prix ? Number(prix) : 0,
+      poids: poids ? Number(poids) : 0,
+      code: code || null,
+    },
+  });
+  res.status(201).json(created);
 }));
 
 // Update service
@@ -101,30 +114,30 @@ router.put('/:id', authenticate, authorize('admin'), asyncHandler(async (req, re
   const id = Number(req.params.id);
   const { nom, description, parent_id, prix, poids, code, actif } = req.body;
 
-  const updated = await prisma.$queryRaw<Array<Record<string, unknown>>>`
-    UPDATE services SET
-      nom = COALESCE(${nom}, nom),
-      description = ${description !== undefined ? description : null},
-      parent_id = ${parent_id !== undefined ? (parent_id ? Number(parent_id) : null) : null},
-      prix = COALESCE(${prix !== undefined ? Number(prix) : null}::decimal, prix),
-      poids = COALESCE(${poids !== undefined ? Number(poids) : null}, poids),
-      code = ${code !== undefined ? code : null},
-      actif = COALESCE(${actif !== undefined ? actif : null}::boolean, actif)
-    WHERE id = ${id}
-    RETURNING *
-  `;
-  if ((updated as any[]).length === 0) { res.status(404).json({ error: 'Service non trouvé' }); return; }
-  res.json((updated as any[])[0]);
+  // Build update data
+  const existing = await prisma.service.findUnique({ where: { id } });
+  if (!existing) { res.status(404).json({ error: 'Service non trouvé' }); return; }
+
+  const data: any = {};
+  if (nom !== undefined) data.nom = nom;
+  if (description !== undefined) data.description = description || null;
+  if (parent_id !== undefined) data.parentId = parent_id ? Number(parent_id) : null;
+  if (prix !== undefined) data.prix = Number(prix) || 0;
+  if (poids !== undefined) data.poids = Number(poids) || 0;
+  if (code !== undefined) data.code = code || null;
+  if (actif !== undefined) data.actif = Boolean(actif);
+
+  const updated = await prisma.service.update({ where: { id }, data });
+  res.json(updated);
 }));
 
 // Toggle active
 router.patch('/:id/toggle', authenticate, authorize('admin'), asyncHandler(async (req, res) => {
   const id = Number(req.params.id);
-  const updated = await prisma.$queryRaw<Array<Record<string, unknown>>>`
-    UPDATE services SET actif = NOT actif WHERE id = ${id} RETURNING *
-  `;
-  if ((updated as any[]).length === 0) { res.status(404).json({ error: 'Service non trouvé' }); return; }
-  res.json((updated as any[])[0]);
+  const existing = await prisma.service.findUnique({ where: { id } });
+  if (!existing) { res.status(404).json({ error: 'Service non trouvé' }); return; }
+  const updated = await prisma.service.update({ where: { id }, data: { actif: !existing.actif } });
+  res.json(updated);
 }));
 
 // Delete service
