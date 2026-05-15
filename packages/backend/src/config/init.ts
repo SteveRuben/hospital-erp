@@ -849,7 +849,7 @@ export const initDB = async (): Promise<void> => {
     }
 
     // Seed reference lists (lookup tables for all dropdowns)
-    const refLists: Array<[string, string, string, boolean?]> = [
+    const refLists: Array<[string, string, string, boolean?, string?]> = [
       // Pavillons
       ['pavillon', 'MED_GEN', 'Médecine Générale'],
       ['pavillon', 'CHIRURGIE', 'Chirurgie'],
