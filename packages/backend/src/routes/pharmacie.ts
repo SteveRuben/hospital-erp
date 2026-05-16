@@ -239,7 +239,10 @@ router.get('/alerts/expirations', authenticate, async (_req: AuthRequest, res: R
   } catch (err) { res.status(500).json({ error: 'Erreur serveur' }); }
 });
 
-// Point de vente — vente directe sans ordonnance
+// Point de vente — vente directe sans ordonnance.
+// Wrapped in prisma.$transaction so partial failure rolls back all stock
+// movements + dispensations. Without this, a mid-cart error left stock
+// decremented without a movement-log entry (cash-register integrity hazard).
 router.post('/vente', authenticate, async (req: AuthRequest, res: Response): Promise<void> => {
   try {
     const { items, patient_id } = req.body;
@@ -249,119 +252,125 @@ router.post('/vente', authenticate, async (req: AuthRequest, res: Response): Pro
       return;
     }
 
-    let totalVente = 0;
-    const venteLignes: Array<{ medicament_nom: string; quantite: number; prix: number; montant: number }> = [];
+    const result = await prisma.$transaction(async (tx) => {
+      let totalVente = 0;
+      const venteLignes: Array<{ medicament_nom: string; quantite: number; prix: number; montant: number }> = [];
 
-    for (const item of items) {
-      const { medicament_id, quantite } = item;
-      if (!medicament_id || !quantite || quantite <= 0) continue;
+      for (const item of items) {
+        const { medicament_id, quantite } = item;
+        if (!medicament_id || !quantite || quantite <= 0) continue;
 
-      // Get medicament info + price
-      const med = await prisma.medicament.findUnique({ where: { id: Number(medicament_id) } });
-      if (!med) continue;
+        const med = await tx.medicament.findUnique({ where: { id: Number(medicament_id) } });
+        if (!med) continue;
 
-      const prix = item.prix_unitaire || Number(med.prixUnitaire) || 0;
-      const montant = prix * quantite;
-      totalVente += montant;
+        const prix = item.prix_unitaire || Number(med.prixUnitaire) || 0;
+        const montant = prix * quantite;
+        totalVente += montant;
 
-      // Decrement stock (FIFO — oldest lot first)
-      await prisma.$executeRaw`
-        UPDATE stock SET quantite = quantite - ${Number(quantite)}
-        WHERE id = (
-          SELECT id FROM stock
-          WHERE medicament_id = ${Number(medicament_id)} AND quantite >= ${Number(quantite)}
-          ORDER BY date_expiration ASC NULLS LAST, date_entree ASC
-          LIMIT 1
-        )
-      `;
+        // Decrement stock (FIFO — oldest lot first)
+        const updated = await tx.$executeRaw`
+          UPDATE stock SET quantite = quantite - ${Number(quantite)}
+          WHERE id = (
+            SELECT id FROM stock
+            WHERE medicament_id = ${Number(medicament_id)} AND quantite >= ${Number(quantite)}
+            ORDER BY date_expiration ASC NULLS LAST, date_entree ASC
+            LIMIT 1
+          )
+        `;
+        if (updated === 0) {
+          throw new Error(`Stock insuffisant pour le médicament #${medicament_id}`);
+        }
 
-      // Record movement
-      await prisma.stockMouvement.create({
-        data: {
-          medicamentId: Number(medicament_id),
-          typeMouvement: 'sortie',
-          quantite: Number(quantite),
-          motif: `Vente directe${patient_id ? ` — Patient #${patient_id}` : ''}`,
-          userId: req.user!.id,
-        },
-      });
-
-      // Record dispensation if patient linked
-      if (patient_id) {
-        await prisma.dispensation.create({
+        await tx.stockMouvement.create({
           data: {
-            patientId: Number(patient_id),
             medicamentId: Number(medicament_id),
-            quantiteDelivree: Number(quantite),
-            dispenseurId: req.user!.id,
+            typeMouvement: 'sortie',
+            quantite: Number(quantite),
+            motif: `Vente directe${patient_id ? ` — Patient #${patient_id}` : ''}`,
+            userId: req.user!.id,
           },
         });
+
+        if (patient_id) {
+          await tx.dispensation.create({
+            data: {
+              patientId: Number(patient_id),
+              medicamentId: Number(medicament_id),
+              quantiteDelivree: Number(quantite),
+              dispenseurId: req.user!.id,
+            },
+          });
+        }
+
+        venteLignes.push({ medicament_nom: med.nom, quantite, prix, montant });
       }
 
-      venteLignes.push({ medicament_nom: med.nom, quantite, prix, montant });
-    }
+      return { totalVente, venteLignes };
+    });
 
     res.json({
       success: true,
-      total: totalVente,
-      lignes: venteLignes,
+      total: result.totalVente,
+      lignes: result.venteLignes,
       date: new Date().toISOString(),
       vendeur: req.user!.username,
     });
   } catch (err) {
     console.error('[PHARMACIE] Vente error:', err);
-    res.status(500).json({ error: 'Erreur lors de la vente' });
+    const message = err instanceof Error && err.message.startsWith('Stock insuffisant')
+      ? err.message
+      : 'Erreur lors de la vente';
+    res.status(400).json({ error: message });
   }
 });
 
-// Import CSV de médicaments
+// Import CSV de médicaments.
+// Single batched createMany (skipDuplicates) replaces N sequential round-trips.
+// The previous code ran a dead upsert({ where: { id: -1 } }) which always threw
+// (caught silently) plus a raw INSERT — net 2 round-trips per row, dead code in one.
 router.post('/import', authenticate, authorize('admin'), upload.single('file'), async (req: AuthRequest, res: Response): Promise<void> => {
   try {
     if (!req.file) { res.status(400).json({ error: 'Fichier CSV requis' }); return; }
 
     const content = req.file.buffer.toString('utf-8');
     const lines = content.split(/\r?\n/).filter(l => l.trim());
-
-    // Skip header
     const startIdx = lines[0].toLowerCase().includes('nom') ? 1 : 0;
-    let imported = 0;
     const errors: string[] = [];
+    const rows: Array<{
+      nom: string;
+      dci: string | null;
+      forme: string | null;
+      dosageStandard: string | null;
+      categorie: string | null;
+      prixUnitaire: number | null;
+      codeBarre: string | null;
+    }> = [];
 
     for (let i = startIdx; i < lines.length; i++) {
       const parts = lines[i].split(/[;,\t]/).map(s => s.trim().replace(/^"|"$/g, ''));
-      // Format: nom;dci;forme;dosage;categorie;prix;code_barre
       if (parts.length < 1 || !parts[0]) { errors.push(`Ligne ${i + 1}: nom requis`); continue; }
-
       const [nom, dci, forme, dosage, categorie, prixStr, codeBarre] = parts;
-
-      try {
-        await prisma.medicament.upsert({
-          where: { id: -1 }, // Force create (no unique field to match on except codeBarre)
-          update: {},
-          create: {
-            nom,
-            dci: dci || null,
-            forme: forme || null,
-            dosageStandard: dosage || null,
-            categorie: categorie || null,
-            prixUnitaire: prixStr ? parseFloat(prixStr) : null,
-            codeBarre: codeBarre || null,
-          },
-        });
-        // Use raw insert since upsert needs a unique field
-        await prisma.$executeRaw`
-          INSERT INTO medicaments (nom, dci, forme, dosage_standard, categorie, prix_unitaire, code_barre)
-          VALUES (${nom}, ${dci || null}, ${forme || null}, ${dosage || null}, ${categorie || null}, ${prixStr ? parseFloat(prixStr) : null}::decimal, ${codeBarre || null})
-          ON CONFLICT DO NOTHING
-        `;
-        imported++;
-      } catch {
-        errors.push(`Ligne ${i + 1}: erreur d'insertion`);
-      }
+      rows.push({
+        nom,
+        dci: dci || null,
+        forme: forme || null,
+        dosageStandard: dosage || null,
+        categorie: categorie || null,
+        prixUnitaire: prixStr ? parseFloat(prixStr) : null,
+        codeBarre: codeBarre || null,
+      });
     }
 
-    res.json({ imported, errors: errors.length > 0 ? errors : undefined, total: lines.length - startIdx });
-  } catch (err) { res.status(500).json({ error: 'Erreur serveur' }); }
+    const result = rows.length > 0
+      ? await prisma.medicament.createMany({ data: rows, skipDuplicates: true })
+      : { count: 0 };
+
+    res.json({
+      imported: result.count,
+      errors: errors.length > 0 ? errors : undefined,
+      total: lines.length - startIdx,
+    });
+  } catch (err) { console.error('[PHARMACIE] Import error:', err); res.status(500).json({ error: 'Erreur serveur' }); }
 });
 
 export default router;

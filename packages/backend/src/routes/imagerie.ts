@@ -7,6 +7,7 @@ import { prisma } from '../config/db.js';
 import { authenticate, authorize, AuthRequest } from '../middleware/auth.js';
 import { validate, createImagerieSchema } from '../middleware/validation.js';
 import { requirePatientAccess } from '../middleware/patient-access.js';
+import { validateUpload, IMAGERIE_MIMES } from '../middleware/upload-validation.js';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const uploadDir = path.resolve(__dirname, '../../uploads/imagerie');
@@ -47,7 +48,7 @@ router.get('/:patientId', authenticate, requirePatientAccess, async (req: AuthRe
 });
 
 // Upload image
-router.post('/', authenticate, authorize('admin', 'medecin'), upload.single('file'), validate(createImagerieSchema), requirePatientAccess, async (req: AuthRequest, res: Response): Promise<void> => {
+router.post('/', authenticate, authorize('admin', 'medecin'), upload.single('file'), validateUpload(IMAGERIE_MIMES), validate(createImagerieSchema), requirePatientAccess, async (req: AuthRequest, res: Response): Promise<void> => {
   try {
     const { patient_id, type_examen, description, date_examen, medecin_id } = req.body;
     if (!patient_id || !req.file) { res.status(400).json({ error: 'Patient et fichier requis' }); return; }

@@ -79,16 +79,19 @@ router.put('/menu/:id', authenticate, authorize('admin'), async (req: AuthReques
   } catch (err) { res.status(500).json({ error: 'Erreur serveur' }); }
 });
 
-// Bulk update menu order (admin only)
+// Bulk update menu order (admin only). Single transaction so a partial failure
+// doesn't leave the menu in a half-reordered state.
 router.put('/menu-order', authenticate, authorize('admin'), async (req: AuthRequest, res: Response): Promise<void> => {
   try {
     const { items } = req.body as { items: Array<{ id: number; groupe: string; groupe_ordre: number; ordre: number }> };
-    for (const item of items) {
-      await prisma.menuConfig.update({
-        where: { id: item.id },
-        data: { groupe: item.groupe, groupeOrdre: item.groupe_ordre, ordre: item.ordre },
-      });
-    }
+    await prisma.$transaction(
+      items.map(item =>
+        prisma.menuConfig.update({
+          where: { id: item.id },
+          data: { groupe: item.groupe, groupeOrdre: item.groupe_ordre, ordre: item.ordre },
+        }),
+      ),
+    );
     res.json({ message: 'Ordre mis à jour' });
   } catch (err) { res.status(500).json({ error: 'Erreur serveur' }); }
 });

@@ -318,7 +318,9 @@ router.delete('/:id', authenticate, authorize('admin'), async (req: AuthRequest,
   }
 });
 
-// Get patient history (with IDOR protection + parallel queries)
+// Get patient history (with IDOR protection + parallel queries + pagination).
+// Each collection capped at `limit` (default 100). Front-end can paginate via
+// ?limit= and ?page= once it asks for them; today we just cap the response.
 router.get('/:id/historique', authenticate, async (req: AuthRequest, res: Response): Promise<void> => {
   try {
     const patientId = Number(req.params.id);
@@ -327,6 +329,10 @@ router.get('/:id/historique', authenticate, async (req: AuthRequest, res: Respon
       res.status(403).json({ error: 'Accès refusé — ce patient ne vous est pas attribué' });
       return;
     }
+
+    const limit = Math.min(500, Math.max(1, Number(req.query.limit) || 100));
+    const page = Math.max(1, Number(req.query.page) || 1);
+    const skip = (page - 1) * limit;
 
     const [consultationsRows, examensRows, recettesRows, documentsRows] = await Promise.all([
       prisma.consultation.findMany({
@@ -337,11 +343,15 @@ router.get('/:id/historique', authenticate, async (req: AuthRequest, res: Respon
           service: { select: { nom: true } },
         },
         orderBy: { dateConsultation: 'desc' },
+        take: limit,
+        skip,
       }),
       prisma.examen.findMany({
         where: { patientId },
         select: { id: true, reference: true, typeExamen: true, resultat: true, dateExamen: true, statut: true },
         orderBy: { dateExamen: 'desc' },
+        take: limit,
+        skip,
       }),
       prisma.recette.findMany({
         where: {
@@ -350,11 +360,15 @@ router.get('/:id/historique', authenticate, async (req: AuthRequest, res: Respon
         },
         select: { id: true, typeActe: true, montant: true, modePaiement: true, dateRecette: true },
         orderBy: { dateRecette: 'desc' },
+        take: limit,
+        skip,
       }),
       prisma.document.findMany({
         where: { patientId },
         select: { id: true, typeDocument: true, description: true, fichierUrl: true, createdAt: true },
         orderBy: { createdAt: 'desc' },
+        take: limit,
+        skip,
       }),
     ]);
 
