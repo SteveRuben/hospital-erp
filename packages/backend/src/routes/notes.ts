@@ -4,6 +4,7 @@ import { authenticate, AuthRequest } from '../middleware/auth.js';
 import { validate, createNoteSchema } from '../middleware/validation.js';
 import { asyncHandler } from '../middleware/asyncHandler.js';
 import { requirePatientAccess } from '../middleware/patient-access.js';
+import { requireResourceAccess } from '../middleware/resource-access.js';
 
 const router = Router();
 
@@ -37,7 +38,7 @@ router.post('/', authenticate, validate(createNoteSchema), requirePatientAccess,
   res.status(201).json(created);
 }));
 
-router.delete('/:id', authenticate, asyncHandler(async (req, res) => {
+router.delete('/:id', authenticate, requireResourceAccess('note'), asyncHandler(async (req, res) => {
   try {
     await prisma.note.delete({ where: { id: Number(req.params.id) } });
   } catch { /* ignore */ }

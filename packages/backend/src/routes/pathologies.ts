@@ -4,6 +4,7 @@ import { authenticate, authorize } from '../middleware/auth.js';
 import { validate, createPathologieSchema } from '../middleware/validation.js';
 import { asyncHandler } from '../middleware/asyncHandler.js';
 import { requirePatientAccess } from '../middleware/patient-access.js';
+import { requireResourceAccess } from '../middleware/resource-access.js';
 
 const router = Router();
 
@@ -31,7 +32,7 @@ router.post('/', authenticate, authorize('admin', 'medecin'), validate(createPat
   res.status(201).json(created);
 }));
 
-router.put('/:id', authenticate, authorize('admin', 'medecin'), asyncHandler(async (req, res) => {
+router.put('/:id', authenticate, authorize('admin', 'medecin'), requireResourceAccess('pathologie'), asyncHandler(async (req, res) => {
   const { nom, code_cim, statut, date_debut, date_fin, notes } = req.body;
   try {
     const updated = await prisma.pathologie.update({
@@ -51,7 +52,7 @@ router.put('/:id', authenticate, authorize('admin', 'medecin'), asyncHandler(asy
   }
 }));
 
-router.delete('/:id', authenticate, authorize('admin'), asyncHandler(async (req, res) => {
+router.delete('/:id', authenticate, authorize('admin'), requireResourceAccess('pathologie'), asyncHandler(async (req, res) => {
   try {
     await prisma.pathologie.delete({ where: { id: Number(req.params.id) } });
   } catch { /* ignore not found */ }

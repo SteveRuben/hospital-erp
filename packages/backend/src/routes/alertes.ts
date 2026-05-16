@@ -5,6 +5,7 @@ import { authenticate, AuthRequest } from '../middleware/auth.js';
 import { validate, createAlerteSchema } from '../middleware/validation.js';
 import { asyncHandler } from '../middleware/asyncHandler.js';
 import { requirePatientAccess } from '../middleware/patient-access.js';
+import { requireResourceAccess } from '../middleware/resource-access.js';
 
 const router = Router();
 
@@ -39,7 +40,7 @@ router.post('/', authenticate, validate(createAlerteSchema), requirePatientAcces
   res.status(201).json(created);
 }));
 
-router.put('/:id/toggle', authenticate, asyncHandler(async (req, res) => {
+router.put('/:id/toggle', authenticate, requireResourceAccess('alerte'), asyncHandler(async (req, res) => {
   const id = Number(req.params.id);
   const current = await prisma.alerte.findUnique({ where: { id }, select: { active: true } });
   if (!current) { res.status(404).json({ error: 'Non trouvé' }); return; }
@@ -47,7 +48,7 @@ router.put('/:id/toggle', authenticate, asyncHandler(async (req, res) => {
   res.json(updated);
 }));
 
-router.delete('/:id', authenticate, asyncHandler(async (req, res) => {
+router.delete('/:id', authenticate, requireResourceAccess('alerte'), asyncHandler(async (req, res) => {
   try {
     await prisma.alerte.delete({ where: { id: Number(req.params.id) } });
   } catch { /* ignore not found */ }

@@ -4,6 +4,7 @@ import { authenticate, authorize } from '../middleware/auth.js';
 import { validate, createVaccinationSchema } from '../middleware/validation.js';
 import { asyncHandler } from '../middleware/asyncHandler.js';
 import { requirePatientAccess } from '../middleware/patient-access.js';
+import { requireResourceAccess } from '../middleware/resource-access.js';
 
 const router = Router();
 
@@ -38,7 +39,7 @@ router.post('/', authenticate, authorize('admin', 'medecin'), validate(createVac
   res.status(201).json(created);
 }));
 
-router.delete('/:id', authenticate, authorize('admin'), asyncHandler(async (req, res) => {
+router.delete('/:id', authenticate, authorize('admin'), requireResourceAccess('vaccination'), asyncHandler(async (req, res) => {
   try {
     await prisma.vaccination.delete({ where: { id: Number(req.params.id) } });
   } catch { /* ignore */ }

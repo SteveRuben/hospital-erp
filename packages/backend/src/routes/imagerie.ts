@@ -7,6 +7,7 @@ import { prisma } from '../config/db.js';
 import { authenticate, authorize, AuthRequest } from '../middleware/auth.js';
 import { validate, createImagerieSchema } from '../middleware/validation.js';
 import { requirePatientAccess } from '../middleware/patient-access.js';
+import { requireResourceAccess } from '../middleware/resource-access.js';
 import { validateUpload, IMAGERIE_MIMES } from '../middleware/upload-validation.js';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
@@ -77,7 +78,7 @@ router.get('/file/:filename', authenticate, (req: AuthRequest, res: Response): v
 });
 
 // Delete image
-router.delete('/:id', authenticate, authorize('admin'), async (req: AuthRequest, res: Response): Promise<void> => {
+router.delete('/:id', authenticate, authorize('admin'), requireResourceAccess('imagerie'), async (req: AuthRequest, res: Response): Promise<void> => {
   try {
     try {
       const deleted = await prisma.imagerie.delete({ where: { id: Number(req.params.id) } });

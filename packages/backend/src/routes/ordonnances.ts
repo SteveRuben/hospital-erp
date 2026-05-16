@@ -4,6 +4,7 @@ import { authenticate, authorize } from '../middleware/auth.js';
 import { validate, createOrdonnanceSchema } from '../middleware/validation.js';
 import { asyncHandler } from '../middleware/asyncHandler.js';
 import { requirePatientAccess } from '../middleware/patient-access.js';
+import { requireResourceAccess } from '../middleware/resource-access.js';
 
 const router = Router();
 
@@ -34,7 +35,7 @@ router.post('/', authenticate, authorize('admin', 'medecin'), validate(createOrd
   res.status(201).json(created);
 }));
 
-router.put('/:id/statut', authenticate, asyncHandler(async (req, res) => {
+router.put('/:id/statut', authenticate, requireResourceAccess('ordonnance'), asyncHandler(async (req, res) => {
   const { statut } = req.body;
   try {
     const updated = await prisma.ordonnance.update({

@@ -3,6 +3,7 @@ import { prisma } from '../config/db.js';
 import { authenticate, authorize, AuthRequest } from '../middleware/auth.js';
 import { validate, createPrescriptionSchema } from '../middleware/validation.js';
 import { requirePatientAccess } from '../middleware/patient-access.js';
+import { requireResourceAccess } from '../middleware/resource-access.js';
 
 const router = Router();
 
@@ -43,7 +44,7 @@ router.post('/', authenticate, authorize('admin', 'medecin'), validate(createPre
   } catch (err) { res.status(500).json({ error: 'Erreur serveur' }); }
 });
 
-router.put('/:id/statut', authenticate, authorize('admin', 'medecin'), async (req: AuthRequest, res: Response): Promise<void> => {
+router.put('/:id/statut', authenticate, authorize('admin', 'medecin'), requireResourceAccess('prescription'), async (req: AuthRequest, res: Response): Promise<void> => {
   try {
     const { statut } = req.body;
     try {
@@ -58,7 +59,7 @@ router.put('/:id/statut', authenticate, authorize('admin', 'medecin'), async (re
   } catch (err) { res.status(500).json({ error: 'Erreur serveur' }); }
 });
 
-router.delete('/:id', authenticate, authorize('admin'), async (req: AuthRequest, res: Response): Promise<void> => {
+router.delete('/:id', authenticate, authorize('admin'), requireResourceAccess('prescription'), async (req: AuthRequest, res: Response): Promise<void> => {
   try {
     try { await prisma.prescription.delete({ where: { id: Number(req.params.id) } }); } catch { /* ignore */ }
     res.json({ message: 'Supprimé' });
