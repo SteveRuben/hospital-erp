@@ -23,6 +23,47 @@ api.interceptors.response.use(
   }
 );
 
+/**
+ * Authenticated download helper. Replaces the broken `window.open(...?token=...)`
+ * pattern: the backend's `authenticate` middleware only reads
+ * `Authorization: Bearer`, never `req.query.token`, so the old approach 401'd.
+ * Also: JWTs in URLs leak via access logs, referrers, and browser history.
+ *
+ *  - `filename` omitted   → open in a new tab (HTML responses render, print
+ *                            preview works for invoice / ordonnance / labo)
+ *  - `filename` provided  → trigger a Save-As download (CSV exports)
+ */
+async function authedDownload(path: string, filename?: string): Promise<void> {
+  const token = localStorage.getItem('token');
+  const res = await fetch(`${API_URL}${path}`, {
+    headers: token ? { Authorization: `Bearer ${token}` } : {},
+  });
+  if (!res.ok) {
+    if (res.status === 401) {
+      localStorage.removeItem('token');
+      localStorage.removeItem('user');
+      window.location.href = '/login?expired=1';
+      return;
+    }
+    throw new Error(`Téléchargement échoué: ${res.status}`);
+  }
+  const blob = await res.blob();
+  const objectUrl = URL.createObjectURL(blob);
+
+  if (filename) {
+    const a = document.createElement('a');
+    a.href = objectUrl;
+    a.download = filename;
+    document.body.appendChild(a);
+    a.click();
+    document.body.removeChild(a);
+  } else {
+    window.open(objectUrl, '_blank');
+  }
+  // Give the browser time to load before reclaiming memory.
+  setTimeout(() => URL.revokeObjectURL(objectUrl), 60_000);
+}
+
 export const login = (data: { username: string; password: string }) => api.post('/auth/login', data);
 export const getMe = () => api.get<User>('/auth/me');
 export const getUsers = () => api.get<User[]>('/auth/users');
@@ -177,10 +218,11 @@ export const sendRappelRdv = (rdvId: number) => api.post(`/notifications/rappel-
 export const sendResultatLabo = (examenId: number) => api.post(`/notifications/resultat-labo/${examenId}`);
 export const getNotificationLog = (patientId: number) => api.get(`/notifications/log/${patientId}`);
 
-// Print (returns HTML)
-export const printFacture = (id: number) => window.open(`${API_URL}/print/facture/${id}?token=${localStorage.getItem('token')}`, '_blank');
-export const printOrdonnance = (patientId: number, medecinId?: number) => window.open(`${API_URL}/print/ordonnance/${patientId}?medecin_id=${medecinId || ''}&token=${localStorage.getItem('token')}`, '_blank');
-export const printResultatLabo = (patientId: number) => window.open(`${API_URL}/print/labo/${patientId}?token=${localStorage.getItem('token')}`, '_blank');
+// Print (returns HTML; opens in a new tab via fetch+Blob — no token in URL)
+export const printFacture = (id: number) => authedDownload(`/print/facture/${id}`);
+export const printOrdonnance = (patientId: number, medecinId?: number) =>
+  authedDownload(`/print/ordonnance/${patientId}?medecin_id=${medecinId || ''}`);
+export const printResultatLabo = (patientId: number) => authedDownload(`/print/labo/${patientId}`);
 
 // Impersonation
 export const impersonateUser = (userId: number) => api.post(`/auth/impersonate/${userId}`);
@@ -192,7 +234,7 @@ export const importFile = (type: string, file: File) => {
   formData.append('file', file);
   return api.post(`/import/${type}`, formData, { headers: { 'Content-Type': 'multipart/form-data' } });
 };
-export const downloadTemplate = (type: string) => window.open(`${API_URL}/import/template/${type}?token=${localStorage.getItem('token')}`, '_blank');
+export const downloadTemplate = (type: string) => authedDownload(`/import/template/${type}`, `template_${type}.csv`);
 
 // Habilitations
 export const getHabilitations = () => api.get('/habilitations');
@@ -209,13 +251,15 @@ export const advancedSearchPatients = (params: unknown) => api.get('/patients/se
 // Change password
 export const changePassword = (data: { old_password: string; new_password: string }) => api.post('/auth/change-password', data);
 
-// Export CSV
-export const exportRecettes = (params?: { debut?: string; fin?: string }) => window.open(`${API_URL}/export/recettes?debut=${params?.debut || ''}&fin=${params?.fin || ''}&token=${localStorage.getItem('token')}`, '_blank');
-export const exportDepenses = (params?: { debut?: string; fin?: string }) => window.open(`${API_URL}/export/depenses?debut=${params?.debut || ''}&fin=${params?.fin || ''}&token=${localStorage.getItem('token')}`, '_blank');
-export const exportPatients = () => window.open(`${API_URL}/export/patients?token=${localStorage.getItem('token')}`, '_blank');
+// Export CSV (triggers download via fetch+Blob — no token in URL)
+export const exportRecettes = (params?: { debut?: string; fin?: string }) =>
+  authedDownload(`/export/recettes?debut=${params?.debut || ''}&fin=${params?.fin || ''}`, 'recettes.csv');
+export const exportDepenses = (params?: { debut?: string; fin?: string }) =>
+  authedDownload(`/export/depenses?debut=${params?.debut || ''}&fin=${params?.fin || ''}`, 'depenses.csv');
+export const exportPatients = () => authedDownload('/export/patients', 'patients.csv');
 
-// Étiquette patient
-export const printEtiquette = (patientId: number) => window.open(`${API_URL}/export/etiquette/${patientId}?token=${localStorage.getItem('token')}`, '_blank');
+// Étiquette patient — HTML print, opens in new tab
+export const printEtiquette = (patientId: number) => authedDownload(`/export/etiquette/${patientId}`);
 
 // Concepts
 export const getConcepts = (params?: unknown) => api.get('/concepts', { params });
@@ -255,5 +299,5 @@ export const importMedicaments = (file: File) => { const fd = new FormData(); fd
 export const getPatientDuplicates = () => api.get('/patients/duplicates');
 export const mergePatients = (keep_id: number, merge_id: number) => api.post('/patients/merge', { keep_id, merge_id });
 
-// Carte patient
-export const printCartePatient = (patientId: number) => window.open(`${API_URL}/export/carte/${patientId}?token=${localStorage.getItem('token')}`, '_blank');
+// Carte patient — HTML print, opens in new tab
+export const printCartePatient = (patientId: number) => authedDownload(`/export/carte/${patientId}`);
