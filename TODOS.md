@@ -1,147 +1,139 @@
 # TODOS
 
-Tracked follow-ups from the 2026-05-16 review pass (`/plan-eng-review` + `/plan-ceo-review`
-+ OWASP-framed eng review). Items below were explicitly accepted but deferred from the
-initial 2-day implementation window (Lane F + A + B + C-partial + D-partial).
+Status as of 2026-05-16 EOD. Lanes F, A, B, C, D landed in commits
+`6cd956a`, `0f595bc`, `f168901`, `866d8fb`, `a3eed4e`. Backend test suite: 126/126.
 
-## Lane C — asyncHandler migration (remaining)
+## Pre-deployment checklist (do these before pushing to production)
 
-**What:** Convert the remaining 31 route files from hand-rolled `try { ... } catch (err) { res.status(500)... }`
-to the `asyncHandler` wrapper. Errors flow to the global `errorHandler` middleware in
-`packages/backend/src/middleware/security.ts:100` instead of duplicating 186 generic 500-JSON
-responses across the codebase.
+1. **Generate and set `PHI_ENCRYPTION_KEY`** in each environment:
+   ```bash
+   openssl rand -hex 32
+   ```
+   Set as a Railway/Render secret. Without it, PHI encryption is passthrough (Lane B is no-op).
 
-**Why:** DRY — 186 instances of identical boilerplate collapse to ~0 (matches the project's
-DRY-aggressive preference). Also fixes 12 silent `catch { /* ignore */ }` blocks that
-currently hide partial failures.
+2. **Mark the baseline migration as applied** on each existing environment:
+   ```bash
+   DATABASE_URL=... npx prisma migrate resolve --applied 20260516000000_baseline
+   ```
+   No schema change — just writes to `_prisma_migrations`. One-time per env.
 
-**Pattern (already established in `medecins.ts`, `services.ts`, `dashboard.ts`, `print.ts`,
-`notifications.ts`, and the 9 PHI routes from Lane A):**
+3. **Backfill encryption on existing rows** (after PHI_ENCRYPTION_KEY is set):
+   ```bash
+   cd packages/backend && npx tsx scripts/encrypt-patient-phi.ts --dry-run
+   cd packages/backend && npx tsx scripts/encrypt-patient-phi.ts
+   ```
+
+4. **Set `DB_POOL_MAX=10`** (or your Neon plan limit) — was hardcoded 20 pre-Lane B.
+
+## Remaining engineering work (post-Lane D)
+
+### A — Surface cuts (strategic, per /plan-ceo-review commitment)
+
+**What:** Delete routes and frontend pages for product surfaces with no real customer.
+
+| Cut | Backend | Frontend |
+|-----|---------|----------|
+| FHIR interop | `routes/fhir.ts`, mount in `index.ts:48,159` | none |
+| DICOM viewer | keep `routes/imagerie.ts` (upload), keep `pages/Imagerie.tsx` (list/upload) | `components/DicomViewer.tsx` |
+| Remita mobile money | `routes/paiement-remita.ts`, `services/remita.ts`, mount `index.ts:54,165` | `pages/PaiementMobile.tsx` |
+| Content packages | `routes/content-packages.ts`, mount `index.ts:53,164` | `pages/ContentPackages.tsx` |
+| Cohort builder | (uses listes-patients API, no separate backend) | `pages/CohortBuilder.tsx` |
+| Form builder | `routes/formulaires.ts`, schema `Formulaire` + `FormulaireReponse` | `pages/FormBuilder.tsx` |
+| Multi-site facilities | `routes/facilities.ts`, `Facility` model, mount `index.ts:52,163` | none mounted |
+
+**Also:**
+- `config/init.ts:720` `modules` array — drop `formulaires`, `cohort-builder`, `paiement-mobile`, `content-packages`
+- `config/init.ts:754,761,762` `menuItems` — drop the matching rows
+- `services/api.ts` — drop client helpers referencing the cut endpoints (search for fetchContentPackages, etc.)
+- `App.tsx:42,49,50,51,181,188,189,190` — drop lazy imports + routes
+
+### B — Frontend `?token=` URL fix
+
+**What:** Replace the 9 `window.open(...?token=${localStorage.getItem('token')}...)` calls in `services/api.ts` with `fetch(Authorization: Bearer) → Blob → URL.createObjectURL` pattern.
+
+**Files:** `services/api.ts:186-188` (print), `:200` (downloadTemplate), `:218-220` (export), `:223` (etiquette), `:264` (carte).
+
+**Why:** Backend `authenticate` middleware only reads `Authorization: Bearer`. Today these requests 401 — print/export features are broken. Plus JWTs in URLs is OWASP-discouraged (logs, referrers, history).
+
+### C — Resource-level access control on PUT/DELETE `/:id`
+
+**What:** The `requirePatientAccess` middleware from Lane A only gates GET `/:patientId` and POST routes (where patient_id is in the body). PUT and DELETE on the 9 PHI routes use `:id` (the resource id, e.g. allergieId), which is **not** the patient id. A medecin without attribution can still PUT/DELETE another patient's allergie/note/etc.
+
+**Pattern:**
 ```ts
-// before
-router.get('/x', mw, async (req, res) => {
-  try { ... } catch (err) { res.status(500).json({ error: 'Erreur serveur' }); }
-});
-// after
-router.get('/x', mw, asyncHandler(async (req, res) => {
-  ...
-}));
+// new middleware: requireResourceAccess(modelName, patientIdField)
+// loads the row, reads its patient_id, calls canAccessPatient.
+router.put('/:id', authenticate, requireResourceAccess('allergie'), handler);
+router.delete('/:id', authenticate, requireResourceAccess('allergie'), handler);
 ```
 
-**Remaining files (31):**
-auth, concepts, consultations, content-packages, encounters, export, facilities, facturation,
-fhir, file-attente, finances, formulaires, habilitations, import, laboratoire, listes-patients,
-lits, orders, paiement-remita, patient-merge, patients, planning, portail, prescriptions,
-programmes, reference-lists, rendezvous, reports, settings, visites, pharmacie.
+Apply to PUT/DELETE on: allergies, pathologies, prescriptions, ordonnances, vaccinations, notes, alertes, vitaux, imagerie.
 
-**Sequencing:** Best done in small batches (4–6 files per commit) so a single bad refactor
-is easy to revert. Always re-run `npm test` and `npx tsc --noEmit` after each batch.
-
-## Lane B finish — retire pg.Pool entirely
-
-**What:** Replace `config/init.ts` (1087 lines of CREATE TABLE IF NOT EXISTS + ALTER TABLE
-IF NOT EXISTS + seed inserts) with:
-1. `prisma migrate deploy` for DDL (the baseline migration already exists at
-   `prisma/migrations/20260516000000_baseline/migration.sql`)
-2. A new `prisma/seed.ts` that holds only the inserts (default admin user, habilitations,
-   menu config, reference lists, starter concepts)
-
-Then delete `pool`, `query`, `getClient` from `config/db.ts` and `config/reset-db.ts`.
-
-**Why:** Schema becomes versioned and reviewable. Single connection pool (drops the
-~20 extra pg.Pool connections against Neon). No more boot-time DDL surprises.
-
-**Sequencing:**
-1. Run `npx prisma migrate resolve --applied 20260516000000_baseline` on each existing
-   environment (writes to `_prisma_migrations` only, no schema change).
-2. Extract `init.ts` DDL block → confirm baseline migration covers everything.
-3. Extract `init.ts` seed inserts → `prisma/seed.ts`.
-4. Delete the DDL block from `init.ts`. Wire `prisma db seed` into the boot script.
-5. Delete `pool` / `query` / `getClient` from `config/db.ts`. Delete `config/reset-db.ts`
-   (use `prisma migrate reset` instead).
-
-## Lane D — performance + A08 file uploads (remaining)
+### D — Sécurité & Conformité posture page
 
 **What:**
-- **pharmacie.ts `/vente`**: wrap the loop body in `prisma.$transaction`. Currently makes
-  3-4 sequential DB round-trips per cart item and partial failures leave stock decremented
-  without a movement log entry. Cash-register integrity hazard.
-- **pharmacie.ts `/import`**: drop the dead `prisma.medicament.upsert({ where: { id: -1 }})`
-  call (always throws) and batch the raw INSERTs via `prisma.medicament.createMany({ skipDuplicates: true })`.
-- **patients.ts `/historique`**: add `take: 100` default to each of the 4 child queries
-  (consultations, examens, recettes, documents); add `?page=` support for pagination.
-- **reports.ts**: add LIMIT/pagination to `consultations-medecin`, `recettes-service`,
-  `recettes-mensuelles`, `depenses-mensuelles`. `top-diagnostics` already has LIMIT 10.
-- **habilitations.ts `/menu-order`**: wrap the N sequential `prisma.menuConfig.update`
-  calls in `prisma.$transaction([...])`.
-- **pg_trgm GIN indexes** on `patients(nom, prenom, telephone, email, numero_identite)`
-  for the quick-search `contains: { mode: 'insensitive' }` filter. Requires a Prisma
-  migration; depends on Lane B baseline being applied first.
-- **Magic-byte file validation middleware**: create `middleware/upload-validation.ts`
-  using the `file-type` npm package (~30KB). Apply to `imagerie.ts`, `import.ts`,
-  `pharmacie.ts` (CSV import), `reference-lists.ts` (CSV import). Rejects polyglots
-  and content-type mismatches (the current multer fileFilters check extension only).
+- Backend: `GET /api/admin/posture` returning encryption status, MFA adoption %, recent audit (last 50), active sessions, failed login attempts in last 24h.
+- Frontend: `pages/Securite.tsx` mounted at `/app/securite`, admin-only via `RoleGuard`.
 
-## Lane E — test scaffolding + full coverage push
+**Why:** Sales asset for hospital directors. Daily ops check. Makes the Month 1 OWASP work visible.
+
+### E — Lane E test scaffolding
 
 **What:**
-- Set up a supertest harness with a seeded test DB (or testcontainers-postgres) and
-  a `beforeAll` login helper that mints a real JWT.
-- Replace `__tests__/auth.test.ts` and `__tests__/patients.test.ts` placeholder
-  `expect(true).toBe(true)` blocks with real supertest assertions.
-- Add per-route happy/sad/auth tests for all 44 routes.
-- Add a `facturation` transactional test asserting rollback on failure.
-- Add a `patient-merge` transaction rollback test (after Lane D's `$transaction` fix).
-- Install Vitest + React Testing Library in `packages/frontend`, smoke-test `Login.tsx`
-  + `PatientForm.tsx`.
-- Replace `e2e/screenshots.spec.ts` screenshot-only suite with behavioral E2E:
-  login → MFA → patient create → consultation → ordonnance → facture → paiement.
+1. Real supertest harness (`__tests__/_harness.ts`) — seeded test DB + login helper minting JWTs.
+2. Replace `__tests__/auth.test.ts` placeholder `expect(true).toBe(true)` blocks with real supertest assertions.
+3. Replace `__tests__/patients.test.ts` placeholders.
+4. New: per-route happy/sad/auth tests for the 9 PHI routes (proves the IDOR middleware works in the real request pipeline, not just unit-mock).
+5. New: `facturation` transactional create test.
+6. New: `patient-merge` rollback test (after wrapping merge in `$transaction` — separate work).
+7. Install Vitest + RTL in `packages/frontend`. Smoke test `Login.tsx` and `PatientForm.tsx`.
+8. Replace `e2e/screenshots.spec.ts` with behavioral E2E: login → MFA → patient create → consultation → ordonnance → facture → paiement.
 
-## Sécurité & Conformité posture page (UI)
+### F — Init.ts → prisma seed (full pg.Pool retirement)
 
-**What:** Customer-facing admin UI page at `/app/securite` showing:
-- Encryption status (`isEncryptionEnabled()` from `services/encryption.ts`)
-- MFA adoption rate across users (% of users with `mfa_enabled = true`)
-- Recent audit_log entries (last 50 of `action: 'access_denied' | 'login' | ...`)
-- Active sessions count (Redis `KEYS sess:*` or memSessions size)
-- Failed login attempts in the last 24h (audit_log `action: 'login'` with details
-  containing "Failed")
+**What:**
+1. Audit baseline migration against `init.ts` DDL to confirm 100% coverage. Note any drift.
+2. Extract `init.ts` seed inserts (default admin, habilitations, menu_config, encounter_types, starter_concepts, settings, services, pavillons, reference_lists) → `prisma/seed.ts`.
+3. Wire `prisma db seed` into the boot script. Replace boot-time `initDB()` call with `prisma migrate deploy && prisma db seed` (or skip seed in production after initial run).
+4. Delete the DDL block from `init.ts`. Delete `config/reset-db.ts` (use `npx prisma migrate reset` instead).
+5. Delete `pool`, `query`, `getClient` exports from `config/db.ts`. Delete `import pg`, `Pool` instantiation.
 
-**Why:** Sales asset. Daily ops check. Makes OWASP controls visible to the hospital
-director who is the buyer. Maps the strategic positioning ("Sécurité par défaut")
-agreed in the 2026-05-16 CEO review.
+### G — pg_trgm GIN indexes
 
-**Where:** New page `packages/frontend/src/pages/Securite.tsx`, route at
-`/app/securite` gated by `RoleGuard roles=['admin']`. New backend endpoint
-`GET /api/admin/posture` returning the above as JSON.
+**What:** New Prisma migration enabling the `pg_trgm` extension + creating GIN trigram indexes:
+```sql
+CREATE EXTENSION IF NOT EXISTS pg_trgm;
+CREATE INDEX IF NOT EXISTS idx_patients_nom_trgm ON patients USING gin (nom gin_trgm_ops);
+CREATE INDEX IF NOT EXISTS idx_patients_prenom_trgm ON patients USING gin (prenom gin_trgm_ops);
+CREATE INDEX IF NOT EXISTS idx_patients_telephone_trgm ON patients USING gin (telephone gin_trgm_ops);
+-- email + numero_identite skip: numero_identite is encrypted post-Lane B (trigram match would be useless)
+```
 
-## OWASP residual gaps
+**Why:** Quick search uses `{ contains: s, mode: 'insensitive' }` — B-tree can't help with `%X%`. At 10K+ patients this becomes a sequential scan per request.
 
-**Resource-level access control on PUT/DELETE `/:id` routes** — the `requirePatientAccess`
-middleware from Lane A deliberately does NOT read `params.id` (which is the resource id,
-not the patient id). PUT /allergies/:id and similar still don't enforce per-patient access
-on the underlying allergie row. Fix pattern: load the row, look up its `patient_id`, then
-call `canAccessPatient`. Apply to PUT/DELETE on all 9 PHI routes.
+**Depends on:** Lane B baseline migration applied first.
 
-**Audit-log integrity signing** — `audit_log` has a WORM trigger preventing UPDATE/DELETE,
-but rows can still be INSERTed by anyone with DB access. For HDS/RGPD-grade audit:
-hash-chain each row (`row.hash = sha256(row.id || row.action || row.user_id || row.details
-|| previousRow.hash)`) so tampering is detectable.
+### H — asyncHandler migration (remaining 31 files)
 
-**CSV export auth contract** — `routes/export.ts` and `routes/print.ts` are no longer
-called with `?token=` from the frontend (Lane F fixed the bug indirectly by reverting,
-but the frontend still uses `window.open(...?token=...)`). Replace those calls in
-`packages/frontend/src/services/api.ts` with `fetch(Authorization: Bearer) + Blob +
-URL.createObjectURL` pattern. Frontend-only change, ~9 functions.
+**What:** Convert hand-rolled try/catch to `asyncHandler(async (req, res) => { ... })` on the 31 remaining route files. Pattern established in `medecins.ts`, `services.ts`, `dashboard.ts`, `notifications.ts`, `print.ts`, and the 9 PHI routes.
 
-## Strategy / product
+**Files remaining (alphabetical):**
+auth, concepts, consultations, content-packages*, encounters, export, facilities*, facturation, fhir*, file-attente, finances, formulaires*, habilitations, import, laboratoire, listes-patients, lits, orders, paiement-remita*, patient-merge, patients, planning, portail, prescriptions, programmes, reference-lists, rendezvous, reports, settings, visites, pharmacie.
 
-**Surface-area triage execution** — the 2026-05-16 CEO review committed to cutting
-`/fhir`, DICOM viewer, `/paiement-remita`, `/content-packages`, `/cohort-builder`,
-`/formulaires`, multi-site `/facilities`. Each cut is its own commit (`git rm` the
-route file, remove the mount from `index.ts`, remove the frontend page, remove the
-menu_config row from `init.ts`/seed).
+(* will be deleted by surface cuts above — skip those when they're gone)
 
-**First-customer onboarding playbook** — Month 4 task. Captures: SSO integration
-requirements, on-prem deploy doc, IP allowlist support, customer-specific Itération 2
-selection process.
+**Sequencing:** Small batches (4-6 files per commit) + `npm test` + `npx tsc --noEmit` after each batch.
+
+### I — Audit-log hash chain (tamper detection)
+
+**What:** Add a `hash` column to `audit_log`. On insert, compute `sha256(row.id || row.user_id || row.action || row.table_name || row.record_id || row.details || row.created_at || previousRow.hash)`. Plus a `verify-audit-log.ts` script that walks the chain and reports any tampered row.
+
+**Why:** `audit_log` has a WORM trigger preventing UPDATE/DELETE, but rows can be INSERTed by anyone with DB access. For HDS/RGPD-grade audit trails, the chain proves the log hasn't been edited.
+
+**Sequencing:** Schema migration (add column), insert hook (Prisma middleware or trigger), backfill script for existing rows (chain the existing history), verifier script.
+
+### J — Documentation update
+
+**What:** Update `docs/PSSI_POLITIQUE_SECURITE.md`, `docs/RGPD_REGISTRE_TRAITEMENTS.md`, and the in-app Documentation page to reflect the actual OWASP controls now in place. The docs were aspirational; post-Lane-A-through-D they can be made factual.
+
+**Specifically:** mention IDOR middleware, PHI encryption, audit logging including access_denied, magic-byte upload validation, npm audit CI gate.
