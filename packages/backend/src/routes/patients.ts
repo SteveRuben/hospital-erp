@@ -6,6 +6,16 @@ import { auditCreate, auditUpdate, auditDelete } from '../services/audit.js';
 import { generatePatientReferenceId } from '../services/reference.js';
 import { canAccessPatient } from '../services/access-control.js';
 import { validate, createPatientSchema } from '../middleware/validation.js';
+import { encryptFields, decryptFields, PATIENT_ENCRYPTED_FIELDS } from '../services/encryption.js';
+
+// OWASP A02: encrypt sensitive PHI at rest. Encryption is a passthrough when
+// PHI_ENCRYPTION_KEY is not configured, so this is safe to enable per environment.
+// PATIENT_ENCRYPTED_FIELDS lists the camelCase Prisma column names.
+const ENC_FIELDS = [...PATIENT_ENCRYPTED_FIELDS];
+
+function decryptPatient<T extends Record<string, unknown> | null>(row: T): T {
+  return row ? decryptFields(row as Record<string, unknown>, ENC_FIELDS) as T : row;
+}
 
 const router = Router();
 
@@ -40,7 +50,7 @@ router.get('/', authenticate, async (req: AuthRequest, res: Response): Promise<v
       }),
     ]);
 
-    res.json({ data: rows, total, page: pg, limit: lim, totalPages: Math.ceil(total / lim) });
+    res.json({ data: rows.map(decryptPatient), total, page: pg, limit: lim, totalPages: Math.ceil(total / lim) });
   } catch (err) {
     console.error('[ERROR] Get patients:', err);
     res.status(500).json({ error: 'Erreur serveur' });
@@ -64,6 +74,7 @@ router.get('/search/quick', authenticate, async (req: AuthRequest, res: Response
     if (Number.isInteger(idNum) && idNum > 0) or.push({ id: idNum });
     const rows = await prisma.patient.findMany({
       where: { archived: false, OR: or },
+      // Note: numeroIdentite (encrypted) is not selected for quick-search results
       select: { id: true, nom: true, prenom: true, sexe: true, telephone: true, ville: true, dateNaissance: true },
       orderBy: { nom: 'asc' },
       take: 10,
@@ -147,7 +158,7 @@ router.get('/search/advanced', authenticate, async (req: AuthRequest, res: Respo
       }),
     ]);
 
-    res.json({ data: rows, total, page: pg, limit: lim, totalPages: Math.ceil(total / lim) });
+    res.json({ data: rows.map(decryptPatient), total, page: pg, limit: lim, totalPages: Math.ceil(total / lim) });
   } catch (err) { console.error('[ERROR] Advanced search:', err); res.status(500).json({ error: 'Erreur serveur' }); }
 });
 
@@ -166,7 +177,7 @@ router.get('/:id', authenticate, async (req: AuthRequest, res: Response): Promis
       res.status(404).json({ error: 'Patient non trouvé' });
       return;
     }
-    res.json(patient);
+    res.json(decryptPatient(patient));
   } catch (err) {
     res.status(500).json({ error: 'Erreur serveur' });
   }
@@ -212,11 +223,12 @@ router.post('/', authenticate, authorize('admin', 'medecin', 'reception'), valid
     };
     if (date_naissance) data.dateNaissance = new Date(date_naissance);
 
-    const created = await prisma.patient.create({ data });
+    // OWASP A02: encrypt PHI fields before persisting
+    const created = await prisma.patient.create({ data: encryptFields(data as Record<string, unknown>, ENC_FIELDS) as Prisma.PatientCreateInput });
 
     auditCreate(req.user!.id, 'patients', created.id, `Created patient ${prenom} ${nom}`);
 
-    res.status(201).json(created);
+    res.status(201).json(decryptPatient(created));
   } catch (err) {
     console.error('[ERROR] Create patient:', err);
     res.status(500).json({ error: 'Erreur serveur' });
@@ -266,11 +278,15 @@ router.put('/:id', authenticate, authorize('admin', 'medecin', 'reception'), asy
       contactUrgenceTelephone: n(contact_urgence_telephone),
     };
 
-    const updated = await prisma.patient.update({ where: { id: patientId }, data });
+    // OWASP A02: encrypt PHI fields before persisting; audit compares the plaintext form
+    const encryptedData = encryptFields(data as Record<string, unknown>, ENC_FIELDS) as Prisma.PatientUpdateInput;
+    const updated = await prisma.patient.update({ where: { id: patientId }, data: encryptedData });
 
-    auditUpdate(req.user!.id, 'patients', patientId, before, updated);
+    const beforeDecrypted = decryptPatient(before as Record<string, unknown>);
+    const updatedDecrypted = decryptPatient(updated);
+    auditUpdate(req.user!.id, 'patients', patientId, beforeDecrypted as Record<string, unknown>, updatedDecrypted as Record<string, unknown>);
 
-    res.json(updated);
+    res.json(updatedDecrypted);
   } catch (err) {
     console.error('[ERROR] Update patient:', err);
     res.status(500).json({ error: 'Erreur serveur' });

@@ -115,18 +115,23 @@ export function decryptFields<T extends Record<string, unknown>>(obj: T, fields:
   return result;
 }
 
-// Fields that should be encrypted in the patients table
+// Fields on the Prisma Patient model that should be encrypted at rest.
+// Use camelCase to match Prisma's TS API directly — encrypted/decrypted at
+// the route boundary, no snake_case conversion needed inside the service.
 export const PATIENT_ENCRYPTED_FIELDS = [
-  'numero_identite',
-  'groupe_sanguin',
-  'contact_urgence_nom',
-  'contact_urgence_telephone',
-];
+  'numeroIdentite',
+  'contactUrgenceNom',
+  'contactUrgenceTelephone',
+] as const;
 
-// Fields that should be encrypted in observations
+// Note: groupeSanguin is an enum column (CHECK constraint), cannot be
+// encrypted without dropping the enum. Either leave plaintext (current
+// behavior, lowest cardinality so least informative) or migrate to TEXT.
+
+// Fields that should be encrypted on Observation rows
 export const OBSERVATION_ENCRYPTED_FIELDS = [
-  'valeur_texte',
+  'valeurTexte',
   'commentaire',
-];
+] as const;
 
 export default { encrypt, decrypt, encryptFields, decryptFields, isEncryptionEnabled };
