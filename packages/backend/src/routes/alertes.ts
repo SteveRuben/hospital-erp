@@ -4,10 +4,11 @@ import { prisma } from '../config/db.js';
 import { authenticate, AuthRequest } from '../middleware/auth.js';
 import { validate, createAlerteSchema } from '../middleware/validation.js';
 import { asyncHandler } from '../middleware/asyncHandler.js';
+import { requirePatientAccess } from '../middleware/patient-access.js';
 
 const router = Router();
 
-router.get('/:patientId', authenticate, asyncHandler(async (req, res) => {
+router.get('/:patientId', authenticate, requirePatientAccess, asyncHandler(async (req, res) => {
   const { active } = req.query;
   const where: Prisma.AlerteWhereInput = { patientId: Number(req.params.patientId) };
   if (active === 'true') where.active = true;
@@ -23,7 +24,7 @@ router.get('/:patientId', authenticate, asyncHandler(async (req, res) => {
   })));
 }));
 
-router.post('/', authenticate, validate(createAlerteSchema), asyncHandler(async (req, res) => {
+router.post('/', authenticate, validate(createAlerteSchema), requirePatientAccess, asyncHandler(async (req, res) => {
   const authReq = req as AuthRequest;
   const { patient_id, type_alerte, message, severite } = req.body;
   const created = await prisma.alerte.create({

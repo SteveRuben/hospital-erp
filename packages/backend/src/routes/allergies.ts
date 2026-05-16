@@ -3,10 +3,11 @@ import { prisma } from '../config/db.js';
 import { authenticate, authorize } from '../middleware/auth.js';
 import { validate, createAllergieSchema } from '../middleware/validation.js';
 import { asyncHandler } from '../middleware/asyncHandler.js';
+import { requirePatientAccess } from '../middleware/patient-access.js';
 
 const router = Router();
 
-router.get('/:patientId', authenticate, asyncHandler(async (req, res) => {
+router.get('/:patientId', authenticate, requirePatientAccess, asyncHandler(async (req, res) => {
   const rows = await prisma.allergie.findMany({
     where: { patientId: Number(req.params.patientId) },
     orderBy: { createdAt: 'desc' },
@@ -14,7 +15,7 @@ router.get('/:patientId', authenticate, asyncHandler(async (req, res) => {
   res.json(rows);
 }));
 
-router.post('/', authenticate, authorize('admin', 'medecin'), validate(createAllergieSchema), asyncHandler(async (req, res) => {
+router.post('/', authenticate, authorize('admin', 'medecin'), validate(createAllergieSchema), requirePatientAccess, asyncHandler(async (req, res) => {
   const { patient_id, allergene, type_allergie, severite, reaction, date_debut } = req.body;
   const n = (v: unknown) => (v === '' || v === undefined) ? null : v;
   const created = await prisma.allergie.create({

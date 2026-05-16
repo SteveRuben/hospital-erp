@@ -3,10 +3,11 @@ import { prisma } from '../config/db.js';
 import { authenticate, authorize } from '../middleware/auth.js';
 import { validate, createOrdonnanceSchema } from '../middleware/validation.js';
 import { asyncHandler } from '../middleware/asyncHandler.js';
+import { requirePatientAccess } from '../middleware/patient-access.js';
 
 const router = Router();
 
-router.get('/:patientId', authenticate, asyncHandler(async (req, res) => {
+router.get('/:patientId', authenticate, requirePatientAccess, asyncHandler(async (req, res) => {
   const rows = await prisma.ordonnance.findMany({
     where: { patientId: Number(req.params.patientId) },
     include: { medecin: { select: { nom: true, prenom: true } } },
@@ -20,7 +21,7 @@ router.get('/:patientId', authenticate, asyncHandler(async (req, res) => {
   res.json(mapped);
 }));
 
-router.post('/', authenticate, authorize('admin', 'medecin'), validate(createOrdonnanceSchema), asyncHandler(async (req, res) => {
+router.post('/', authenticate, authorize('admin', 'medecin'), validate(createOrdonnanceSchema), requirePatientAccess, asyncHandler(async (req, res) => {
   const { patient_id, medecin_id, consultation_id, notes } = req.body;
   const created = await prisma.ordonnance.create({
     data: {

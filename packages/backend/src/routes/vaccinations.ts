@@ -3,10 +3,11 @@ import { prisma } from '../config/db.js';
 import { authenticate, authorize } from '../middleware/auth.js';
 import { validate, createVaccinationSchema } from '../middleware/validation.js';
 import { asyncHandler } from '../middleware/asyncHandler.js';
+import { requirePatientAccess } from '../middleware/patient-access.js';
 
 const router = Router();
 
-router.get('/:patientId', authenticate, asyncHandler(async (req, res) => {
+router.get('/:patientId', authenticate, requirePatientAccess, asyncHandler(async (req, res) => {
   const rows = await prisma.vaccination.findMany({
     where: { patientId: Number(req.params.patientId) },
     include: { medecin: { select: { nom: true, prenom: true } } },
@@ -20,7 +21,7 @@ router.get('/:patientId', authenticate, asyncHandler(async (req, res) => {
   res.json(mapped);
 }));
 
-router.post('/', authenticate, authorize('admin', 'medecin'), validate(createVaccinationSchema), asyncHandler(async (req, res) => {
+router.post('/', authenticate, authorize('admin', 'medecin'), validate(createVaccinationSchema), requirePatientAccess, asyncHandler(async (req, res) => {
   const { patient_id, medecin_id, vaccin, lot, dose, site_injection, date_vaccination, date_rappel, notes } = req.body;
   const data: Parameters<typeof prisma.vaccination.create>[0]['data'] = {
     patientId: Number(patient_id),

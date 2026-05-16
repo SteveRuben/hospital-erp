@@ -3,10 +3,11 @@ import { prisma } from '../config/db.js';
 import { authenticate, authorize } from '../middleware/auth.js';
 import { validate, createPathologieSchema } from '../middleware/validation.js';
 import { asyncHandler } from '../middleware/asyncHandler.js';
+import { requirePatientAccess } from '../middleware/patient-access.js';
 
 const router = Router();
 
-router.get('/:patientId', authenticate, asyncHandler(async (req, res) => {
+router.get('/:patientId', authenticate, requirePatientAccess, asyncHandler(async (req, res) => {
   const rows = await prisma.pathologie.findMany({
     where: { patientId: Number(req.params.patientId) },
     orderBy: { dateDebut: 'desc' },
@@ -14,7 +15,7 @@ router.get('/:patientId', authenticate, asyncHandler(async (req, res) => {
   res.json(rows);
 }));
 
-router.post('/', authenticate, authorize('admin', 'medecin'), validate(createPathologieSchema), asyncHandler(async (req, res) => {
+router.post('/', authenticate, authorize('admin', 'medecin'), validate(createPathologieSchema), requirePatientAccess, asyncHandler(async (req, res) => {
   const { patient_id, nom, code_cim, statut, date_debut, date_fin, notes } = req.body;
   const created = await prisma.pathologie.create({
     data: {

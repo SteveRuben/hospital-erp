@@ -2,10 +2,11 @@ import { Router, Response } from 'express';
 import { prisma } from '../config/db.js';
 import { authenticate, authorize, AuthRequest } from '../middleware/auth.js';
 import { validate, createPrescriptionSchema } from '../middleware/validation.js';
+import { requirePatientAccess } from '../middleware/patient-access.js';
 
 const router = Router();
 
-router.get('/:patientId', authenticate, async (req: AuthRequest, res: Response): Promise<void> => {
+router.get('/:patientId', authenticate, requirePatientAccess, async (req: AuthRequest, res: Response): Promise<void> => {
   try {
     const rows = await prisma.prescription.findMany({
       where: { patientId: Number(req.params.patientId) },
@@ -21,7 +22,7 @@ router.get('/:patientId', authenticate, async (req: AuthRequest, res: Response):
   } catch (err) { res.status(500).json({ error: 'Erreur serveur' }); }
 });
 
-router.post('/', authenticate, authorize('admin', 'medecin'), validate(createPrescriptionSchema), async (req: AuthRequest, res: Response): Promise<void> => {
+router.post('/', authenticate, authorize('admin', 'medecin'), validate(createPrescriptionSchema), requirePatientAccess, async (req: AuthRequest, res: Response): Promise<void> => {
   try {
     const { patient_id, medecin_id, consultation_id, medicament, dosage, frequence, duree, voie, instructions, date_debut, date_fin } = req.body;
     const data: Parameters<typeof prisma.prescription.create>[0]['data'] = {

@@ -6,6 +6,7 @@ import { fileURLToPath } from 'url';
 import { prisma } from '../config/db.js';
 import { authenticate, authorize, AuthRequest } from '../middleware/auth.js';
 import { validate, createImagerieSchema } from '../middleware/validation.js';
+import { requirePatientAccess } from '../middleware/patient-access.js';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const uploadDir = path.resolve(__dirname, '../../uploads/imagerie');
@@ -24,7 +25,7 @@ const upload = multer({ storage, limits: { fileSize: 50 * 1024 * 1024 }, fileFil
 const router = Router();
 
 // Get images for a patient
-router.get('/:patientId', authenticate, async (req: AuthRequest, res: Response): Promise<void> => {
+router.get('/:patientId', authenticate, requirePatientAccess, async (req: AuthRequest, res: Response): Promise<void> => {
   try {
     const rows = await prisma.imagerie.findMany({
       where: { patientId: Number(req.params.patientId) },
@@ -46,7 +47,7 @@ router.get('/:patientId', authenticate, async (req: AuthRequest, res: Response):
 });
 
 // Upload image
-router.post('/', authenticate, authorize('admin', 'medecin'), upload.single('file'), validate(createImagerieSchema), async (req: AuthRequest, res: Response): Promise<void> => {
+router.post('/', authenticate, authorize('admin', 'medecin'), upload.single('file'), validate(createImagerieSchema), requirePatientAccess, async (req: AuthRequest, res: Response): Promise<void> => {
   try {
     const { patient_id, type_examen, description, date_examen, medecin_id } = req.body;
     if (!patient_id || !req.file) { res.status(400).json({ error: 'Patient et fichier requis' }); return; }
