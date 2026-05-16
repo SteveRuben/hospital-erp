@@ -9,33 +9,25 @@ const router = Router();
 router.get('/', authenticate, asyncHandler(async (req, res) => {
   const { flat, actif } = req.query;
 
-  if (flat === 'true') {
-    // Flat list (for dropdowns)
+  try {
     const where: any = {};
     if (actif !== 'false') where.actif = true;
-    const services = await prisma.service.findMany({ where, orderBy: [{ poids: 'desc' }, { nom: 'asc' }] });
+    
+    const services = await prisma.service.findMany({
+      where,
+      orderBy: [{ nom: 'asc' }],
+    });
     res.json(services);
-    return;
+  } catch (err) {
+    // Fallback if new columns don't exist yet
+    console.error('[SERVICES] Error:', err);
+    try {
+      const rows = await prisma.$queryRaw<Array<Record<string, unknown>>>`SELECT * FROM services ORDER BY nom ASC`;
+      res.json(rows);
+    } catch {
+      res.json([]);
+    }
   }
-
-  // Hierarchical: return parents with nested children
-  const all = actif !== 'false'
-    ? await prisma.$queryRaw<Array<Record<string, unknown>>>`
-        SELECT s.*, p.nom as parent_nom,
-               (SELECT COUNT(*) FROM services sub WHERE sub.parent_id = s.id) as nb_sous_services
-        FROM services s
-        LEFT JOIN services p ON s.parent_id = p.id
-        WHERE s.actif = TRUE
-        ORDER BY s.poids DESC, s.nom ASC
-      `
-    : await prisma.$queryRaw<Array<Record<string, unknown>>>`
-        SELECT s.*, p.nom as parent_nom,
-               (SELECT COUNT(*) FROM services sub WHERE sub.parent_id = s.id) as nb_sous_services
-        FROM services s
-        LEFT JOIN services p ON s.parent_id = p.id
-        ORDER BY s.poids DESC, s.nom ASC
-      `;
-  res.json(all);
 }));
 
 // Get service tree (parents + their children grouped)

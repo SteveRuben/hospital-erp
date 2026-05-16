@@ -13,7 +13,7 @@ export default function Consultations() {
   useEffect(() => { loadData(); }, []);
 
   const loadData = async () => {
-    try { const { data } = await getConsultations(); setConsultations(data); }
+    try { const { data } = await getConsultations(); setConsultations(Array.isArray(data) ? data : (data as any).data || []); }
     catch (err) { console.error(err); }
     finally { setLoading(false); }
   };
