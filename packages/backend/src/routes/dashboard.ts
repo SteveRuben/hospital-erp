@@ -1,12 +1,12 @@
-import { Router, Response } from 'express';
+import { Router } from 'express';
 import { prisma } from '../config/db.js';
-import { authenticate, AuthRequest } from '../middleware/auth.js';
+import { authenticate } from '../middleware/auth.js';
+import { asyncHandler } from '../middleware/asyncHandler.js';
 
 const router = Router();
 
-router.get('/', authenticate, async (_req: AuthRequest, res: Response): Promise<void> => {
-  try {
-    const today = new Date().toISOString().split('T')[0];
+router.get('/', authenticate, asyncHandler(async (_req, res) => {
+  const today = new Date().toISOString().split('T')[0];
     const startOfMonth = `${today.slice(0, 7)}-01`;
 
     const [
@@ -66,7 +66,6 @@ router.get('/', authenticate, async (_req: AuthRequest, res: Response): Promise<
       servicesActifs: servicesActifs.map(s => ({ ...s, nb_consultations: Number(s.nb_consultations) })),
       medecinsActifs: medecinsActifs.map(m => ({ ...m, nb_consultations: Number(m.nb_consultations) })),
     });
-  } catch (err) { console.error(err); res.status(500).json({ error: 'Erreur serveur' }); }
-});
+}));
 
 export default router;

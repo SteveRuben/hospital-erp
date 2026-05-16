@@ -4,8 +4,9 @@ import { authenticate, authorize, AuthRequest } from '../middleware/auth.js';
 
 const router = Router();
 
-// Get all habilitations
-router.get('/', authenticate, async (_req: AuthRequest, res: Response): Promise<void> => {
+// OWASP A05: admin-only — the full role/module access matrix is sensitive info
+// that helps an attacker map the system. Non-admins use /me to get their own.
+router.get('/', authenticate, authorize('admin'), async (_req: AuthRequest, res: Response): Promise<void> => {
   try {
     const rows = await prisma.habilitation.findMany({ orderBy: [{ role: 'asc' }, { module: 'asc' }] });
     res.json(rows);
@@ -49,7 +50,9 @@ router.put('/', authenticate, authorize('admin'), async (req: AuthRequest, res: 
   } catch (err) { res.status(500).json({ error: 'Erreur serveur' }); }
 });
 
-// Get menu config
+// Menu config is rendered by every authenticated user's layout, so it stays
+// authenticate-only. The contents (label/path/icon) are not sensitive — the
+// gating happens via habilitations + RoleGuard on the frontend.
 router.get('/menu', authenticate, async (_req: AuthRequest, res: Response): Promise<void> => {
   try {
     const rows = await prisma.menuConfig.findMany({

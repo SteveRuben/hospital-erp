@@ -686,28 +686,34 @@ export const initDB = async (): Promise<void> => {
       );
     `);
 
-    // Insert default users (one per role)
+    // OWASP A05/A07: seed only the admin user in production. The demo users
+    // (dr.martin / comptable1 / labo1 / reception1) are dev-only fixtures —
+    // they create a known-credential surface on every production deploy.
     const hashedPassword = await argon2.hash('admin123', { type: argon2.argon2id });
-    const defaultUsers = [
+    const adminUsers = [
       ['admin', hashedPassword, 'admin', 'Administrateur', 'Système'],
+    ];
+    const demoUsers = process.env.NODE_ENV !== 'production' ? [
       ['dr.martin', hashedPassword, 'medecin', 'Martin', 'Jean'],
       ['comptable1', hashedPassword, 'comptable', 'Dubois', 'Marie'],
       ['labo1', hashedPassword, 'laborantin', 'Petit', 'Paul'],
       ['reception1', hashedPassword, 'reception', 'Leroy', 'Sophie'],
-    ];
-    for (const [username, pwd, role, nom, prenom] of defaultUsers) {
+    ] : [];
+    for (const [username, pwd, role, nom, prenom] of [...adminUsers, ...demoUsers]) {
       await client.query(
         `INSERT INTO users (username, password, role, nom, prenom) VALUES ($1, $2, $3, $4, $5) ON CONFLICT (username) DO NOTHING`,
         [username, pwd, role, nom, prenom]
       );
     }
 
-    // Migration: rehash admin password if still bcrypt (ensures login works after argon2 migration)
+    // OWASP A07: log-only audit if admin's password still looks bcrypt-shaped.
+    // We do NOT auto-reset to a hardcoded string anymore — that created a
+    // known-credential window on every deploy. The admin must change their
+    // password via /api/auth/change-password (verifyPassword auto-rehashes
+    // a bcrypt hash to argon2 on next successful login).
     const adminUser = await client.query("SELECT id, password FROM users WHERE username = 'admin'");
     if (adminUser.rows.length > 0 && adminUser.rows[0].password.startsWith('$2')) {
-      const newAdminHash = await argon2.hash('Admin1234', { type: argon2.argon2id });
-      await client.query('UPDATE users SET password = $1 WHERE id = $2', [newAdminHash, adminUser.rows[0].id]);
-      console.log('[INIT] Admin password migrated from bcrypt to argon2');
+      console.warn('[INIT] Admin password is still bcrypt-shaped. It will be auto-rehashed to argon2 on the next successful login. No reset performed.');
     }
 
     // Seed default habilitations
