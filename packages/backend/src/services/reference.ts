@@ -93,19 +93,35 @@ export async function generatePatientReferenceId(nom: string, prenom: string): P
   return refId;
 }
 
+// OWASP A03: keep table identity inside this module via a closed enum so no caller
+// can ever route a request-derived string into a raw SQL identifier.
+export type RefTable = 'encounters' | 'orders' | 'consultations' | 'examens' | 'factures';
+
+const REF_PREFIX: Record<RefTable, string> = {
+  encounters: 'ENC',
+  orders: 'ORD',
+  consultations: 'CONS',
+  examens: 'EXM',
+  factures: 'FAC',
+};
+
+async function countSinceDayStart(table: RefTable, dayStart: Date, dayEnd: Date): Promise<number> {
+  const where = { createdAt: { gte: dayStart, lt: dayEnd } };
+  switch (table) {
+    case 'encounters':    return prisma.encounter.count({ where });
+    case 'orders':        return prisma.order.count({ where });
+    case 'consultations': return prisma.consultation.count({ where: { dateConsultation: { gte: dayStart, lt: dayEnd } } });
+    case 'examens':       return prisma.examen.count({ where });
+    case 'factures':      return prisma.facture.count({ where });
+  }
+}
+
 /**
  * Generate a short unique reference for a table (used for encounters, orders, etc.)
  * Format: PREFIX-YYMMDD-NNNN  where NNNN is a daily sequence per table.
  */
-export async function generateReference(tableName: string): Promise<string> {
-  const prefixMap: Record<string, string> = {
-    encounters: 'ENC',
-    orders: 'ORD',
-    consultations: 'CONS',
-    examens: 'EXM',
-    factures: 'FAC',
-  };
-  const prefix = prefixMap[tableName] ?? tableName.slice(0, 3).toUpperCase();
+export async function generateReference(table: RefTable): Promise<string> {
+  const prefix = REF_PREFIX[table];
 
   const now = new Date();
   const yy = String(now.getFullYear()).slice(2);
@@ -117,13 +133,8 @@ export async function generateReference(tableName: string): Promise<string> {
   const dayEnd = new Date(dayStart);
   dayEnd.setUTCDate(dayEnd.getUTCDate() + 1);
 
-  // Use raw SQL because we need a dynamic table name (Prisma client can't do that)
-  const rows = await prisma.$queryRawUnsafe<Array<{ c: bigint }>>(
-    `SELECT COUNT(*)::bigint AS c FROM ${tableName} WHERE created_at >= $1 AND created_at < $2`,
-    dayStart,
-    dayEnd,
-  );
-  const seq = Number(rows[0]?.c ?? 0n) + 1;
+  const count = await countSinceDayStart(table, dayStart, dayEnd);
+  const seq = count + 1;
 
   return `${prefix}-${ymd}-${String(seq).padStart(4, '0')}`;
 }

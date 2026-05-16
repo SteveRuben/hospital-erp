@@ -1,0 +1,40 @@
+name: Security Audit
+
+# OWASP A06: gate new high/critical vulnerabilities at PR time.
+# Production-runtime deps are checked strictly; dev deps are reported but do not block.
+
+on:
+  push:
+    branches: [master, main]
+  pull_request:
+    branches: [master, main]
+  schedule:
+    - cron: '0 6 * * 1'  # Weekly Monday 06:00 UTC — catches drift on dormant branches
+
+jobs:
+  audit-prod:
+    name: npm audit (production)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: 'npm'
+      - run: npm ci
+      - name: Audit production dependencies (fail on high+)
+        run: npm audit --omit=dev --audit-level=high
+
+  audit-all:
+    name: npm audit (all, report-only)
+    runs-on: ubuntu-latest
+    continue-on-error: true
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: 'npm'
+      - run: npm ci
+      - name: Audit everything (informational)
+        run: npm audit

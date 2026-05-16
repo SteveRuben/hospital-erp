@@ -63,6 +63,8 @@ app.set('trust proxy', 1);
 
 // OWASP A05 - CORS (must be BEFORE helmet)
 const allowedOrigins = (process.env.FRONTEND_URL || 'http://localhost:3000').split(',').map(s => s.trim());
+// OWASP A04: auth runs through Authorization: Bearer (localStorage), not cookies.
+// credentials:false removes a latent CSRF surface if a future feature adds a cookie.
 app.use(cors({
   origin: (origin, callback) => {
     if (!origin || allowedOrigins.includes(origin)) {
@@ -73,7 +75,7 @@ app.use(cors({
   },
   methods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS'],
   allowedHeaders: ['Content-Type', 'Authorization'],
-  credentials: true,
+  credentials: false,
   maxAge: 86400,
 }));
 

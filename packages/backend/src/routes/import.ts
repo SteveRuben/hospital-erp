@@ -1,6 +1,7 @@
 import { Router, Response } from 'express';
 import multer from 'multer';
 import argon2 from 'argon2';
+import crypto from 'crypto';
 import { prisma } from '../config/db.js';
 import { authenticate, authorize, AuthRequest } from '../middleware/auth.js';
 import { UserRole } from '../types/index.js';
@@ -8,7 +9,24 @@ import { Sexe } from '@prisma/client';
 import { parseCsv, mapPatientFields, mapMedecinFields, mapTarifFields, mapUserFields } from '../services/import.js';
 
 const router = Router();
-const upload = multer({ storage: multer.memoryStorage(), limits: { fileSize: 5 * 1024 * 1024 } }); // 5MB max
+
+// OWASP A08: CSV-only fileFilter prevents arbitrary blobs being uploaded to /import/*.
+const csvFileFilter: multer.Options['fileFilter'] = (_req, file, cb) => {
+  const okMime = ['text/csv', 'application/vnd.ms-excel', 'text/plain', 'application/octet-stream'].includes(file.mimetype);
+  const okExt = /\.(csv|txt)$/i.test(file.originalname);
+  cb(null, okMime || okExt);
+};
+const upload = multer({
+  storage: multer.memoryStorage(),
+  limits: { fileSize: 5 * 1024 * 1024 }, // 5MB max
+  fileFilter: csvFileFilter,
+});
+
+// OWASP A07: per-user random password — never the same string for any two users.
+// 16 bytes base64 ≈ 22 chars, satisfies password policy (≥8, mixed case, digit, special).
+function generateRandomPassword(): string {
+  return crypto.randomBytes(16).toString('base64').replace(/=/g, '') + '!aA1';
+}
 
 // Import patients
 router.post('/patients', authenticate, authorize('admin', 'reception'), upload.single('file'), async (req: AuthRequest, res: Response): Promise<void> => {
@@ -90,37 +108,50 @@ router.post('/tarifs', authenticate, authorize('admin', 'comptable'), upload.sin
   } catch (err) { res.status(500).json({ error: 'Erreur serveur' }); }
 });
 
-// Import users
+// Import users — per-user random passwords (OWASP A07).
+// The response returns a CSV the admin must distribute manually; passwords are NOT logged.
 router.post('/users', authenticate, authorize('admin'), upload.single('file'), async (req: AuthRequest, res: Response): Promise<void> => {
   try {
     if (!req.file) { res.status(400).json({ error: 'Fichier requis' }); return; }
     const rows = parseCsv(req.file.buffer.toString('utf-8'));
-    const defaultPassword = await argon2.hash('Changeme1', { type: argon2.argon2id });
     let imported = 0, errors: string[] = [];
+    const credentials: Array<{ username: string; password: string }> = [];
     for (let i = 0; i < rows.length; i++) {
       try {
         const u = mapUserFields(rows[i]);
         if (!u.username) { errors.push(`Ligne ${i + 2}: username requis`); continue; }
         const validRoles = ['admin', 'medecin', 'comptable', 'laborantin', 'reception'];
         const role = (validRoles.includes(u.role || '') ? u.role : 'reception') as UserRole;
-        // ON CONFLICT DO NOTHING via findFirst + create
         const existing = await prisma.user.findUnique({ where: { username: u.username }, select: { id: true } });
         if (!existing) {
+          const plainPassword = generateRandomPassword();
+          const hashed = await argon2.hash(plainPassword, { type: argon2.argon2id });
           await prisma.user.create({
             data: {
               username: u.username,
-              password: defaultPassword,
+              password: hashed,
               role,
               nom: u.nom,
               prenom: u.prenom,
               telephone: u.telephone,
+              must_change_password: true,
             },
           });
+          credentials.push({ username: u.username, password: plainPassword });
+          imported++;
         }
-        imported++;
       } catch (err) { errors.push(`Ligne ${i + 2}: ${(err as Error).message}`); }
     }
-    res.json({ imported, total: rows.length, errors, note: 'Mot de passe par défaut: Changeme1' });
+    // Return generated credentials as a CSV the admin must download once and distribute manually.
+    // Passwords are never persisted in plaintext nor logged.
+    const credentialsCsv = '﻿' + 'username,password\n' + credentials.map(c => `${c.username},${c.password}`).join('\n');
+    res.json({
+      imported,
+      total: rows.length,
+      errors,
+      credentials_csv: credentialsCsv,
+      note: `${imported} comptes créés avec mots de passe uniques aléatoires. Téléchargez et distribuez immédiatement; les mots de passe ne seront PAS récupérables.`,
+    });
   } catch (err) { res.status(500).json({ error: 'Erreur serveur' }); }
 });
 
