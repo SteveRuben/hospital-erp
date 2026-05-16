@@ -122,11 +122,6 @@ export const getAlertes = (patientId: number, active?: boolean) => api.get(`/ale
 export const createAlerte = (data: unknown) => api.post('/alertes', data);
 export const toggleAlerte = (id: number) => api.put(`/alertes/${id}/toggle`);
 
-// Formulaires
-export const getFormulaires = () => api.get('/formulaires');
-export const createFormulaire = (data: unknown) => api.post('/formulaires', data);
-export const getFormulaireReponses = (patientId: number) => api.get(`/formulaires/reponses/${patientId}`);
-export const submitFormulaireReponse = (data: unknown) => api.post('/formulaires/reponses', data);
 
 // Visites actives
 export const getVisites = (params?: unknown) => api.get('/visites', { params });

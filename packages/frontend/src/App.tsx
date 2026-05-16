@@ -34,21 +34,18 @@ const Utilisateurs = lazy(() => import('./pages/Utilisateurs'));
 const Import = lazy(() => import('./pages/Import'));
 const Habilitations = lazy(() => import('./pages/Habilitations'));
 const Configuration = lazy(() => import('./pages/Configuration'));
+const Securite = lazy(() => import('./pages/Securite'));
 const Lits = lazy(() => import('./pages/Lits'));
 const AdmissionForm = lazy(() => import('./pages/AdmissionForm'));
 const Programmes = lazy(() => import('./pages/Programmes'));
 const Facturation = lazy(() => import('./pages/Facturation'));
 const Recherche = lazy(() => import('./pages/Recherche'));
-const PaiementMobile = lazy(() => import('./pages/PaiementMobile'));
 const Imagerie = lazy(() => import('./pages/Imagerie'));
 const Concepts = lazy(() => import('./pages/Concepts'));
 const Orders = lazy(() => import('./pages/Orders'));
 const Pharmacie = lazy(() => import('./pages/Pharmacie'));
 const PatientMerge = lazy(() => import('./pages/PatientMerge'));
 const Rapports = lazy(() => import('./pages/Rapports'));
-const FormBuilder = lazy(() => import('./pages/FormBuilder'));
-const CohortBuilder = lazy(() => import('./pages/CohortBuilder'));
-const ContentPackages = lazy(() => import('./pages/ContentPackages'));
 
 const PageLoader = () => <div className="loading"><div className="spinner"></div></div>;
 
@@ -173,21 +170,18 @@ function App() {
                         <Route path="/utilisateurs" element={<RoleGuard roles={['admin']}><Utilisateurs /></RoleGuard>} />
                         <Route path="/habilitations" element={<RoleGuard roles={['admin']}><Habilitations /></RoleGuard>} />
                         <Route path="/configuration" element={<RoleGuard roles={['admin']}><Configuration /></RoleGuard>} />
+                        <Route path="/securite" element={<RoleGuard roles={['admin']}><Securite /></RoleGuard>} />
                         <Route path="/import" element={<RoleGuard roles={['admin']}><Import /></RoleGuard>} />
                         <Route path="/lits" element={<RoleGuard roles={['admin','medecin']}><Lits /></RoleGuard>} />
                         <Route path="/lits/admission" element={<RoleGuard roles={['admin','medecin']}><AdmissionForm /></RoleGuard>} />
                         <Route path="/programmes" element={<RoleGuard roles={['admin','medecin']}><Programmes /></RoleGuard>} />
                         <Route path="/facturation" element={<RoleGuard roles={['admin','comptable']}><Facturation /></RoleGuard>} />
-                        <Route path="/paiement-mobile" element={<RoleGuard roles={['admin','comptable']}><PaiementMobile /></RoleGuard>} />
                         <Route path="/imagerie" element={<RoleGuard roles={['admin','medecin']}><Imagerie /></RoleGuard>} />
                         <Route path="/concepts" element={<RoleGuard roles={['admin']}><Concepts /></RoleGuard>} />
                         <Route path="/orders" element={<RoleGuard roles={['admin','medecin','laborantin']}><Orders /></RoleGuard>} />
                         <Route path="/pharmacie" element={<RoleGuard roles={['admin','medecin']}><Pharmacie /></RoleGuard>} />
                         <Route path="/patient-merge" element={<RoleGuard roles={['admin']}><PatientMerge /></RoleGuard>} />
                         <Route path="/rapports" element={<RoleGuard roles={['admin','comptable']}><Rapports /></RoleGuard>} />
-                        <Route path="/formulaires" element={<RoleGuard roles={['admin']}><FormBuilder /></RoleGuard>} />
-                        <Route path="/cohort-builder" element={<RoleGuard roles={['admin','medecin']}><CohortBuilder /></RoleGuard>} />
-                        <Route path="/content-packages" element={<RoleGuard roles={['admin']}><ContentPackages /></RoleGuard>} />
                       </Routes>
                     </Suspense>
                   </Layout>
