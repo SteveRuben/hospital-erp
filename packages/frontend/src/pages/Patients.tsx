@@ -2,9 +2,12 @@ import { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { getPatients, deletePatient } from '../services/api';
 import { useConfirm } from '../components/ConfirmDialog';
+import { useBranding } from '../components/BrandingProvider';
+import { formatPhone } from '../components/format';
 import type { Patient } from '../types';
 
 export default function Patients() {
+  const { branding } = useBranding();
   const [patients, setPatients] = useState<Patient[]>([]);
   const [loading, setLoading] = useState(true);
   const [search, setSearch] = useState('');
@@ -46,7 +49,7 @@ export default function Patients() {
                 <td>{p.nom}</td>
                 <td>{p.prenom}</td>
                 <td>{(p as any).sexe === 'M' ? <span className="tag tag-blue">M</span> : (p as any).sexe === 'F' ? <span className="tag tag-purple">F</span> : '-'}</td>
-                <td>{p.telephone || '-'}</td>
+                <td>{p.telephone ? formatPhone(p.telephone, branding.code_pays) : '-'}</td>
                 <td>{(p as any).ville || '-'}</td>
                 <td onClick={e => e.stopPropagation()}>
                   <button className="btn-icon" onClick={() => navigate(`/app/patients/${p.id}/modifier`)}><i className="bi bi-pencil"></i></button>

@@ -13,6 +13,50 @@ const THEMES: Array<{ key: string; label: string; accent: string; header: string
   { key: 'slate',         label: 'Ardoise',       accent: '#525252', header: '#262626' },
 ];
 
+// Common currencies for the dropdown. XOF/XAF covered first since the
+// initial market is West/Central Africa.
+const DEVISES: Array<{ code: string; label: string }> = [
+  { code: 'XOF', label: 'XOF — Franc CFA (BCEAO)' },
+  { code: 'XAF', label: 'XAF — Franc CFA (BEAC)' },
+  { code: 'EUR', label: 'EUR — Euro' },
+  { code: 'USD', label: 'USD — Dollar américain' },
+  { code: 'NGN', label: 'NGN — Naira nigérian' },
+  { code: 'GHS', label: 'GHS — Cedi ghanéen' },
+  { code: 'MAD', label: 'MAD — Dirham marocain' },
+  { code: 'TND', label: 'TND — Dinar tunisien' },
+  { code: 'CAD', label: 'CAD — Dollar canadien' },
+  { code: 'CHF', label: 'CHF — Franc suisse' },
+  { code: 'GBP', label: 'GBP — Livre sterling' },
+];
+
+// ISO 3166-1 alpha-2 country codes used for phone formatting. Common
+// francophone Africa first, then a handful of common diaspora locations.
+const PAYS: Array<{ code: string; label: string }> = [
+  { code: '',   label: '— Aucun (pas de formatage des téléphones) —' },
+  { code: 'CM', label: 'Cameroun (CM)' },
+  { code: 'CI', label: 'Côte d\'Ivoire (CI)' },
+  { code: 'SN', label: 'Sénégal (SN)' },
+  { code: 'BJ', label: 'Bénin (BJ)' },
+  { code: 'TG', label: 'Togo (TG)' },
+  { code: 'BF', label: 'Burkina Faso (BF)' },
+  { code: 'ML', label: 'Mali (ML)' },
+  { code: 'NE', label: 'Niger (NE)' },
+  { code: 'GA', label: 'Gabon (GA)' },
+  { code: 'CG', label: 'Congo-Brazzaville (CG)' },
+  { code: 'CD', label: 'République démocratique du Congo (CD)' },
+  { code: 'GN', label: 'Guinée (GN)' },
+  { code: 'TD', label: 'Tchad (TD)' },
+  { code: 'CF', label: 'République centrafricaine (CF)' },
+  { code: 'MG', label: 'Madagascar (MG)' },
+  { code: 'MA', label: 'Maroc (MA)' },
+  { code: 'TN', label: 'Tunisie (TN)' },
+  { code: 'DZ', label: 'Algérie (DZ)' },
+  { code: 'FR', label: 'France (FR)' },
+  { code: 'BE', label: 'Belgique (BE)' },
+  { code: 'CA', label: 'Canada (CA)' },
+  { code: 'CH', label: 'Suisse (CH)' },
+];
+
 interface Setting { id: number; cle: string; valeur: string; description: string; categorie: string }
 interface RefItem { id: number; categorie: string; code: string; libelle: string; actif: boolean; par_defaut: boolean; ordre: number; parent_code: string | null }
 
@@ -65,11 +109,15 @@ export default function Configuration() {
       await api.put('/settings', payload);
       showSnackbar(`${label} enregistré${payload.length > 1 ? 's' : ''}`, 'success');
       loadSettings();
+      // Reload the branding context too — code_pays/devise/nom changes affect
+      // phone/money rendering app-wide. Cheap call; safe to always run.
+      reloadBranding();
     } catch (err: any) { showSnackbar(err.response?.data?.error || 'Erreur', 'error'); }
   };
 
   const COORDONNEES_KEYS = ['adresse_etablissement', 'ville_etablissement', 'pays_etablissement', 'telephone_etablissement', 'email_etablissement'];
   const LEGAL_KEYS = ['numero_agrement', 'directeur_etablissement'];
+  const REGIONAL_KEYS = ['code_pays', 'devise'];
 
   const saveTheme = async (themeKey: string) => {
     try {
@@ -253,6 +301,26 @@ export default function Configuration() {
               </div>
             </div>
             <button className="btn-primary" onClick={() => saveBatch(COORDONNEES_KEYS, 'Coordonnées')}>Enregistrer les coordonnées</button>
+          </div>
+
+          <div className="tile mb-2" style={{ padding: '1.5rem' }}>
+            <h3 style={{ fontSize: '1rem', fontWeight: 600, marginBottom: '0.25rem' }}>Paramètres régionaux</h3>
+            <p className="text-muted mb-2" style={{ fontSize: '0.8125rem' }}>Devise affichée sur les factures et code pays utilisé pour formater les numéros de téléphone dans toute l'application.</p>
+            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(250px, 1fr))', gap: '1rem', marginBottom: '1rem' }}>
+              <div className="form-group">
+                <label className="form-label">Code pays (téléphones)</label>
+                <select className="form-select" value={drafts.code_pays ?? ''} onChange={e => setDrafts({ ...drafts, code_pays: e.target.value })}>
+                  {PAYS.map(p => <option key={p.code} value={p.code}>{p.label}</option>)}
+                </select>
+              </div>
+              <div className="form-group">
+                <label className="form-label">Devise</label>
+                <select className="form-select" value={drafts.devise ?? 'XOF'} onChange={e => setDrafts({ ...drafts, devise: e.target.value })}>
+                  {DEVISES.map(d => <option key={d.code} value={d.code}>{d.label}</option>)}
+                </select>
+              </div>
+            </div>
+            <button className="btn-primary" onClick={() => saveBatch(REGIONAL_KEYS, 'Paramètres régionaux')}>Enregistrer les paramètres régionaux</button>
           </div>
 
           <div className="tile" style={{ padding: '1.5rem' }}>

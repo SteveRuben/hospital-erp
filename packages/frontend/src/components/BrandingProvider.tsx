@@ -6,7 +6,7 @@ interface BrandingContextValue {
   reload: () => Promise<void>;
 }
 
-const DEFAULT: Branding = { nom_etablissement: 'Hospital ERP', logo_url: null, theme: 'cds-blue' };
+const DEFAULT: Branding = { nom_etablissement: 'Hospital ERP', logo_url: null, theme: 'cds-blue', code_pays: '', devise: 'XOF' };
 
 const BrandingContext = createContext<BrandingContextValue>({ branding: DEFAULT, reload: async () => {} });
 

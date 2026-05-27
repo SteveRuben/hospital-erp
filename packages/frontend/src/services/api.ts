@@ -246,7 +246,7 @@ export const updateMenuItem = (id: number, data: unknown) => api.put(`/habilitat
 export const updateMenuOrder = (items: Array<{ id: number; groupe: string; groupe_ordre: number; ordre: number }>) => api.put('/habilitations/menu-order', { items });
 
 // Branding (public — no auth required, used by login page and app shell)
-export interface Branding { nom_etablissement: string; logo_url: string | null; theme: string }
+export interface Branding { nom_etablissement: string; logo_url: string | null; theme: string; code_pays: string; devise: string }
 export const getBranding = () => api.get<Branding>('/settings/branding');
 export const uploadLogo = (file: File) => {
   const fd = new FormData();

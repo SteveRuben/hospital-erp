@@ -4,6 +4,8 @@ import { getPatient, getPatientHistorique, getRendezVous, getVitaux, createVitau
 import type { Patient, RendezVous, Medecin } from '../types';
 import MentionTextarea from '../components/MentionTextarea';
 import MentionContent from '../components/MentionContent';
+import { useBranding } from '../components/BrandingProvider';
+import { formatPhone } from '../components/format';
 
 const tabs = ['resume','vitaux','allergies','pathologies','prescriptions','vaccinations','notes','alertes','consultations','examens','finances','rendezvous','timeline'];
 const tabLabels: Record<string,string> = { resume:'Résumé', vitaux:'Signes vitaux', allergies:'Allergies', pathologies:'Pathologies', prescriptions:'Prescriptions', vaccinations:'Vaccinations', notes:'Notes', alertes:'Alertes', consultations:'Consultations', examens:'Examens', finances:'Finances', rendezvous:'RDV', timeline:'Timeline' };
@@ -11,6 +13,7 @@ const tabLabels: Record<string,string> = { resume:'Résumé', vitaux:'Signes vit
 export default function PatientDetail() {
   const { id } = useParams<{ id: string }>();
   const navigate = useNavigate();
+  const { branding } = useBranding();
   const [patient, setPatient] = useState<Patient | null>(null);
   const [tab, setTab] = useState('resume');
   const [loading, setLoading] = useState(true);
@@ -71,7 +74,7 @@ export default function PatientDetail() {
           <div className="patient-meta">
             <span>ID: #{patient.id}</span>
             {age !== null && <span>{age} ans</span>}
-            {patient.telephone && <span>{patient.telephone}</span>}
+            {patient.telephone && <span>{formatPhone(patient.telephone, branding.code_pays)}</span>}
           </div>
         </div>
         <div className="patient-actions">

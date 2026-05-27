@@ -907,6 +907,7 @@ export const initDB = async (): Promise<void> => {
       ['adresse_etablissement', '', 'Adresse postale complète (affichée dans les impressions)', 'coordonnees'],
       ['ville_etablissement', '', 'Ville où se situe l\'établissement', 'coordonnees'],
       ['pays_etablissement', '', 'Pays où se situe l\'établissement', 'coordonnees'],
+      ['code_pays', '', 'Code ISO 3166-1 alpha-2 du pays (ex: CM, CI, SN). Utilisé pour formater les numéros de téléphone.', 'coordonnees'],
       ['telephone_etablissement', '', 'Téléphone principal de l\'établissement', 'coordonnees'],
       ['email_etablissement', '', 'Email de contact de l\'établissement', 'coordonnees'],
       ['numero_agrement', '', 'Numéro d\'agrément délivré par le ministère de la santé', 'legal'],

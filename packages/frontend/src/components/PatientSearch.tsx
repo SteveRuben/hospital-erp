@@ -1,8 +1,11 @@
 import { useState, useRef, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { quickSearchPatients } from '../services/api';
+import { useBranding } from './BrandingProvider';
+import { formatPhone } from './format';
 
 export default function PatientSearch() {
+  const { branding } = useBranding();
   const [query, setQuery] = useState('');
   const [results, setResults] = useState<any[]>([]);
   const [show, setShow] = useState(false);
@@ -52,7 +55,7 @@ export default function PatientSearch() {
               <div style={{ width: '32px', height: '32px', borderRadius: '50%', background: 'var(--cds-ui-03)', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: '0.75rem', color: 'var(--cds-text-secondary)' }}>{p.sexe === 'M' ? '♂' : p.sexe === 'F' ? '♀' : '?'}</div>
               <div style={{ flex: 1 }}>
                 <div style={{ fontSize: '0.875rem', fontWeight: 500, color: 'var(--cds-text-primary)' }}>{p.prenom} {p.nom}</div>
-                <div style={{ fontSize: '0.6875rem', color: 'var(--cds-text-secondary)' }}>#{p.id} {p.telephone ? `• ${p.telephone}` : ''} {p.ville ? `• ${p.ville}` : ''}</div>
+                <div style={{ fontSize: '0.6875rem', color: 'var(--cds-text-secondary)' }}>#{p.id} {p.telephone ? `• ${formatPhone(p.telephone, branding.code_pays)}` : ''} {p.ville ? `• ${p.ville}` : ''}</div>
               </div>
             </div>
           ))}

@@ -40,7 +40,7 @@ const router = Router();
  */
 router.get('/branding', asyncHandler(async (_req, res) => {
   const rows = await prisma.setting.findMany({
-    where: { cle: { in: ['nom_etablissement', 'logo_url', 'theme'] } },
+    where: { cle: { in: ['nom_etablissement', 'logo_url', 'theme', 'code_pays', 'devise'] } },
     select: { cle: true, valeur: true },
   });
   const map: Record<string, string> = {};
@@ -49,6 +49,10 @@ router.get('/branding', asyncHandler(async (_req, res) => {
     nom_etablissement: map.nom_etablissement || 'Hospital ERP',
     logo_url: map.logo_url || null,
     theme: VALID_THEMES.includes(map.theme as typeof VALID_THEMES[number]) ? map.theme : 'cds-blue',
+    // Country code + currency are needed app-wide for phone formatting and
+    // money display, so they ship alongside the visual branding payload.
+    code_pays: map.code_pays || '',
+    devise: map.devise || 'XOF',
   });
 }));
 

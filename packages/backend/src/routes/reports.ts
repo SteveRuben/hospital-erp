@@ -124,6 +124,75 @@ router.get('/activite-labo', authenticate, async (_req: AuthRequest, res: Respon
   } catch (err) { res.status(500).json({ error: 'Erreur serveur' }); }
 });
 
+// Patients distincts vus par service et par période. Granularité configurable
+// (semaine, mois, année). Sert le tableau de suivi de l'activité hospitalière
+// demandé par la direction : combien de patients distincts par service sur
+// l'intervalle ?
+//
+// Réponse : Array<{ period: 'YYYY-MM-DD' | 'YYYY-MM' | 'YYYY', service_id, service_nom, patients: number }>
+// `period` est le début du bucket. Les services sans activité dans l'intervalle
+// sont omis (= 0 implicite côté UI).
+router.get('/patients-by-service-period', authenticate, async (req: AuthRequest, res: Response): Promise<void> => {
+  try {
+    const granularity = String(req.query.granularity || 'month');
+    if (!['week', 'month', 'year'].includes(granularity)) {
+      res.status(400).json({ error: 'granularity doit être week, month ou year' });
+      return;
+    }
+    // Default window: last 12 buckets of the chosen granularity
+    const defaultBuckets = 12;
+    const intervalSql: Record<string, string> = {
+      week: `${defaultBuckets} weeks`,
+      month: `${defaultBuckets} months`,
+      year: `${defaultBuckets} years`,
+    };
+    const from = req.query.from ? new Date(String(req.query.from)) : new Date(Date.now() - 365 * 24 * 60 * 60 * 1000);
+    const to = req.query.to ? new Date(String(req.query.to)) : new Date();
+    const serviceFilter = req.query.service_id ? Number(req.query.service_id) : null;
+
+    // date_trunc returns a timestamp; format to ISO date for the bucket
+    // boundary so the frontend can use it as a stable key.
+    const dateFormat = granularity === 'year' ? 'YYYY' : granularity === 'month' ? 'YYYY-MM' : 'YYYY-MM-DD';
+
+    const rows = serviceFilter !== null
+      ? await prisma.$queryRaw<Array<{ period: string; service_id: number; service_nom: string; patients: bigint }>>`
+          SELECT TO_CHAR(DATE_TRUNC(${granularity}, c.date_consultation), ${dateFormat}) AS period,
+                 s.id AS service_id,
+                 s.nom AS service_nom,
+                 COUNT(DISTINCT c.patient_id)::bigint AS patients
+          FROM consultations c
+          LEFT JOIN services s ON s.id = c.service_id
+          WHERE c.date_consultation >= ${from}
+            AND c.date_consultation <= ${to}
+            AND s.id = ${serviceFilter}
+          GROUP BY period, s.id, s.nom
+          ORDER BY period DESC, patients DESC
+        `
+      : await prisma.$queryRaw<Array<{ period: string; service_id: number; service_nom: string; patients: bigint }>>`
+          SELECT TO_CHAR(DATE_TRUNC(${granularity}, c.date_consultation), ${dateFormat}) AS period,
+                 s.id AS service_id,
+                 s.nom AS service_nom,
+                 COUNT(DISTINCT c.patient_id)::bigint AS patients
+          FROM consultations c
+          LEFT JOIN services s ON s.id = c.service_id
+          WHERE c.date_consultation >= ${from}
+            AND c.date_consultation <= ${to}
+          GROUP BY period, s.id, s.nom
+          ORDER BY period DESC, patients DESC
+        `;
+
+    res.json(rows.map(r => ({
+      period: r.period,
+      service_id: r.service_id,
+      service_nom: r.service_nom ?? '— Sans service —',
+      patients: Number(r.patients),
+    })));
+  } catch (err) {
+    console.error('[REPORTS] patients-by-service-period failed:', err);
+    res.status(500).json({ error: 'Erreur serveur' });
+  }
+});
+
 // Répartition par mode de paiement
 router.get('/modes-paiement', authenticate, async (_req: AuthRequest, res: Response): Promise<void> => {
   try {
