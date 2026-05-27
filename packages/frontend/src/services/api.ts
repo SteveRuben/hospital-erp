@@ -76,7 +76,14 @@ export const updatePatient = (id: number, data: unknown) => api.put<Patient>(`/p
 export const deletePatient = (id: number) => api.delete(`/patients/${id}`);
 export const getPatientHistorique = (id: number) => api.get(`/patients/${id}/historique`);
 
-export const getMedecins = () => api.get<Medecin[]>('/medecins');
+export const getMedecins = (params?: { search?: string; specialite?: string; telephone?: string }) =>
+  api.get<Medecin[]>('/medecins', { params });
+// Paginated variant used by the Medecins page. The backend switches to a
+// paginated envelope only when `page` is present, so calls without `page`
+// keep returning the flat array (legacy dropdowns unchanged).
+export const searchMedecins = (params: { search?: string; specialite?: string; telephone?: string; page?: number; limit?: number }) =>
+  api.get<{ data: Medecin[]; total: number; page: number; limit: number; totalPages: number }>('/medecins', { params });
+export const getMedecinSpecialites = () => api.get<string[]>('/medecins/specialites');
 export const getMedecin = (id: number) => api.get<Medecin>(`/medecins/${id}`);
 export const createMedecin = (data: unknown) => api.post<Medecin>('/medecins', data);
 export const updateMedecin = (id: number, data: unknown) => api.put<Medecin>(`/medecins/${id}`, data);

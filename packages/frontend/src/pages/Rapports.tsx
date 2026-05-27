@@ -4,7 +4,9 @@ import { useBranding } from '../components/BrandingProvider';
 import { formatMoney } from '../components/format';
 
 type Granularity = 'week' | 'month' | 'year';
+type LaboGranularity = 'day' | 'week' | 'month' | 'year';
 interface PatientServicePeriodRow { period: string; service_id: number; service_nom: string; patients: number }
+interface LaboPeriodRow { period: string; type_examen: string; count: number; revenus: number }
 
 export default function Rapports() {
   const { branding } = useBranding();
@@ -18,10 +20,13 @@ export default function Rapports() {
   const [modesPaiement, setModesPaiement] = useState<any[]>([]);
   const [granularity, setGranularity] = useState<Granularity>('month');
   const [patientsByService, setPatientsByService] = useState<PatientServicePeriodRow[]>([]);
+  const [laboGranularity, setLaboGranularity] = useState<LaboGranularity>('month');
+  const [laboParPeriode, setLaboParPeriode] = useState<LaboPeriodRow[]>([]);
   const [loading, setLoading] = useState(true);
 
   useEffect(() => { loadAll(); }, []);
   useEffect(() => { if (tab === 'patients') loadPatientsByService(); }, [tab, granularity]);
+  useEffect(() => { if (tab === 'labo') loadLaboParPeriode(); }, [tab, laboGranularity]);
 
   const loadAll = async () => {
     try {
@@ -41,6 +46,13 @@ export default function Rapports() {
     try {
       const { data } = await api.get<PatientServicePeriodRow[]>('/reports/patients-by-service-period', { params: { granularity } });
       setPatientsByService(data);
+    } catch (err) { console.error(err); }
+  };
+
+  const loadLaboParPeriode = async () => {
+    try {
+      const { data } = await api.get<LaboPeriodRow[]>('/reports/labo-par-periode', { params: { granularity: laboGranularity } });
+      setLaboParPeriode(data);
     } catch (err) { console.error(err); }
   };
 
@@ -66,6 +78,22 @@ export default function Rapports() {
     return { periods, services, grid, totalsByService, totalsByPeriod };
   })();
   const maxCell = Math.max(...patientsByService.map(r => r.patients), 1);
+
+  // Same pivot shape for labo: rows = period, cols = type_examen, cells = count
+  const laboPivot = (() => {
+    const periods = Array.from(new Set(laboParPeriode.map(r => r.period))).sort((a, b) => b.localeCompare(a));
+    const types = Array.from(new Set(laboParPeriode.map(r => r.type_examen))).sort();
+    const grid = new Map<string, number>();
+    for (const r of laboParPeriode) grid.set(`${r.period}|${r.type_examen}`, r.count);
+    const totalsByType = new Map<string, number>();
+    const totalsByPeriod = new Map<string, number>();
+    for (const r of laboParPeriode) {
+      totalsByType.set(r.type_examen, (totalsByType.get(r.type_examen) ?? 0) + r.count);
+      totalsByPeriod.set(r.period, (totalsByPeriod.get(r.period) ?? 0) + r.count);
+    }
+    return { periods, types, grid, totalsByType, totalsByPeriod };
+  })();
+  const maxLaboCell = Math.max(...laboParPeriode.map(r => r.count), 1);
 
   if (loading) return <div className="loading"><div className="spinner"></div></div>;
 
@@ -205,19 +233,80 @@ export default function Rapports() {
       )}
 
       {tab === 'labo' && (
-        <div className="tile" style={{ padding: '1.5rem' }}>
-          <h3 style={{ fontSize: '1rem', fontWeight: 600, marginBottom: '1rem' }}>Activité laboratoire par type d'examen</h3>
-          <table className="data-table">
-            <thead><tr><th>Type d'examen</th><th>Nombre</th><th>Revenus</th><th>Part</th></tr></thead>
-            <tbody>
-              {activiteLabo.map((a: any, i: number) => (
-                <tr key={i}><td>{a.type_examen}</td><td className="fw-600">{a.total}</td><td>{money(a.revenus)}</td>
-                  <td><div style={{ height: '6px', width: '100px', background: 'var(--cds-ui-03)', borderRadius: '3px' }}><div style={{ height: '100%', background: 'var(--cds-support-info)', borderRadius: '3px', width: `${(parseInt(a.total) / maxVal(activiteLabo, 'total')) * 100}%` }}></div></div></td>
-                </tr>
-              ))}
-              {activiteLabo.length === 0 && <tr><td colSpan={4} className="table-empty">Aucune donnée</td></tr>}
-            </tbody>
-          </table>
+        <div>
+          {/* Totals by examen type — kept from the original view */}
+          <div className="tile mb-2" style={{ padding: '1.5rem' }}>
+            <h3 style={{ fontSize: '1rem', fontWeight: 600, marginBottom: '1rem' }}>Activité laboratoire par type d'examen (cumul)</h3>
+            <table className="data-table">
+              <thead><tr><th>Type d'examen</th><th>Nombre</th><th>Revenus</th><th>Part</th></tr></thead>
+              <tbody>
+                {activiteLabo.map((a: any, i: number) => (
+                  <tr key={i}><td>{a.type_examen}</td><td className="fw-600">{a.total}</td><td>{money(a.revenus)}</td>
+                    <td><div style={{ height: '6px', width: '100px', background: 'var(--cds-ui-03)', borderRadius: '3px' }}><div style={{ height: '100%', background: 'var(--cds-support-info)', borderRadius: '3px', width: `${(parseInt(a.total) / maxVal(activiteLabo, 'total')) * 100}%` }}></div></div></td>
+                  </tr>
+                ))}
+                {activiteLabo.length === 0 && <tr><td colSpan={4} className="table-empty">Aucune donnée</td></tr>}
+              </tbody>
+            </table>
+          </div>
+
+          {/* Examens × période — new */}
+          <div className="tile mb-2" style={{ padding: '1rem 1.5rem', display: 'flex', alignItems: 'center', gap: '1rem', flexWrap: 'wrap' }}>
+            <span style={{ fontSize: '0.8125rem', fontWeight: 600 }}>Granularité :</span>
+            {(['day', 'week', 'month', 'year'] as LaboGranularity[]).map(g => (
+              <button key={g} className={`btn-sm ${laboGranularity === g ? 'btn-primary' : 'btn-ghost'}`} onClick={() => setLaboGranularity(g)}>
+                {g === 'day' ? 'Jour' : g === 'week' ? 'Semaine' : g === 'month' ? 'Mois' : 'Année'}
+              </button>
+            ))}
+            <span className="text-muted" style={{ fontSize: '0.75rem', marginLeft: 'auto' }}>
+              Nombre d'examens par type sur les {laboGranularity === 'day' ? '30 derniers jours' : laboGranularity === 'week' ? '12 dernières semaines' : laboGranularity === 'month' ? '12 derniers mois' : '5 dernières années'}
+            </span>
+          </div>
+
+          <div className="tile" style={{ padding: '1rem', overflowX: 'auto' }}>
+            {laboPivot.periods.length === 0 ? (
+              <div className="table-empty" style={{ padding: '2rem', textAlign: 'center' }}>
+                <i className="bi bi-flask" style={{ fontSize: '2rem', display: 'block', marginBottom: '0.5rem' }}></i>
+                Aucun examen sur la période
+              </div>
+            ) : (
+              <table className="data-table" style={{ minWidth: 'max-content' }}>
+                <thead>
+                  <tr>
+                    <th style={{ position: 'sticky', left: 0, background: 'var(--cds-ui-02)' }}>Période</th>
+                    {laboPivot.types.map(t => (
+                      <th key={t} style={{ textAlign: 'center', minWidth: '110px' }}>{t}</th>
+                    ))}
+                    <th style={{ textAlign: 'center', background: 'var(--cds-ui-01)', fontWeight: 700 }}>Total</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {laboPivot.periods.map(p => (
+                    <tr key={p}>
+                      <td style={{ fontWeight: 600, position: 'sticky', left: 0, background: 'var(--cds-ui-02)' }}>{p}</td>
+                      {laboPivot.types.map(t => {
+                        const v = laboPivot.grid.get(`${p}|${t}`) ?? 0;
+                        const intensity = v === 0 ? 0 : 0.15 + 0.85 * (v / maxLaboCell);
+                        return (
+                          <td key={t} style={{ textAlign: 'center', background: v === 0 ? 'transparent' : `rgba(17, 146, 232, ${intensity})`, color: intensity > 0.5 ? '#fff' : 'inherit', fontWeight: v > 0 ? 600 : 400 }}>
+                            {v === 0 ? '—' : v}
+                          </td>
+                        );
+                      })}
+                      <td style={{ textAlign: 'center', background: 'var(--cds-ui-01)', fontWeight: 700 }}>{laboPivot.totalsByPeriod.get(p) ?? 0}</td>
+                    </tr>
+                  ))}
+                  <tr style={{ background: 'var(--cds-ui-01)', fontWeight: 700 }}>
+                    <td style={{ position: 'sticky', left: 0, background: 'var(--cds-ui-01)' }}>Total</td>
+                    {laboPivot.types.map(t => (
+                      <td key={t} style={{ textAlign: 'center' }}>{laboPivot.totalsByType.get(t) ?? 0}</td>
+                    ))}
+                    <td style={{ textAlign: 'center' }}>{laboParPeriode.reduce((acc, r) => acc + r.count, 0)}</td>
+                  </tr>
+                </tbody>
+              </table>
+            )}
+          </div>
         </div>
       )}
     </div>

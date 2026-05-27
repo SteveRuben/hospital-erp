@@ -368,20 +368,48 @@ function AlerteModal({ patientId, onClose, onRefresh }: { patientId: number; onC
 }
 
 function TimelineTab({ hist, fmt }: any) {
-  const timeline = [
-    ...(hist?.consultations?.map((c:any) => ({ date: c.date_consultation, title: `Consultation - ${c.service_nom}`, detail: c.diagnostic || '', icon: 'bi-clipboard-pulse', color: 'tag-blue' })) || []),
-    ...(hist?.examens?.map((e:any) => ({ date: e.date_examen, title: `Examen - ${e.type_examen}`, detail: e.resultat || 'En attente', icon: 'bi-flask', color: 'tag-purple' })) || []),
-    ...(hist?.recettes?.map((r:any) => ({ date: r.date_recette, title: `Paiement - ${r.type_acte}`, detail: fmt(r.montant), icon: 'bi-cash', color: 'tag-green' })) || []),
-  ].sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime());
+  // Flatten every clinical category the historique endpoint returns into a
+  // unified event stream sorted desc. Each line has a distinctive icon/color
+  // so the reader can scan the chronology and spot the type of activity at a
+  // glance. Notes / allergies / pathologies use the createdAt as the
+  // canonical timestamp since they don't have a domain-specific date.
+  const medecinLabel = (prenom?: string | null, nom?: string | null) =>
+    (prenom || nom) ? ` — Dr. ${prenom ?? ''} ${nom ?? ''}`.trimEnd() : '';
+  const auteurLabel = (prenom?: string | null, nom?: string | null) =>
+    (prenom || nom) ? ` — ${prenom ?? ''} ${nom ?? ''}`.trim() : '';
+
+  const timeline: Array<{ date: string; title: string; detail: string; icon: string; color: string }> = [
+    ...(hist?.consultations?.map((c: any) => ({ date: c.date_consultation, title: `Consultation${c.service_nom ? ' — ' + c.service_nom : ''}${medecinLabel(c.medecin_prenom, c.medecin_nom)}`, detail: c.diagnostic || c.motif || '', icon: 'bi-clipboard-pulse', color: '#0f62fe' })) || []),
+    ...(hist?.examens?.map((e: any) => ({ date: e.date_examen, title: `Examen — ${e.type_examen}`, detail: e.resultat || 'En attente', icon: 'bi-flask', color: '#8a3ffc' })) || []),
+    ...(hist?.recettes?.map((r: any) => ({ date: r.date_recette, title: `Paiement — ${r.type_acte}`, detail: `${fmt(r.montant)}${r.mode_paiement ? ' • ' + r.mode_paiement : ''}`, icon: 'bi-cash', color: '#198038' })) || []),
+    ...(hist?.notes?.map((n: any) => ({ date: n.created_at, title: `Note ${n.type_note}${n.titre ? ' — ' + n.titre : ''}${auteurLabel(n.auteur_prenom, n.auteur_nom)}`, detail: n.contenu, icon: 'bi-journal-text', color: '#525252' })) || []),
+    ...(hist?.allergies?.map((a: any) => ({ date: a.created_at, title: `Allergie — ${a.allergene}`, detail: `${a.severite || 'non spécifié'}${a.reaction ? ' • ' + a.reaction : ''}`, icon: 'bi-exclamation-triangle', color: '#f1c21b' })) || []),
+    ...(hist?.pathologies?.map((p: any) => ({ date: p.created_at, title: `Pathologie — ${p.nom}`, detail: `${p.statut}${p.code_cim ? ' • CIM ' + p.code_cim : ''}`, icon: 'bi-heart-pulse', color: '#da1e28' })) || []),
+    ...(hist?.prescriptions?.map((p: any) => ({ date: p.created_at, title: `Prescription — ${p.medicament}${medecinLabel(p.medecin_prenom, p.medecin_nom)}`, detail: [p.dosage, p.frequence, p.duree].filter(Boolean).join(' • '), icon: 'bi-capsule', color: '#1192e8' })) || []),
+    ...(hist?.ordonnances?.map((o: any) => ({ date: o.created_at, title: `Ordonnance${medecinLabel(o.medecin_prenom, o.medecin_nom)}`, detail: o.notes || o.statut, icon: 'bi-receipt', color: '#0043ce' })) || []),
+    ...(hist?.vaccinations?.map((v: any) => ({ date: v.date_vaccination, title: `Vaccination — ${v.vaccin}`, detail: `${v.dose || ''}${v.date_rappel ? ' • Rappel ' + new Date(v.date_rappel).toLocaleDateString('fr-FR') : ''}`, icon: 'bi-shield-plus', color: '#198038' })) || []),
+    ...(hist?.alertes?.map((a: any) => ({ date: a.created_at, title: `Alerte ${a.severite} — ${a.type_alerte || 'générale'}${auteurLabel(a.created_prenom, a.created_nom)}`, detail: a.message, icon: 'bi-bell-fill', color: '#fa4d56' })) || []),
+    ...(hist?.rendez_vous?.map((r: any) => ({ date: r.date_rdv, title: `Rendez-vous${r.service_nom ? ' — ' + r.service_nom : ''}${medecinLabel(r.medecin_prenom, r.medecin_nom)}`, detail: `${r.statut}${r.motif ? ' • ' + r.motif : ''}`, icon: 'bi-calendar-event', color: '#0f62fe' })) || []),
+    ...(hist?.vitaux?.map((v: any) => ({ date: v.date_mesure, title: 'Signes vitaux', detail: [v.temperature && `T° ${v.temperature}`, (v.tension_systolique && v.tension_diastolique) && `TA ${v.tension_systolique}/${v.tension_diastolique}`, v.pouls && `P ${v.pouls}`, v.poids && `${v.poids}kg`, v.glycemie && `Glyc ${v.glycemie}`].filter(Boolean).join(' • '), icon: 'bi-activity', color: '#8a3ffc' })) || []),
+    ...(hist?.hospitalisations?.flatMap((h: any) => {
+      const out: Array<any> = [{ date: h.date_admission, title: `Admission${h.service_nom ? ' — ' + h.service_nom : ''}${medecinLabel(h.medecin_prenom, h.medecin_nom)}`, detail: h.motif || '', icon: 'bi-hospital', color: '#0f62fe' }];
+      if (h.date_sortie) out.push({ date: h.date_sortie, title: 'Sortie d\'hospitalisation', detail: '', icon: 'bi-box-arrow-right', color: '#198038' });
+      return out;
+    }) || []),
+    ...(hist?.visites?.map((v: any) => ({ date: v.date_debut, title: `Visite ${v.type_visite}${v.service_nom ? ' — ' + v.service_nom : ''}`, detail: v.statut, icon: 'bi-door-open', color: '#525252' })) || []),
+    ...(hist?.documents?.map((d: any) => ({ date: d.created_at, title: `Document — ${d.type_document || 'fichier'}`, detail: d.description || '', icon: 'bi-file-earmark', color: '#525252' })) || []),
+  ]
+    .filter(e => e.date) // skip rows with no usable timestamp
+    .sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime());
 
   return (
     <div className="timeline">
       {timeline.map((item, i) => (
         <div className="timeline-item" key={i}>
-          <div className="timeline-date">{new Date(item.date).toLocaleDateString('fr-FR')}</div>
+          <div className="timeline-date">{new Date(item.date).toLocaleString('fr-FR', { dateStyle: 'short', timeStyle: 'short' })}</div>
           <div className="timeline-content">
-            <div className="d-flex align-center gap-1"><i className={`bi ${item.icon}`}></i><strong>{item.title}</strong></div>
-            <p className="text-muted" style={{fontSize:'0.8125rem'}}>{item.detail}</p>
+            <div className="d-flex align-center gap-1"><i className={`bi ${item.icon}`} style={{ color: item.color }}></i><strong>{item.title}</strong></div>
+            {item.detail && <p className="text-muted" style={{ fontSize: '0.8125rem', marginTop: '0.25rem' }}>{item.detail}</p>}
           </div>
         </div>
       ))}

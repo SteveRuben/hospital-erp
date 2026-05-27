@@ -124,6 +124,73 @@ router.get('/activite-labo', authenticate, async (_req: AuthRequest, res: Respon
   } catch (err) { res.status(500).json({ error: 'Erreur serveur' }); }
 });
 
+// Examens labo par type et par période. Granularité configurable (jour,
+// semaine, mois, année). Sert le tableau de pilotage de l'activité du
+// laboratoire demandé par la direction.
+//
+// Réponse : Array<{ period, type_examen, count, revenus }>
+router.get('/labo-par-periode', authenticate, async (req: AuthRequest, res: Response): Promise<void> => {
+  try {
+    const granularity = String(req.query.granularity || 'month');
+    if (!['day', 'week', 'month', 'year'].includes(granularity)) {
+      res.status(400).json({ error: 'granularity doit être day, week, month ou year' });
+      return;
+    }
+    // Default window depends on granularity — daily makes sense over a month,
+    // monthly over a year, yearly over a decade. Calibrated for ~12-30 buckets.
+    const defaultIntervalSql: Record<string, string> = {
+      day: "30 days",
+      week: "12 weeks",
+      month: "12 months",
+      year: "5 years",
+    };
+    const dateFormat = granularity === 'year' ? 'YYYY'
+      : granularity === 'month' ? 'YYYY-MM'
+      : 'YYYY-MM-DD';
+
+    const from = req.query.from ? new Date(String(req.query.from)) : null;
+    const to = req.query.to ? new Date(String(req.query.to)) : null;
+    const typeFilter = req.query.type_examen ? String(req.query.type_examen) : null;
+
+    // Build the WHERE clause via parameterised raw SQL — Prisma's $queryRaw
+    // safely interpolates these template parts.
+    const rows = typeFilter !== null
+      ? await prisma.$queryRaw<Array<{ period: string; type_examen: string; nb: bigint; revenus: number | string }>>`
+          SELECT TO_CHAR(DATE_TRUNC(${granularity}, date_examen), ${dateFormat}) AS period,
+                 type_examen,
+                 COUNT(*)::bigint AS nb,
+                 COALESCE(SUM(montant), 0) AS revenus
+          FROM examens
+          WHERE date_examen >= COALESCE(${from}, CURRENT_DATE - (${defaultIntervalSql[granularity]})::interval)
+            AND date_examen <= COALESCE(${to}, CURRENT_DATE)
+            AND type_examen = ${typeFilter}
+          GROUP BY period, type_examen
+          ORDER BY period DESC, nb DESC
+        `
+      : await prisma.$queryRaw<Array<{ period: string; type_examen: string; nb: bigint; revenus: number | string }>>`
+          SELECT TO_CHAR(DATE_TRUNC(${granularity}, date_examen), ${dateFormat}) AS period,
+                 type_examen,
+                 COUNT(*)::bigint AS nb,
+                 COALESCE(SUM(montant), 0) AS revenus
+          FROM examens
+          WHERE date_examen >= COALESCE(${from}, CURRENT_DATE - (${defaultIntervalSql[granularity]})::interval)
+            AND date_examen <= COALESCE(${to}, CURRENT_DATE)
+          GROUP BY period, type_examen
+          ORDER BY period DESC, nb DESC
+        `;
+
+    res.json(rows.map(r => ({
+      period: r.period,
+      type_examen: r.type_examen,
+      count: Number(r.nb),
+      revenus: Number(r.revenus),
+    })));
+  } catch (err) {
+    console.error('[REPORTS] labo-par-periode failed:', err);
+    res.status(500).json({ error: 'Erreur serveur' });
+  }
+});
+
 // Patients distincts vus par service et par période. Granularité configurable
 // (semaine, mois, année). Sert le tableau de suivi de l'activité hospitalière
 // demandé par la direction : combien de patients distincts par service sur

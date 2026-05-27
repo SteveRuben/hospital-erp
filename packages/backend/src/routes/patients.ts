@@ -346,7 +346,17 @@ router.get('/:id/historique', authenticate, async (req: AuthRequest, res: Respon
     const page = Math.max(1, Number(req.query.page) || 1);
     const skip = (page - 1) * limit;
 
-    const [consultationsRows, examensRows, recettesRows, documentsRows] = await Promise.all([
+    // Pull every clinical artifact tied to this patient so the Timeline tab
+    // can render a complete chronological history. Each block is independent
+    // (Promise.all in parallel) and capped at `limit` rows to keep the
+    // response under control for long-running files.
+    const [
+      consultationsRows, examensRows, recettesRows, documentsRows,
+      notesRows, allergiesRows, pathologiesRows,
+      prescriptionsRows, ordonnancesRows, vaccinationsRows,
+      alertesRows, rendezVousRows, vitauxRows,
+      hospitalisationsRows, visitesRows,
+    ] = await Promise.all([
       prisma.consultation.findMany({
         where: { patientId },
         select: {
@@ -355,32 +365,88 @@ router.get('/:id/historique', authenticate, async (req: AuthRequest, res: Respon
           service: { select: { nom: true } },
         },
         orderBy: { dateConsultation: 'desc' },
-        take: limit,
-        skip,
+        take: limit, skip,
       }),
       prisma.examen.findMany({
         where: { patientId },
         select: { id: true, reference: true, typeExamen: true, resultat: true, dateExamen: true, statut: true },
-        orderBy: { dateExamen: 'desc' },
-        take: limit,
-        skip,
+        orderBy: { dateExamen: 'desc' }, take: limit, skip,
       }),
       prisma.recette.findMany({
-        where: {
-          patientId,
-          OR: [{ annulee: false }, { annulee: null }],
-        },
+        where: { patientId, OR: [{ annulee: false }, { annulee: null }] },
         select: { id: true, typeActe: true, montant: true, modePaiement: true, dateRecette: true },
-        orderBy: { dateRecette: 'desc' },
-        take: limit,
-        skip,
+        orderBy: { dateRecette: 'desc' }, take: limit, skip,
       }),
       prisma.document.findMany({
         where: { patientId },
         select: { id: true, typeDocument: true, description: true, fichierUrl: true, createdAt: true },
-        orderBy: { createdAt: 'desc' },
-        take: limit,
-        skip,
+        orderBy: { createdAt: 'desc' }, take: limit, skip,
+      }),
+      prisma.note.findMany({
+        where: { patientId },
+        select: { id: true, titre: true, contenu: true, typeNote: true, createdAt: true,
+          auteur: { select: { nom: true, prenom: true } } },
+        orderBy: { createdAt: 'desc' }, take: limit, skip,
+      }),
+      prisma.allergie.findMany({
+        where: { patientId },
+        select: { id: true, allergene: true, severite: true, reaction: true, dateDebut: true, createdAt: true, active: true },
+        orderBy: { createdAt: 'desc' }, take: limit, skip,
+      }),
+      prisma.pathologie.findMany({
+        where: { patientId },
+        select: { id: true, nom: true, codeCim: true, statut: true, dateDebut: true, createdAt: true },
+        orderBy: { createdAt: 'desc' }, take: limit, skip,
+      }),
+      prisma.prescription.findMany({
+        where: { patientId },
+        select: { id: true, medicament: true, dosage: true, frequence: true, duree: true, dateDebut: true, statut: true, createdAt: true,
+          medecin: { select: { nom: true, prenom: true } } },
+        orderBy: { createdAt: 'desc' }, take: limit, skip,
+      }),
+      prisma.ordonnance.findMany({
+        where: { patientId },
+        select: { id: true, dateOrdonnance: true, statut: true, notes: true, createdAt: true,
+          medecin: { select: { nom: true, prenom: true } } },
+        orderBy: { createdAt: 'desc' }, take: limit, skip,
+      }),
+      prisma.vaccination.findMany({
+        where: { patientId },
+        select: { id: true, vaccin: true, dose: true, dateVaccination: true, dateRappel: true, createdAt: true,
+          medecin: { select: { nom: true, prenom: true } } },
+        orderBy: { createdAt: 'desc' }, take: limit, skip,
+      }),
+      prisma.alerte.findMany({
+        where: { patientId },
+        select: { id: true, typeAlerte: true, message: true, severite: true, active: true, createdAt: true,
+          creator: { select: { nom: true, prenom: true } } },
+        orderBy: { createdAt: 'desc' }, take: limit, skip,
+      }),
+      prisma.rendezVous.findMany({
+        where: { patientId },
+        select: { id: true, dateRdv: true, motif: true, statut: true, createdAt: true,
+          medecin: { select: { nom: true, prenom: true } },
+          service: { select: { nom: true } } },
+        orderBy: { dateRdv: 'desc' }, take: limit, skip,
+      }),
+      prisma.vital.findMany({
+        where: { patientId },
+        select: { id: true, temperature: true, tensionSystolique: true, tensionDiastolique: true, pouls: true,
+          poids: true, taille: true, glycemie: true, dateMesure: true, createdAt: true },
+        orderBy: { dateMesure: 'desc' }, take: limit, skip,
+      }),
+      prisma.hospitalisation.findMany({
+        where: { patientId },
+        select: { id: true, dateAdmission: true, dateSortie: true, motif: true, statut: true, createdAt: true,
+          medecin: { select: { nom: true, prenom: true } },
+          service: { select: { nom: true } } },
+        orderBy: { dateAdmission: 'desc' }, take: limit, skip,
+      }),
+      prisma.visite.findMany({
+        where: { patientId },
+        select: { id: true, typeVisite: true, dateDebut: true, dateFin: true, statut: true, createdAt: true,
+          service: { select: { nom: true } } },
+        orderBy: { dateDebut: 'desc' }, take: limit, skip,
       }),
     ]);
 
@@ -396,11 +462,70 @@ router.get('/:id/historique', authenticate, async (req: AuthRequest, res: Respon
       service_nom: c.service?.nom ?? null,
     }));
 
+    // Flatten the Prisma camelCase to the snake_case the frontend consumes,
+    // pulling the joined name fields up to the top level so the Timeline can
+    // render "Note de Jean Martin" without re-walking the structure.
+    const notes = notesRows.map(n => ({
+      id: n.id, titre: n.titre, contenu: n.contenu, type_note: n.typeNote, created_at: n.createdAt,
+      auteur_nom: n.auteur?.nom ?? null, auteur_prenom: n.auteur?.prenom ?? null,
+    }));
+    const allergies = allergiesRows.map(a => ({
+      id: a.id, allergene: a.allergene, severite: a.severite, reaction: a.reaction,
+      date_debut: a.dateDebut, created_at: a.createdAt, active: a.active,
+    }));
+    const pathologies = pathologiesRows.map(p => ({
+      id: p.id, nom: p.nom, code_cim: p.codeCim, statut: p.statut,
+      date_debut: p.dateDebut, created_at: p.createdAt,
+    }));
+    const prescriptions = prescriptionsRows.map(p => ({
+      id: p.id, medicament: p.medicament, dosage: p.dosage, frequence: p.frequence, duree: p.duree,
+      date_debut: p.dateDebut, statut: p.statut, created_at: p.createdAt,
+      medecin_nom: p.medecin?.nom ?? null, medecin_prenom: p.medecin?.prenom ?? null,
+    }));
+    const ordonnances = ordonnancesRows.map(o => ({
+      id: o.id, date_ordonnance: o.dateOrdonnance, statut: o.statut, notes: o.notes, created_at: o.createdAt,
+      medecin_nom: o.medecin?.nom ?? null, medecin_prenom: o.medecin?.prenom ?? null,
+    }));
+    const vaccinations = vaccinationsRows.map(v => ({
+      id: v.id, vaccin: v.vaccin, dose: v.dose, date_vaccination: v.dateVaccination, date_rappel: v.dateRappel,
+      created_at: v.createdAt,
+      medecin_nom: v.medecin?.nom ?? null, medecin_prenom: v.medecin?.prenom ?? null,
+    }));
+    const alertes = alertesRows.map(a => ({
+      id: a.id, type_alerte: a.typeAlerte, message: a.message, severite: a.severite, active: a.active,
+      created_at: a.createdAt,
+      created_nom: a.creator?.nom ?? null, created_prenom: a.creator?.prenom ?? null,
+    }));
+    const rendez_vous = rendezVousRows.map(r => ({
+      id: r.id, date_rdv: r.dateRdv, motif: r.motif, statut: r.statut, created_at: r.createdAt,
+      medecin_nom: r.medecin?.nom ?? null, medecin_prenom: r.medecin?.prenom ?? null,
+      service_nom: r.service?.nom ?? null,
+    }));
+    const vitaux = vitauxRows.map(v => ({
+      id: v.id, temperature: v.temperature, tension_systolique: v.tensionSystolique, tension_diastolique: v.tensionDiastolique,
+      pouls: v.pouls, poids: v.poids, taille: v.taille, glycemie: v.glycemie,
+      date_mesure: v.dateMesure, created_at: v.createdAt,
+    }));
+    const hospitalisations = hospitalisationsRows.map(h => ({
+      id: h.id, date_admission: h.dateAdmission, date_sortie: h.dateSortie, motif: h.motif, statut: h.statut,
+      created_at: h.createdAt,
+      medecin_nom: h.medecin?.nom ?? null, medecin_prenom: h.medecin?.prenom ?? null,
+      service_nom: h.service?.nom ?? null,
+    }));
+    const visites = visitesRows.map(v => ({
+      id: v.id, type_visite: v.typeVisite, date_debut: v.dateDebut, date_fin: v.dateFin, statut: v.statut,
+      created_at: v.createdAt, service_nom: v.service?.nom ?? null,
+    }));
+
     res.json({
       consultations,
       examens: examensRows,
       recettes: recettesRows,
       documents: documentsRows,
+      notes, allergies, pathologies,
+      prescriptions, ordonnances, vaccinations,
+      alertes, rendez_vous, vitaux,
+      hospitalisations, visites,
     });
   } catch (err) {
     res.status(500).json({ error: 'Erreur serveur' });

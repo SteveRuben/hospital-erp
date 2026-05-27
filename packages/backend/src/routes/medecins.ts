@@ -1,4 +1,5 @@
 import { Router } from 'express';
+import { Prisma } from '@prisma/client';
 import { prisma } from '../config/db.js';
 import { authenticate, authorize } from '../middleware/auth.js';
 import { validate, createMedecinSchema } from '../middleware/validation.js';
@@ -6,10 +7,59 @@ import { asyncHandler } from '../middleware/asyncHandler.js';
 
 const router = Router();
 
-// Get all doctors
-router.get('/', authenticate, asyncHandler(async (_req, res) => {
-  const rows = await prisma.medecin.findMany({ orderBy: [{ nom: 'asc' }, { prenom: 'asc' }] });
+// Get doctors with multi-criteria search. All filters are optional and AND-ed
+// together; `search` is a fuzzy term that ORs across nom / prenom / specialite
+// so the user can type a single token and get reasonable results. Returns
+// either the flat array (legacy callers that just want the dropdown) or a
+// paginated envelope when ?page= is provided — keeps the existing dropdowns
+// working without a frontend change.
+router.get('/', authenticate, asyncHandler(async (req, res) => {
+  const { search, specialite, telephone, page, limit } = req.query;
+  const where: Prisma.MedecinWhereInput = {};
+  const ands: Prisma.MedecinWhereInput[] = [];
+
+  if (search) {
+    const s = String(search);
+    ands.push({
+      OR: [
+        { nom: { contains: s, mode: 'insensitive' } },
+        { prenom: { contains: s, mode: 'insensitive' } },
+        { specialite: { contains: s, mode: 'insensitive' } },
+      ],
+    });
+  }
+  if (specialite) ands.push({ specialite: { contains: String(specialite), mode: 'insensitive' } });
+  if (telephone) ands.push({ telephone: { contains: String(telephone), mode: 'insensitive' } });
+  if (ands.length) where.AND = ands;
+
+  // Paginated envelope only when the client opts in via ?page=. Existing
+  // callers (dropdowns, autocomplete) keep the flat array.
+  if (page !== undefined) {
+    const pg = Math.max(1, Number(page));
+    const lim = Math.min(100, Math.max(1, Number(limit) || 20));
+    const [total, data] = await Promise.all([
+      prisma.medecin.count({ where }),
+      prisma.medecin.findMany({ where, orderBy: [{ nom: 'asc' }, { prenom: 'asc' }], take: lim, skip: (pg - 1) * lim }),
+    ]);
+    res.json({ data, total, page: pg, limit: lim, totalPages: Math.ceil(total / lim) });
+    return;
+  }
+
+  const rows = await prisma.medecin.findMany({ where, orderBy: [{ nom: 'asc' }, { prenom: 'asc' }] });
   res.json(rows);
+}));
+
+// Lightweight list of distinct specialités for the search filter dropdown.
+// Tiny payload, no auth role gate beyond `authenticate` since the list is
+// already implicit in the public medecin list.
+router.get('/specialites', authenticate, asyncHandler(async (_req, res) => {
+  const rows = await prisma.medecin.findMany({
+    where: { specialite: { not: null } },
+    select: { specialite: true },
+    distinct: ['specialite'],
+    orderBy: { specialite: 'asc' },
+  });
+  res.json(rows.map(r => r.specialite).filter(Boolean));
 }));
 
 // Get single doctor
