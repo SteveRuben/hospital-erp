@@ -1,6 +1,9 @@
 @import url('https://fonts.googleapis.com/css2?family=IBM+Plex+Sans:wght@400;500;600;700&display=swap');
 
 :root {
+  /* Default theme = cds-blue. Other themes override --cds-interactive and
+     --cds-header-bg via the [data-theme="..."] selectors below. The rest of
+     the palette stays neutral on purpose — only the brand accent changes. */
   --cds-interactive: #0f62fe;
   --cds-text-primary: #161616;
   --cds-text-secondary: #525252;
@@ -21,6 +24,16 @@
   --cds-sidebar-width: 256px;
   --cds-header-height: 48px;
 }
+
+/* Per-tenant themes — selected via Configuration > Identité visuelle.
+   Only the interactive accent + header background change; the rest of the
+   Carbon palette is preserved for legibility and contrast guarantees. */
+:root[data-theme="cds-blue"]       { --cds-interactive: #0f62fe; --cds-header-bg: #161616; }
+:root[data-theme="medical-green"]  { --cds-interactive: #198038; --cds-header-bg: #044317; }
+:root[data-theme="royal-purple"]   { --cds-interactive: #8a3ffc; --cds-header-bg: #31135e; }
+:root[data-theme="coral"]          { --cds-interactive: #fa4d56; --cds-header-bg: #520408; }
+:root[data-theme="teal"]           { --cds-interactive: #1192e8; --cds-header-bg: #003a6d; }
+:root[data-theme="slate"]          { --cds-interactive: #525252; --cds-header-bg: #262626; }
 
 * { margin: 0; padding: 0; box-sizing: border-box; }
 

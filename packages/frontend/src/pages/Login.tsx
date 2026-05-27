@@ -2,8 +2,10 @@ import { useState, useContext } from 'react';
 import { useNavigate, useSearchParams } from 'react-router-dom';
 import { AuthContext } from '../App';
 import { login as loginApi } from '../services/api';
+import { useBranding } from '../components/BrandingProvider';
 
 export default function Login() {
+  const { branding } = useBranding();
   const [username, setUsername] = useState('');
   const [password, setPassword] = useState('');
   const [error, setError] = useState('');
@@ -39,8 +41,10 @@ export default function Login() {
     <div className="login-page">
       <div className="login-card">
         <div style={{ textAlign: 'center', marginBottom: '2rem' }}>
-          <i className="bi bi-hospital" style={{ fontSize: '2.5rem', color: 'var(--cds-interactive)' }}></i>
-          <h1>Hospital ERP</h1>
+          {branding.logo_url
+            ? <img src={branding.logo_url} alt="" style={{ height: '64px', width: 'auto', maxWidth: '200px', objectFit: 'contain', marginBottom: '0.5rem' }} />
+            : <i className="bi bi-hospital" style={{ fontSize: '2.5rem', color: 'var(--cds-interactive)' }}></i>}
+          <h1>{branding.nom_etablissement}</h1>
           <p className="subtitle">Connectez-vous à votre compte</p>
         </div>
 

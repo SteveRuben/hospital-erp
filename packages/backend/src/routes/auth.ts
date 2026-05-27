@@ -113,6 +113,7 @@ router.post('/login', validate(loginSchema), async (req: Request, res: Response)
         prenom: user.prenom,
         must_change_password: user.must_change_password ?? false,
         mfa_enabled: user.mfaEnabled ?? false,
+        onboarding_dismissed_at: user.onboardingDismissedAt ?? null,
       }
     });
   } catch (err) {
@@ -144,7 +145,7 @@ router.post('/login/mfa', async (req: Request, res: Response): Promise<void> => 
 
     const user = await prisma.user.findUnique({
       where: { id: challenge.userId },
-      select: { id: true, username: true, role: true, nom: true, prenom: true, must_change_password: true, mfaEnabled: true },
+      select: { id: true, username: true, role: true, nom: true, prenom: true, must_change_password: true, mfaEnabled: true, onboardingDismissedAt: true },
     });
     if (!user) { res.status(401).json({ error: 'Utilisateur non trouvé' }); return; }
 
@@ -160,6 +161,7 @@ router.post('/login/mfa', async (req: Request, res: Response): Promise<void> => 
         nom: user.nom, prenom: user.prenom,
         must_change_password: user.must_change_password ?? false,
         mfa_enabled: user.mfaEnabled ?? false,
+        onboarding_dismissed_at: user.onboardingDismissedAt ?? null,
       }
     });
   } catch (err) {
@@ -263,7 +265,7 @@ router.get('/me', authenticate, async (req: AuthRequest, res: Response): Promise
   try {
     const user = await prisma.user.findUnique({
       where: { id: req.user!.id },
-      select: { id: true, username: true, role: true, nom: true, prenom: true, telephone: true, mfaEnabled: true },
+      select: { id: true, username: true, role: true, nom: true, prenom: true, telephone: true, mfaEnabled: true, onboardingDismissedAt: true },
     });
 
     if (!user) {
@@ -271,7 +273,25 @@ router.get('/me', authenticate, async (req: AuthRequest, res: Response): Promise
       return;
     }
 
-    res.json({ ...user, mfa_enabled: user.mfaEnabled });
+    res.json({ ...user, mfa_enabled: user.mfaEnabled, onboarding_dismissed_at: user.onboardingDismissedAt });
+  } catch (err) {
+    res.status(500).json({ error: 'Erreur serveur' });
+  }
+});
+
+// Dismiss the onboarding wizard for this admin. Sets onboarding_dismissed_at
+// to now() so the wizard stops auto-popping for the 7-day cooldown enforced
+// client-side. The banner in Layout stays visible until the establishment
+// data is actually filled in (nom_etablissement !== default).
+router.post('/dismiss-onboarding', authenticate, async (req: AuthRequest, res: Response): Promise<void> => {
+  try {
+    const updated = await prisma.user.update({
+      where: { id: req.user!.id },
+      data: { onboardingDismissedAt: new Date() },
+      select: { onboardingDismissedAt: true },
+    });
+    await logAudit({ userId: req.user!.id, action: 'update', tableName: 'users', recordId: req.user!.id, details: 'onboarding wizard dismissed' });
+    res.json({ onboarding_dismissed_at: updated.onboardingDismissedAt });
   } catch (err) {
     res.status(500).json({ error: 'Erreur serveur' });
   }
@@ -308,6 +328,31 @@ router.post('/users', authenticate, authorize('admin'), validate(createUserSchem
       res.status(400).json({ error: 'Nom d\'utilisateur déjà existant' });
       return;
     }
+    res.status(500).json({ error: 'Erreur serveur' });
+  }
+});
+
+// Username typeahead for @mentions. Any authenticated user can query, but
+// requires ≥2 chars of prefix to discourage full-roster enumeration. Returns
+// only fields needed to render a mention chip (id, username, nom, prenom, role).
+router.get('/users/lookup', authenticate, async (req: AuthRequest, res: Response): Promise<void> => {
+  try {
+    const q = String(req.query.q || '').trim();
+    if (q.length < 2) { res.json([]); return; }
+    const rows = await prisma.user.findMany({
+      where: {
+        OR: [
+          { username: { contains: q, mode: 'insensitive' } },
+          { nom: { contains: q, mode: 'insensitive' } },
+          { prenom: { contains: q, mode: 'insensitive' } },
+        ],
+      },
+      select: { id: true, username: true, nom: true, prenom: true, role: true },
+      orderBy: { username: 'asc' },
+      take: 10,
+    });
+    res.json(rows);
+  } catch {
     res.status(500).json({ error: 'Erreur serveur' });
   }
 });

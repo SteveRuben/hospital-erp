@@ -8,6 +8,11 @@ export interface User {
   prenom: string;
   telephone?: string;
   must_change_password?: boolean;
+  mfa_enabled?: boolean;
+  // Per-admin onboarding wizard dismissal timestamp (ISO string). Null means
+  // the admin has never dismissed the wizard. Layout uses it with a 7-day
+  // cooldown to decide whether to auto-pop the wizard.
+  onboarding_dismissed_at?: string | null;
 }
 
 export interface Patient {

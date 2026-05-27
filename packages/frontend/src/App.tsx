@@ -6,6 +6,7 @@ import Layout from './components/Layout';
 import RoleGuard from './components/RoleGuard';
 import { ConfirmProvider } from './components/ConfirmDialog';
 import { SnackbarProvider } from './components/Snackbar';
+import { BrandingProvider } from './components/BrandingProvider';
 
 // Lazy load all pages for code splitting
 const Landing = lazy(() => import('./pages/Landing'));
@@ -46,6 +47,7 @@ const Orders = lazy(() => import('./pages/Orders'));
 const Pharmacie = lazy(() => import('./pages/Pharmacie'));
 const PatientMerge = lazy(() => import('./pages/PatientMerge'));
 const Rapports = lazy(() => import('./pages/Rapports'));
+const Chat = lazy(() => import('./pages/Chat'));
 
 const PageLoader = () => <div className="loading"><div className="spinner"></div></div>;
 
@@ -129,6 +131,7 @@ function App() {
   return (
     <AuthContext.Provider value={{ user, login, logout, loading, impersonating, originalAdminId, startImpersonate, stopImpersonate: stopImpersonateFn }}>
       <BrowserRouter>
+        <BrandingProvider>
         <SnackbarProvider>
         <ConfirmProvider>
         <SessionManager>
@@ -182,6 +185,8 @@ function App() {
                         <Route path="/pharmacie" element={<RoleGuard roles={['admin','medecin']}><Pharmacie /></RoleGuard>} />
                         <Route path="/patient-merge" element={<RoleGuard roles={['admin']}><PatientMerge /></RoleGuard>} />
                         <Route path="/rapports" element={<RoleGuard roles={['admin','comptable']}><Rapports /></RoleGuard>} />
+                        <Route path="/chat" element={<Chat />} />
+                        <Route path="/chat/:channelId" element={<Chat />} />
                       </Routes>
                     </Suspense>
                   </Layout>
@@ -192,6 +197,7 @@ function App() {
         </SessionManager>
         </ConfirmProvider>
         </SnackbarProvider>
+        </BrandingProvider>
       </BrowserRouter>
     </AuthContext.Provider>
   );

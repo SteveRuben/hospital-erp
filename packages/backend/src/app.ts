@@ -57,6 +57,8 @@ import planningRoutes from './routes/planning.js';
 import settingsRoutes from './routes/settings.js';
 import referenceListsRoutes from './routes/reference-lists.js';
 import adminRoutes from './routes/admin.js';
+import inboxRoutes from './routes/inbox.js';
+import chatRoutes from './routes/chat.js';
 
 const app = express();
 
@@ -87,7 +89,12 @@ app.use(helmet({
   contentSecurityPolicy: {
     directives: {
       defaultSrc: ["'self'"],
-      scriptSrc: ["'self'", "'unsafe-inline'"],
+      // No 'unsafe-inline' for scripts — protects PHI in localStorage (JWT) from
+      // XSS exfiltration. Frontend must keep all <script> tags external (see
+      // packages/frontend/public/sw-register.js as the pattern).
+      scriptSrc: ["'self'"],
+      // 'unsafe-inline' stays on styles because React + Bootstrap rely heavily
+      // on style attributes; CSS injection is not a JWT-exfiltration vector.
       styleSrc: ["'self'", "'unsafe-inline'", "https://fonts.googleapis.com", "https://cdn.jsdelivr.net"],
       fontSrc: ["'self'", "https://fonts.gstatic.com", "https://cdn.jsdelivr.net"],
       imgSrc: ["'self'", "data:", "blob:"],
@@ -165,6 +172,8 @@ app.use('/api/planning', planningRoutes);
 app.use('/api/settings', settingsRoutes);
 app.use('/api/reference-lists', referenceListsRoutes);
 app.use('/api/admin', adminRoutes);
+app.use('/api/inbox', inboxRoutes);
+app.use('/api/chat', chatRoutes);
 
 // Serve uploaded files
 app.use('/uploads', express.static(path.resolve(__dirname, '../uploads')));

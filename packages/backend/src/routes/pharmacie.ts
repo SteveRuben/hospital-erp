@@ -4,6 +4,7 @@ import { Prisma } from '@prisma/client';
 import { prisma } from '../config/db.js';
 import { authenticate, authorize, AuthRequest } from '../middleware/auth.js';
 import { validate, createMedicamentSchema, createStockSchema } from '../middleware/validation.js';
+import { notifyMany } from '../services/notify.js';
 
 const router = Router();
 const upload = multer({ storage: multer.memoryStorage(), limits: { fileSize: 5 * 1024 * 1024 } });
@@ -124,6 +125,57 @@ router.get('/mouvements', authenticate, async (_req: AuthRequest, res: Response)
   } catch (err) { res.status(500).json({ error: 'Erreur serveur' }); }
 });
 
+/**
+ * After a stock-decreasing operation, check if total stock for this medication
+ * has crossed below `quantite_min` and notify admins. Dedupes by suppressing
+ * the alert if any admin has an unread `stock_low` notif for this medication
+ * created within the last hour — prevents spam when several dispensations
+ * happen in a row while stock is already low.
+ */
+async function checkLowStockAndNotify(medicamentId: number | null | undefined): Promise<void> {
+  if (!medicamentId) return;
+  try {
+    const stocks = await prisma.stock.findMany({ where: { medicamentId } });
+    if (stocks.length === 0) return;
+    const totalQty = stocks.reduce((acc, s) => acc + (s.quantite ?? 0), 0);
+    const minQty = Math.max(...stocks.map(s => s.quantiteMin ?? 0));
+    if (totalQty > minQty) return; // not low
+
+    const medicament = await prisma.medicament.findUnique({ where: { id: medicamentId }, select: { nom: true } });
+    const label = medicament?.nom ?? `medicament #${medicamentId}`;
+    const isOutOfStock = totalQty === 0;
+
+    const admins = await prisma.user.findMany({ where: { role: 'admin' }, select: { id: true } });
+    const oneHourAgo = new Date(Date.now() - 60 * 60 * 1000);
+
+    // Filter out admins who already have an unread stock_low notif for this med within the last hour.
+    const recipients: number[] = [];
+    for (const a of admins) {
+      const existing = await prisma.notification.findFirst({
+        where: {
+          userId: a.id,
+          type: 'stock_low',
+          read: false,
+          createdAt: { gt: oneHourAgo },
+          body: { contains: label, mode: 'insensitive' },
+        },
+        select: { id: true },
+      });
+      if (!existing) recipients.push(a.id);
+    }
+
+    if (recipients.length === 0) return;
+    await notifyMany(recipients, {
+      type: 'stock_low',
+      title: isOutOfStock ? `Rupture de stock : ${label}` : `Stock bas : ${label}`,
+      body: `Quantité totale : ${totalQty} (seuil ${minQty})`,
+      link: '/app/pharmacie',
+    });
+  } catch (err) {
+    console.error('[PHARMACIE] low-stock notification check failed:', err);
+  }
+}
+
 router.post('/mouvements', authenticate, async (req: AuthRequest, res: Response): Promise<void> => {
   try {
     const { medicament_id, type_mouvement, quantite, lot, motif } = req.body;
@@ -144,6 +196,7 @@ router.post('/mouvements', authenticate, async (req: AuthRequest, res: Response)
       await prisma.$executeRaw`UPDATE stock SET quantite = quantite + ${quantite} WHERE medicament_id = ${medicament_id} AND (lot = ${lotVal} OR ${lotVal}::text IS NULL)`;
     } else if (type_mouvement === 'sortie') {
       await prisma.$executeRaw`UPDATE stock SET quantite = quantite - ${quantite} WHERE medicament_id = ${medicament_id} AND (lot = ${lotVal} OR ${lotVal}::text IS NULL)`;
+      await checkLowStockAndNotify(medicament_id);
     }
     res.json({ message: 'Mouvement enregistré' });
   } catch (err) { res.status(500).json({ error: 'Erreur serveur' }); }
@@ -175,6 +228,7 @@ router.post('/dispensations', authenticate, async (req: AuthRequest, res: Respon
         userId: req.user!.id,
       },
     });
+    await checkLowStockAndNotify(medicament_id);
     res.status(201).json(created);
   } catch (err) { console.error(err); res.status(500).json({ error: 'Erreur serveur' }); }
 });

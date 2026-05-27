@@ -27,6 +27,7 @@ model User {
   must_change_password Boolean  @default(true)
   mfaEnabled          Boolean   @default(false) @map("mfa_enabled")
   mfaSecret           String?   @map("mfa_secret") @db.VarChar(255)
+  onboardingDismissedAt DateTime? @map("onboarding_dismissed_at")
   createdAt           DateTime  @default(now()) @map("created_at")
 
   notes               Note[]
@@ -35,6 +36,9 @@ model User {
   observations        Observation[] @relation("obs_provider")
   orders              Order[]   @relation("orderer")
   auditLogs           AuditLog[]
+  notifications       Notification[]
+  channelMembers      ChannelMember[]
+  chatMessages        ChatMessage[] @relation("chat_author")
 
   @@map("users")
 }
@@ -884,6 +888,85 @@ model ConceptMapping {
 }
 
 // ===== NOTIFICATIONS =====
+
+// ===== STAFF CHAT (Phase 2) =====
+
+// A chat container. Four flavors driven by `type`:
+//   - service: one auto-created per Service; members = users tied to the service
+//   - garde:   on-call rotation channel; membership refreshed by the planning module
+//   - custom:  ad-hoc channel created by an admin, manual membership
+//   - dm:      private 1:1 conversation between two users
+// HIPAA note: messages may contain PHI. Retention is 6 years (configurable
+// via setting `chat_retention_months`), suppression du droit à l'effacement
+// is handled by the admin route DELETE /chat/redact-patient/:id.
+model Channel {
+  id          Int      @id @default(autoincrement())
+  type        String   @db.VarChar(20)  // service | garde | custom | dm
+  name        String   @db.VarChar(200)
+  description String?
+  serviceId   Int?     @map("service_id")    // populated for type=service
+  createdBy   Int?     @map("created_by")
+  archived    Boolean  @default(false)
+  createdAt   DateTime @default(now()) @map("created_at")
+
+  members     ChannelMember[]
+  messages    ChatMessage[]
+
+  @@index([type, archived])
+  @@map("chat_channels")
+}
+
+model ChannelMember {
+  channelId   Int      @map("channel_id")
+  userId      Int      @map("user_id")
+  joinedAt    DateTime @default(now()) @map("joined_at")
+  lastReadAt  DateTime? @map("last_read_at")  // for per-channel unread counts
+
+  channel     Channel  @relation(fields: [channelId], references: [id], onDelete: Cascade)
+  user        User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@id([channelId, userId])
+  @@index([userId, lastReadAt])
+  @@map("chat_channel_members")
+}
+
+model ChatMessage {
+  id          Int      @id @default(autoincrement())
+  channelId   Int      @map("channel_id")
+  authorId    Int      @map("author_id")
+  content     String
+  editedAt    DateTime? @map("edited_at")
+  deletedAt   DateTime? @map("deleted_at")    // soft delete preserves audit trail
+  createdAt   DateTime @default(now()) @map("created_at")
+
+  channel     Channel  @relation(fields: [channelId], references: [id], onDelete: Cascade)
+  author      User     @relation("chat_author", fields: [authorId], references: [id])
+
+  @@index([channelId, createdAt(sort: Desc)])
+  @@map("chat_messages")
+}
+
+// In-app notification for staff (distinct from NotificationLog which logs
+// outbound SMS/email to patients). Drives the bell-icon dropdown in the
+// app shell and is fed by:
+//   - @user mentions in notes
+//   - workflow events (lab requested, result validated, admission, etc.)
+//   - chat mentions/messages (Phase 2)
+model Notification {
+  id        Int      @id @default(autoincrement())
+  userId    Int      @map("user_id")
+  type      String   @db.VarChar(40)     // mention | lab_requested | lab_validated | admission | chat_mention | …
+  title     String   @db.VarChar(200)
+  body      String?
+  link      String?  @db.VarChar(500)    // SPA path to navigate to on click
+  read      Boolean  @default(false)
+  readAt    DateTime? @map("read_at")
+  createdAt DateTime @default(now()) @map("created_at")
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId, read, createdAt(sort: Desc)])
+  @@map("notifications")
+}
 
 model NotificationLog {
   id        Int      @id @default(autoincrement())

@@ -220,6 +220,7 @@ export const getNotificationLog = (patientId: number) => api.get(`/notifications
 
 // Print (returns HTML; opens in a new tab via fetch+Blob — no token in URL)
 export const printFacture = (id: number) => authedDownload(`/print/facture/${id}`);
+export const previewPrintTemplate = (type: 'facture' | 'ordonnance' | 'labo') => authedDownload(`/print/preview/${type}`);
 export const printOrdonnance = (patientId: number, medecinId?: number) =>
   authedDownload(`/print/ordonnance/${patientId}?medecin_id=${medecinId || ''}`);
 export const printResultatLabo = (patientId: number) => authedDownload(`/print/labo/${patientId}`);
@@ -243,6 +244,51 @@ export const updateHabilitation = (data: { role: string; module: string; acces: 
 export const getMenuConfig = () => api.get('/habilitations/menu');
 export const updateMenuItem = (id: number, data: unknown) => api.put(`/habilitations/menu/${id}`, data);
 export const updateMenuOrder = (items: Array<{ id: number; groupe: string; groupe_ordre: number; ordre: number }>) => api.put('/habilitations/menu-order', { items });
+
+// Branding (public — no auth required, used by login page and app shell)
+export interface Branding { nom_etablissement: string; logo_url: string | null; theme: string }
+export const getBranding = () => api.get<Branding>('/settings/branding');
+export const uploadLogo = (file: File) => {
+  const fd = new FormData();
+  fd.append('file', file);
+  return api.post<{ logo_url: string }>('/settings/logo', fd, { headers: { 'Content-Type': 'multipart/form-data' } });
+};
+export const deleteLogo = () => api.delete('/settings/logo');
+export const dismissOnboarding = () => api.post<{ onboarding_dismissed_at: string }>('/auth/dismiss-onboarding');
+
+// In-app notification inbox
+export interface InboxNotification {
+  id: number;
+  userId: number;
+  type: string;
+  title: string;
+  body: string | null;
+  link: string | null;
+  read: boolean;
+  readAt: string | null;
+  createdAt: string;
+}
+export const getInbox = (limit = 20) => api.get<InboxNotification[]>(`/inbox?limit=${limit}`);
+export const getUnreadCount = () => api.get<{ count: number }>('/inbox/unread-count');
+export const markNotifRead = (id: number) => api.patch(`/inbox/${id}/read`);
+export const markAllNotifsRead = () => api.patch('/inbox/read-all');
+export const deleteNotif = (id: number) => api.delete(`/inbox/${id}`);
+
+// Username typeahead for @mentions
+export interface UserLookup { id: number; username: string; nom: string | null; prenom: string | null; role: string }
+export const lookupUsers = (q: string) => api.get<UserLookup[]>(`/auth/users/lookup?q=${encodeURIComponent(q)}`);
+
+// Staff chat
+export interface ChatChannel { id: number; type: string; name: string; description: string | null; serviceId: number | null; archived: boolean; createdAt: string; lastReadAt: string | null; unread: number }
+export interface ChatMessage { id: number; channelId: number; authorId: number; content: string; createdAt: string; editedAt: string | null; deletedAt: string | null; author: { id: number; username: string; nom: string | null; prenom: string | null; role: string } }
+export const listMyChannels = () => api.get<ChatChannel[]>('/chat/channels');
+export const createChannel = (data: { type: 'custom' | 'dm'; name: string; description?: string; member_ids?: number[] }) => api.post<ChatChannel>('/chat/channels', data);
+export const getMessages = (channelId: number, before?: string, limit = 50) =>
+  api.get<ChatMessage[]>(`/chat/channels/${channelId}/messages`, { params: { before, limit } });
+export const postMessage = (channelId: number, content: string) =>
+  api.post<ChatMessage>(`/chat/channels/${channelId}/messages`, { content });
+export const markChannelRead = (channelId: number) => api.post(`/chat/channels/${channelId}/read`);
+export const deleteChatMessage = (id: number) => api.delete(`/chat/messages/${id}`);
 
 // Quick search
 export const quickSearchPatients = (q: string) => api.get('/patients/search/quick', { params: { q } });

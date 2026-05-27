@@ -38,4 +38,32 @@ export async function canAccessPatient(user: AccessUser, patientId: number): Pro
   return rows.length > 0;
 }
 
-export default { canAccessPatient };
+/**
+ * HIPAA "Minimum Necessary" (§164.502(b)): when a medecin lists/searches patients,
+ * the result set must be restricted to patients they're attributed to (or have an
+ * existing consultation with). Without this, an unattributed medecin can enumerate
+ * the entire patient roster via /patients, /patients/search/quick, /search/advanced
+ * — they can't OPEN a record (canAccessPatient blocks that), but names + phones
+ * leak via the list, which is PHI under HIPAA.
+ *
+ * Returns a Prisma `where` fragment to AND into list queries. For non-medecin
+ * roles, returns {} (no extra filter — full roster access by role design).
+ */
+export async function accessiblePatientIds(user: AccessUser): Promise<number[] | null> {
+  if (user.role !== 'medecin') return null; // null = no filter, full access
+
+  const rows = await prisma.$queryRaw<Array<{ patient_id: number }>>`
+    SELECT DISTINCT patient_id FROM (
+      SELECT patient_id FROM patient_attributions
+        WHERE medecin_user_id = ${user.id} AND actif = TRUE AND patient_id IS NOT NULL
+      UNION
+      SELECT c.patient_id FROM consultations c
+        JOIN medecins m ON c.medecin_id = m.id
+        JOIN users u ON u.nom = m.nom AND u.prenom = m.prenom AND u.id = ${user.id}
+    ) t
+  `;
+
+  return rows.map(r => r.patient_id);
+}
+
+export default { canAccessPatient, accessiblePatientIds };

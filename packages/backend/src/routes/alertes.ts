@@ -6,8 +6,11 @@ import { validate, createAlerteSchema } from '../middleware/validation.js';
 import { asyncHandler } from '../middleware/asyncHandler.js';
 import { requirePatientAccess } from '../middleware/patient-access.js';
 import { requireResourceAccess } from '../middleware/resource-access.js';
+import { notifyMany } from '../services/notify.js';
 
 const router = Router();
+
+const CRITICAL_SEVERITIES = new Set(['danger', 'critical']);
 
 router.get('/:patientId', authenticate, requirePatientAccess, asyncHandler(async (req, res) => {
   const { active } = req.query;
@@ -37,6 +40,37 @@ router.post('/', authenticate, validate(createAlerteSchema), requirePatientAcces
       createdBy: authReq.user!.id,
     },
   });
+
+  // Workflow notification: a critical-severity alert fans out to admins and
+  // to medecins attributed to this patient. Best-effort — never roll back
+  // the alert creation on a notification failure.
+  if (CRITICAL_SEVERITIES.has(created.severite)) {
+    try {
+      const [admins, attributions, patient] = await Promise.all([
+        prisma.user.findMany({ where: { role: 'admin' }, select: { id: true } }),
+        prisma.patientAttribution.findMany({
+          where: { patientId: patient_id, actif: true, medecinUserId: { not: null } },
+          select: { medecinUserId: true },
+        }),
+        prisma.patient.findUnique({ where: { id: patient_id }, select: { nom: true, prenom: true } }),
+      ]);
+      const recipients = [
+        ...admins.map(a => a.id),
+        ...attributions.map(a => a.medecinUserId).filter((id): id is number => id != null),
+      ].filter(id => id !== authReq.user!.id);
+
+      const patientLabel = patient ? `${patient.prenom} ${patient.nom}` : `patient #${patient_id}`;
+      await notifyMany(recipients, {
+        type: 'mention',
+        title: `Alerte ${created.severite} sur ${patientLabel}`,
+        body: message.substring(0, 200),
+        link: `/app/patients/${patient_id}#alertes`,
+      });
+    } catch (err) {
+      console.error('[ALERTES] notification fanout failed:', err);
+    }
+  }
+
   res.status(201).json(created);
 }));
 

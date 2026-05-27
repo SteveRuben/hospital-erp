@@ -24,8 +24,12 @@ if (KEY_HEX && KEY_HEX.length === 64 && KEY_HEX !== 'CHANGE_ME_64_HEX_CHARS') {
   encryptionKey = Buffer.from(KEY_HEX, 'hex');
   console.log('[ENCRYPTION] PHI encryption enabled (AES-256-GCM)');
 } else {
+  // HIPAA §164.312(a)(2)(iv): PHI at rest must be encrypted. Refuse to boot in
+  // production rather than silently storing plaintext (mirrors JWT_SECRET fail-fast
+  // in middleware/auth.ts).
   if (process.env.NODE_ENV === 'production') {
-    console.warn('[ENCRYPTION] WARNING: PHI_ENCRYPTION_KEY not configured — sensitive data stored in plaintext');
+    console.error('CRITICAL: PHI_ENCRYPTION_KEY must be set to 64 hex chars in production. Generate with: node -e "console.log(require(\'crypto\').randomBytes(32).toString(\'hex\'))"');
+    process.exit(1);
   }
 }
 

@@ -1,6 +1,6 @@
 import { Router } from 'express';
 import { prisma } from '../config/db.js';
-import { authenticate, authorize } from '../middleware/auth.js';
+import { authenticate, authorize, AuthRequest } from '../middleware/auth.js';
 import { asyncHandler } from '../middleware/asyncHandler.js';
 
 const router = Router();
@@ -84,7 +84,13 @@ router.get('/:id', authenticate, asyncHandler(async (req, res) => {
 }));
 
 // Create service (with optional parent, prix, poids)
-router.post('/', authenticate, authorize('admin'), asyncHandler(async (req, res) => {
+// Side effect: auto-creates a `service`-type chat channel so staff have an
+// instant communication space for that service. Only top-level services get
+// a channel (sub-services share their parent's channel — avoids clutter).
+// The creator becomes the initial member; the admin invites others from the
+// chat UI. The channel creation is best-effort: a failure must not block
+// service creation, the admin can always create the channel manually.
+router.post('/', authenticate, authorize('admin'), asyncHandler(async (req: AuthRequest, res) => {
   const { nom, description, parent_id, prix, poids, code } = req.body;
   if (!nom) { res.status(400).json({ error: 'Nom requis' }); return; }
 
@@ -98,6 +104,25 @@ router.post('/', authenticate, authorize('admin'), asyncHandler(async (req, res)
       code: code || null,
     },
   });
+
+  // Only top-level services get a chat channel.
+  if (!created.parentId) {
+    try {
+      await prisma.channel.create({
+        data: {
+          type: 'service',
+          name: created.nom.substring(0, 200),
+          description: created.description?.substring(0, 1000) ?? null,
+          serviceId: created.id,
+          createdBy: req.user!.id,
+          members: { create: [{ userId: req.user!.id }] },
+        },
+      });
+    } catch (err) {
+      console.error('[SERVICES] auto chat channel creation failed:', err);
+    }
+  }
+
   res.status(201).json(created);
 }));
 

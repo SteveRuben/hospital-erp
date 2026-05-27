@@ -3,6 +3,7 @@ import { prisma } from '../config/db.js';
 import { authenticate, authorize, AuthRequest } from '../middleware/auth.js';
 import { validate, createPavillonSchema, createLitSchema } from '../middleware/validation.js';
 import { Prisma } from '@prisma/client';
+import { notifyMany } from '../services/notify.js';
 
 const router = Router();
 
@@ -132,6 +133,40 @@ router.post('/hospitalisations', authenticate, authorize('admin', 'medecin'), as
         },
       });
     });
+
+    // Notify admins + the assigned medecin (via name match — same pattern as
+    // access-control.canAccessPatient). Best-effort, must not block admission.
+    try {
+      const [admins, patient, service, medecinUserId] = await Promise.all([
+        prisma.user.findMany({ where: { role: 'admin' }, select: { id: true } }),
+        prisma.patient.findUnique({ where: { id: Number(patient_id) }, select: { nom: true, prenom: true } }),
+        service_id ? prisma.service.findUnique({ where: { id: Number(service_id) }, select: { nom: true } }) : Promise.resolve(null),
+        medecin_id
+          ? (async () => {
+              const m = await prisma.medecin.findUnique({ where: { id: Number(medecin_id) }, select: { nom: true, prenom: true } });
+              if (!m) return null;
+              const u = await prisma.user.findFirst({ where: { role: 'medecin', nom: m.nom, prenom: m.prenom }, select: { id: true } });
+              return u?.id ?? null;
+            })()
+          : Promise.resolve(null),
+      ]);
+      const recipients = [
+        ...admins.map(a => a.id),
+        ...(medecinUserId ? [medecinUserId] : []),
+      ].filter(id => id !== req.user!.id);
+
+      const patientLabel = patient ? `${patient.prenom} ${patient.nom}` : `patient #${patient_id}`;
+      const serviceLabel = service ? ` (${service.nom})` : '';
+      await notifyMany(recipients, {
+        type: 'admission',
+        title: `Admission : ${patientLabel}${serviceLabel}`,
+        body: motif ? String(motif).substring(0, 200) : 'Admission enregistrée',
+        link: `/app/patients/${patient_id}`,
+      });
+    } catch (err) {
+      console.error('[LITS] admission notification fanout failed:', err);
+    }
+
     res.status(201).json(created);
   } catch (err) { console.error(err); res.status(500).json({ error: 'Erreur serveur' }); }
 });

@@ -2,8 +2,31 @@ import { Router, Response } from 'express';
 import { Prisma } from '@prisma/client';
 import { prisma } from '../config/db.js';
 import { authenticate, authorize, AuthRequest } from '../middleware/auth.js';
+import { notifyMany } from '../services/notify.js';
 
 const router = Router();
+
+/**
+ * When a lab result is newly added, notify whichever medecin is most likely
+ * the requester. The schema has `examens.demandeur_id` but the create flow
+ * doesn't always populate it; we fall back to the medecin of the patient's
+ * most recent consultation. Both signals are best-effort.
+ */
+async function findResultRecipients(patientId: number, demandeurId: number | null | undefined): Promise<number[]> {
+  if (demandeurId) return [demandeurId];
+  // Fallback: medecin of the latest consultation, mapped to a user by name match
+  const lastConsult = await prisma.consultation.findFirst({
+    where: { patientId, medecinId: { not: null } },
+    orderBy: { dateConsultation: 'desc' },
+    select: { medecin: { select: { nom: true, prenom: true } } },
+  });
+  if (!lastConsult?.medecin) return [];
+  const u = await prisma.user.findFirst({
+    where: { role: 'medecin', nom: lastConsult.medecin.nom, prenom: lastConsult.medecin.prenom },
+    select: { id: true },
+  });
+  return u ? [u.id] : [];
+}
 
 router.get('/', authenticate, async (req: AuthRequest, res: Response): Promise<void> => {
   try {
@@ -104,12 +127,37 @@ router.put('/:id', authenticate, authorize('admin', 'laborantin'), async (req: A
       montant,
     };
     if (date_examen) data.dateExamen = new Date(date_examen);
-    try {
-      const updated = await prisma.examen.update({ where: { id: Number(req.params.id) }, data });
-      res.json(updated);
-    } catch {
-      res.status(404).json({ error: 'Examen non trouvé' });
+
+    // Need the previous state to detect "result newly added" — null/empty → set.
+    const before = await prisma.examen.findUnique({
+      where: { id: Number(req.params.id) },
+      select: { resultat: true, patientId: true, demandeurId: true, typeExamen: true },
+    });
+    if (!before) { res.status(404).json({ error: 'Examen non trouvé' }); return; }
+
+    const updated = await prisma.examen.update({ where: { id: Number(req.params.id) }, data });
+
+    const wasEmpty = !before.resultat || before.resultat.trim().length === 0;
+    const nowFilled = typeof resultat === 'string' && resultat.trim().length > 0;
+    if (wasEmpty && nowFilled) {
+      try {
+        const recipients = (await findResultRecipients(before.patientId, before.demandeurId)).filter(id => id !== req.user!.id);
+        if (recipients.length > 0) {
+          const patient = await prisma.patient.findUnique({ where: { id: before.patientId }, select: { nom: true, prenom: true } });
+          const label = patient ? `${patient.prenom} ${patient.nom}` : `patient #${before.patientId}`;
+          await notifyMany(recipients, {
+            type: 'lab_validated',
+            title: `Résultat de ${before.typeExamen} disponible`,
+            body: `${label} — ${resultat.substring(0, 150)}`,
+            link: `/app/patients/${before.patientId}#examens`,
+          });
+        }
+      } catch (err) {
+        console.error('[LABORATOIRE] result-ready notification failed:', err);
+      }
     }
+
+    res.json(updated);
   } catch (err) { res.status(500).json({ error: 'Erreur serveur' }); }
 });
 

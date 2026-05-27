@@ -41,7 +41,7 @@ In the Railway dashboard → Settings → Variables, add at minimum:
 |----------|-------|-----|
 | `NODE_ENV` | `production` | Enables HTTPS redirect; suppresses demo users; hides stack traces |
 | `JWT_SECRET` | 64-char hex you just generated | Server refuses to start without this in production |
-| `PHI_ENCRYPTION_KEY` | 64-char hex you just generated | PHI encryption is passthrough without this (OWASP A02) |
+| `PHI_ENCRYPTION_KEY` | 64-char hex you just generated | Server refuses to start without this in production (HIPAA §164.312(a)(2)(iv)) |
 | `FRONTEND_URL` | `https://<your-app>.up.railway.app` | CORS allowlist. Comma-separated for multiple. |
 | `DATABASE_URL` | (auto-set by Railway Postgres) | |
 | `DB_POOL_MAX` | `10` (Neon free) or higher for paid | Default is 10; raise if your plan allows |

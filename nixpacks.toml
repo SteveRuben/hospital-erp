@@ -1,7 +1,44 @@
+# ============================================================================
+#   Nixpacks build configuration — Hospital ERP (Railway / generic PaaS)
+# ============================================================================
+#
+#   Build pipeline:
+#     1. setup   → Node.js 20 toolchain
+#     2. install → npm install (incl. dev deps for tsc/vite) +
+#                  Rollup native binary fix for optionalDependencies bug
+#                  (see https://github.com/npm/cli/issues/4828)
+#     3. build   → vite (frontend) → prisma generate → tsc (backend)
+#                  Output: packages/frontend/dist + packages/backend/dist
+#     4. start   → single Node process: Express serves API + static SPA
+#
+#   Required production env vars (the app refuses to boot without these):
+#     - NODE_ENV=production
+#     - JWT_SECRET                (64 hex chars — middleware/auth.ts:10)
+#     - PHI_ENCRYPTION_KEY        (64 hex chars — services/encryption.ts)
+#       HIPAA §164.312(a)(2)(iv): PHI at rest must be encrypted; the server
+#       now exits at startup if this is missing in production (was a silent
+#       warning before).
+#     - DATABASE_URL              (Postgres connection string)
+#     - FRONTEND_URL              (CORS allowlist)
+#
+#   Recommended:
+#     - REDIS_URL                 (distributed session blacklist for multi-replica)
+#
+#   Schema bootstrap: src/config/init.ts runs at boot and idempotently
+#   creates the schema via CREATE TABLE IF NOT EXISTS. No separate
+#   `prisma migrate deploy` step needed today (see db.ts:8 — Prisma
+#   migrations are the planned successor).
+#
+#   See RAILWAY.md for the full deploy walkthrough.
+# ============================================================================
+
 [phases.setup]
 nixPkgs = ["nodejs_20"]
 
 [phases.install]
+# Rollup ships native binaries via optionalDependencies which npm sometimes
+# skips on Linux x64 — the `--no-save` install forces the binary in without
+# polluting package-lock.json.
 cmds = ["npm install --include=dev && npm install @rollup/rollup-linux-x64-gnu --no-save"]
 
 [phases.build]

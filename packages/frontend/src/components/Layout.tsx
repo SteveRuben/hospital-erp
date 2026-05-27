@@ -5,6 +5,9 @@ import { getMyHabilitations, getMenuConfig, getStockAlerts } from '../services/a
 import { useSnackbar } from './Snackbar';
 import PatientSearch from './PatientSearch';
 import LocaleSelector from './LocaleSelector';
+import { useBranding } from './BrandingProvider';
+import OnboardingWizard from './OnboardingWizard';
+import NotificationsBell from './NotificationsBell';
 
 interface MenuItemDB { id: number; groupe: string; groupe_ordre: number; module: string; label: string; icon: string; path: string; ordre: number }
 
@@ -12,7 +15,26 @@ export default function Layout({ children }: { children: React.ReactNode }) {
   const { user, logout, impersonating, stopImpersonate } = useContext(AuthContext);
   const navigate = useNavigate();
   const { showSnackbar } = useSnackbar();
+  const { branding } = useBranding();
   const [menuGroups, setMenuGroups] = useState<Array<{ label: string; items: MenuItemDB[] }>>([]);
+  const [showOnboarding, setShowOnboarding] = useState(false);
+
+  // Onboarding state is now per-admin in the DB (User.onboardingDismissedAt).
+  // The wizard auto-pops if:
+  //   - user is admin
+  //   - the establishment still has its default name
+  //   - the admin has never dismissed it, OR last dismissal is older than 7 days
+  // The banner stays visible regardless of dismissal until the data is actually
+  // filled in — it's the persistent re-entry point.
+  const ONBOARDING_COOLDOWN_MS = 7 * 24 * 60 * 60 * 1000;
+  const establishmentLooksDefault = branding.nom_etablissement === 'Hospital ERP' || branding.nom_etablissement === '';
+  const dismissedAt = user?.onboarding_dismissed_at ? new Date(user.onboarding_dismissed_at).getTime() : 0;
+  const recentlyDismissed = dismissedAt > 0 && (Date.now() - dismissedAt) < ONBOARDING_COOLDOWN_MS;
+  const needsOnboarding = user?.role === 'admin' && establishmentLooksDefault && !recentlyDismissed;
+
+  useEffect(() => {
+    if (needsOnboarding) setShowOnboarding(true);
+  }, [needsOnboarding]);
 
   useEffect(() => {
     if (user) {
@@ -59,8 +81,15 @@ export default function Layout({ children }: { children: React.ReactNode }) {
 
   const handleLogout = () => { logout(); navigate('/login'); };
 
+  // Banner stays visible whenever the establishment is unconfigured AND the
+  // wizard isn't currently open — gives admins a way back into the wizard
+  // even after a dismissal.
+  const onboardingPending = user?.role === 'admin' && establishmentLooksDefault && !showOnboarding;
+
   return (
     <>
+      {showOnboarding && <OnboardingWizard onClose={() => setShowOnboarding(false)} />}
+
       {impersonating && (
         <div style={{ position: 'fixed', top: 0, left: 0, right: 0, zIndex: 200, background: '#da1e28', color: '#fff', padding: '0.5rem 1.5rem', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '1rem', fontSize: '0.8125rem', fontWeight: 500 }}>
           <i className="bi bi-eye"></i>
@@ -70,11 +99,17 @@ export default function Layout({ children }: { children: React.ReactNode }) {
       )}
 
       <header className="header" style={impersonating ? { top: '36px' } : {}}>
-        <div className="header-logo"><i className="bi bi-hospital"></i><span>Hospital ERP</span></div>
+        <div className="header-logo">
+          {branding.logo_url
+            ? <img src={branding.logo_url} alt="" style={{ height: '24px', width: 'auto', objectFit: 'contain' }} />
+            : <i className="bi bi-hospital"></i>}
+          <span>{branding.nom_etablissement}</span>
+        </div>
         <PatientSearch />
         <div className="header-actions">
           <LocaleSelector />
-          <button title="Notifications"><i className="bi bi-bell"></i></button>
+          <button title="Discussion équipe" onClick={() => navigate('/app/chat')}><i className="bi bi-chat-dots"></i></button>
+          <NotificationsBell />
           <div className="header-user"><i className="bi bi-person-circle"></i><span>{user?.prenom} {user?.nom}</span></div>
         </div>
       </header>
@@ -100,6 +135,12 @@ export default function Layout({ children }: { children: React.ReactNode }) {
       </nav>
 
       <main className="main-content" style={impersonating ? { marginTop: `calc(var(--cds-header-height) + 36px)` } : {}}>
+        {onboardingPending && (
+          <div style={{ background: 'var(--cds-support-info)', color: '#fff', padding: '0.5rem 1rem', display: 'flex', alignItems: 'center', justifyContent: 'space-between', fontSize: '0.8125rem', marginBottom: '1rem' }}>
+            <span><i className="bi bi-info-circle" style={{ marginRight: '0.5rem' }}></i>Votre établissement n'est pas encore configuré.</span>
+            <button onClick={() => setShowOnboarding(true)} style={{ background: '#fff', color: 'var(--cds-support-info)', border: 'none', padding: '0.25rem 0.75rem', fontSize: '0.75rem', cursor: 'pointer', fontWeight: 600 }}>Configurer maintenant</button>
+          </div>
+        )}
         {children}
       </main>
     </>

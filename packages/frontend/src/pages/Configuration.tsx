@@ -1,7 +1,17 @@
 import { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useSnackbar } from '../components/Snackbar';
-import api from '../services/api';
+import { useBranding } from '../components/BrandingProvider';
+import api, { uploadLogo, deleteLogo, previewPrintTemplate } from '../services/api';
+
+const THEMES: Array<{ key: string; label: string; accent: string; header: string }> = [
+  { key: 'cds-blue',      label: 'Bleu Carbon',   accent: '#0f62fe', header: '#161616' },
+  { key: 'medical-green', label: 'Vert médical',  accent: '#198038', header: '#044317' },
+  { key: 'royal-purple',  label: 'Pourpre royal', accent: '#8a3ffc', header: '#31135e' },
+  { key: 'coral',         label: 'Corail',        accent: '#fa4d56', header: '#520408' },
+  { key: 'teal',          label: 'Sarcelle',      accent: '#1192e8', header: '#003a6d' },
+  { key: 'slate',         label: 'Ardoise',       accent: '#525252', header: '#262626' },
+];
 
 interface Setting { id: number; cle: string; valeur: string; description: string; categorie: string }
 interface RefItem { id: number; categorie: string; code: string; libelle: string; actif: boolean; par_defaut: boolean; ordre: number; parent_code: string | null }
@@ -20,7 +30,7 @@ const CATEGORIES = [
 ];
 
 export default function Configuration() {
-  const [tab, setTab] = useState<'settings' | 'lists'>('settings');
+  const [tab, setTab] = useState<'branding' | 'coordonnees' | 'impressions' | 'settings' | 'lists'>('branding');
   const [settings, setSettings] = useState<Setting[]>([]);
   const navigate = useNavigate();
   const [selectedCat, setSelectedCat] = useState('pays');
@@ -31,6 +41,77 @@ export default function Configuration() {
   const [showImport, setShowImport] = useState(false);
   const [selectedParent, setSelectedParent] = useState<string | null>(null);
   const { showSnackbar } = useSnackbar();
+  const { branding, reload: reloadBranding } = useBranding();
+  const [nomDraft, setNomDraft] = useState('');
+  const [uploadingLogo, setUploadingLogo] = useState(false);
+
+  // Drafts for coordonnees + impressions — initialized from `settings` once loaded,
+  // edits stay local until the user clicks "Enregistrer".
+  const [drafts, setDrafts] = useState<Record<string, string>>({});
+  useEffect(() => {
+    if (!settings.length) return;
+    const initial: Record<string, string> = {};
+    for (const s of settings) initial[s.cle] = s.valeur;
+    setDrafts(initial);
+  }, [settings]);
+
+  useEffect(() => { setNomDraft(branding.nom_etablissement); }, [branding.nom_etablissement]);
+
+  const saveBatch = async (keys: string[], label: string) => {
+    const payload = keys
+      .filter(k => drafts[k] !== undefined)
+      .map(cle => ({ cle, valeur: drafts[cle] ?? '' }));
+    try {
+      await api.put('/settings', payload);
+      showSnackbar(`${label} enregistré${payload.length > 1 ? 's' : ''}`, 'success');
+      loadSettings();
+    } catch (err: any) { showSnackbar(err.response?.data?.error || 'Erreur', 'error'); }
+  };
+
+  const COORDONNEES_KEYS = ['adresse_etablissement', 'ville_etablissement', 'pays_etablissement', 'telephone_etablissement', 'email_etablissement'];
+  const LEGAL_KEYS = ['numero_agrement', 'directeur_etablissement'];
+
+  const saveTheme = async (themeKey: string) => {
+    try {
+      await api.put('/settings/theme', { valeur: themeKey });
+      await reloadBranding();
+      showSnackbar('Thème mis à jour', 'success');
+    } catch (err: any) { showSnackbar(err.response?.data?.error || 'Erreur', 'error'); }
+  };
+
+  const saveNomEtablissement = async () => {
+    if (!nomDraft.trim()) { showSnackbar('Le nom est requis', 'warning'); return; }
+    try {
+      await api.put('/settings/nom_etablissement', { valeur: nomDraft.trim() });
+      await reloadBranding();
+      showSnackbar('Nom de l\'établissement mis à jour', 'success');
+    } catch { showSnackbar('Erreur', 'error'); }
+  };
+
+  const handleLogoUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    if (file.size > 2 * 1024 * 1024) { showSnackbar('Logo trop volumineux (max 2 Mo)', 'warning'); e.target.value = ''; return; }
+    setUploadingLogo(true);
+    try {
+      await uploadLogo(file);
+      await reloadBranding();
+      showSnackbar('Logo mis à jour', 'success');
+    } catch (err: any) {
+      showSnackbar(err.response?.data?.error || 'Erreur lors de l\'upload', 'error');
+    } finally {
+      setUploadingLogo(false);
+      e.target.value = '';
+    }
+  };
+
+  const handleLogoDelete = async () => {
+    try {
+      await deleteLogo();
+      await reloadBranding();
+      showSnackbar('Logo supprimé', 'success');
+    } catch { showSnackbar('Erreur', 'error'); }
+  };
 
   useEffect(() => { loadSettings(); }, []);
   useEffect(() => { if (tab === 'lists') { loadItems(); setSelectedParent(null); } }, [selectedCat, tab]);
@@ -137,9 +218,158 @@ export default function Configuration() {
       <div className="page-header"><h1 className="page-title">Configuration</h1></div>
 
       <div className="tabs mb-2">
+        <button className={`tab-item ${tab === 'branding' ? 'active' : ''}`} onClick={() => setTab('branding')}>Identité visuelle</button>
+        <button className={`tab-item ${tab === 'coordonnees' ? 'active' : ''}`} onClick={() => setTab('coordonnees')}>Coordonnées</button>
+        <button className={`tab-item ${tab === 'impressions' ? 'active' : ''}`} onClick={() => setTab('impressions')}>Impressions</button>
         <button className={`tab-item ${tab === 'settings' ? 'active' : ''}`} onClick={() => setTab('settings')}>Paramètres généraux</button>
         <button className={`tab-item ${tab === 'lists' ? 'active' : ''}`} onClick={() => setTab('lists')}>Listes de référence</button>
       </div>
+
+      {tab === 'coordonnees' && (
+        <div>
+          <div className="tile mb-2" style={{ padding: '1.5rem' }}>
+            <h3 style={{ fontSize: '1rem', fontWeight: 600, marginBottom: '0.25rem' }}>Coordonnées de l'établissement</h3>
+            <p className="text-muted mb-2" style={{ fontSize: '0.8125rem' }}>Apparaissent dans l'en-tête de toutes les impressions (factures, ordonnances, résultats de labo).</p>
+            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(250px, 1fr))', gap: '1rem', marginBottom: '1rem' }}>
+              <div className="form-group">
+                <label className="form-label">Adresse</label>
+                <input type="text" className="form-input" value={drafts.adresse_etablissement ?? ''} onChange={e => setDrafts({ ...drafts, adresse_etablissement: e.target.value })} placeholder="01 BP 1234" />
+              </div>
+              <div className="form-group">
+                <label className="form-label">Ville</label>
+                <input type="text" className="form-input" value={drafts.ville_etablissement ?? ''} onChange={e => setDrafts({ ...drafts, ville_etablissement: e.target.value })} placeholder="Abidjan" />
+              </div>
+              <div className="form-group">
+                <label className="form-label">Pays</label>
+                <input type="text" className="form-input" value={drafts.pays_etablissement ?? ''} onChange={e => setDrafts({ ...drafts, pays_etablissement: e.target.value })} placeholder="Côte d'Ivoire" />
+              </div>
+              <div className="form-group">
+                <label className="form-label">Téléphone</label>
+                <input type="tel" className="form-input" value={drafts.telephone_etablissement ?? ''} onChange={e => setDrafts({ ...drafts, telephone_etablissement: e.target.value })} placeholder="+225 27 22 00 00 00" />
+              </div>
+              <div className="form-group">
+                <label className="form-label">Email</label>
+                <input type="email" className="form-input" value={drafts.email_etablissement ?? ''} onChange={e => setDrafts({ ...drafts, email_etablissement: e.target.value })} placeholder="contact@hopital.ci" />
+              </div>
+            </div>
+            <button className="btn-primary" onClick={() => saveBatch(COORDONNEES_KEYS, 'Coordonnées')}>Enregistrer les coordonnées</button>
+          </div>
+
+          <div className="tile" style={{ padding: '1.5rem' }}>
+            <h3 style={{ fontSize: '1rem', fontWeight: 600, marginBottom: '0.25rem' }}>Mentions légales</h3>
+            <p className="text-muted mb-2" style={{ fontSize: '0.8125rem' }}>Apparaissent au pied des documents officiels.</p>
+            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(250px, 1fr))', gap: '1rem', marginBottom: '1rem' }}>
+              <div className="form-group">
+                <label className="form-label">N° d'agrément</label>
+                <input type="text" className="form-input" value={drafts.numero_agrement ?? ''} onChange={e => setDrafts({ ...drafts, numero_agrement: e.target.value })} placeholder="MS/CI/2024/00123" />
+              </div>
+              <div className="form-group">
+                <label className="form-label">Directeur médical</label>
+                <input type="text" className="form-input" value={drafts.directeur_etablissement ?? ''} onChange={e => setDrafts({ ...drafts, directeur_etablissement: e.target.value })} placeholder="Dr. Konan Yao" />
+              </div>
+            </div>
+            <button className="btn-primary" onClick={() => saveBatch(LEGAL_KEYS, 'Mentions légales')}>Enregistrer les mentions</button>
+          </div>
+        </div>
+      )}
+
+      {tab === 'impressions' && (
+        <div>
+          <div className="tile mb-2" style={{ padding: '1.5rem' }}>
+            <h3 style={{ fontSize: '1rem', fontWeight: 600, marginBottom: '0.25rem' }}>Personnalisation des impressions</h3>
+            <p className="text-muted mb-2" style={{ fontSize: '0.8125rem' }}>
+              Laissez un champ vide pour utiliser l'en-tête ou le pied de page standard (généré à partir du logo, du nom, des coordonnées et des mentions légales).
+              Pour personnaliser, écrivez votre texte libre — les sauts de ligne sont préservés. Le HTML est échappé pour la sécurité.
+            </p>
+            <div className="d-flex gap-1 mb-2" style={{ flexWrap: 'wrap' }}>
+              <button className="btn-ghost btn-sm" onClick={() => previewPrintTemplate('facture')}><i className="bi bi-eye"></i> Aperçu facture</button>
+              <button className="btn-ghost btn-sm" onClick={() => previewPrintTemplate('ordonnance')}><i className="bi bi-eye"></i> Aperçu ordonnance</button>
+              <button className="btn-ghost btn-sm" onClick={() => previewPrintTemplate('labo')}><i className="bi bi-eye"></i> Aperçu résultats labo</button>
+            </div>
+          </div>
+
+          {[
+            { key: 'facture', title: 'Facture', enteteKey: 'entete_facture', piedKey: 'pied_facture', enteteHint: 'Ex: établissement multi-sites, code TVA, slogan…', piedHint: 'Ex: « TVA non applicable, art. 293B du CGI » ou conditions de paiement.' },
+            { key: 'ordonnance', title: 'Ordonnance', enteteKey: 'entete_ordonnance', piedKey: 'pied_ordonnance', enteteHint: 'Ex: spécialité du médecin, numéro RPPS.', piedHint: 'Ex: « Ordonnance non renouvelable » ou consignes de pharmacovigilance.' },
+            { key: 'labo', title: 'Résultats de laboratoire', enteteKey: 'entete_labo', piedKey: 'pied_labo', enteteHint: 'Ex: nom du responsable du laboratoire.', piedHint: 'Ex: « Résultats à interpréter par le médecin traitant ».' },
+          ].map(section => (
+            <div key={section.key} className="tile mb-2" style={{ padding: '1.5rem' }}>
+              <div className="d-flex justify-between align-center mb-2">
+                <h3 style={{ fontSize: '1rem', fontWeight: 600 }}>{section.title}</h3>
+                <button className="btn-ghost btn-sm" onClick={() => previewPrintTemplate(section.key as 'facture' | 'ordonnance' | 'labo')}><i className="bi bi-eye"></i> Aperçu</button>
+              </div>
+              <div className="form-group">
+                <label className="form-label">En-tête personnalisé</label>
+                <textarea className="form-input" rows={3} value={drafts[section.enteteKey] ?? ''} onChange={e => setDrafts({ ...drafts, [section.enteteKey]: e.target.value })} placeholder={section.enteteHint} />
+              </div>
+              <div className="form-group">
+                <label className="form-label">Pied de page personnalisé</label>
+                <textarea className="form-input" rows={3} value={drafts[section.piedKey] ?? ''} onChange={e => setDrafts({ ...drafts, [section.piedKey]: e.target.value })} placeholder={section.piedHint} />
+              </div>
+              <button className="btn-primary btn-sm" onClick={() => saveBatch([section.enteteKey, section.piedKey], section.title)}>Enregistrer {section.title}</button>
+            </div>
+          ))}
+        </div>
+      )}
+
+      {tab === 'branding' && (
+        <div>
+          {/* Nom de l'établissement */}
+          <div className="tile mb-2" style={{ padding: '1.5rem' }}>
+            <h3 style={{ fontSize: '1rem', fontWeight: 600, marginBottom: '0.25rem' }}>Nom de l'établissement</h3>
+            <p className="text-muted mb-2" style={{ fontSize: '0.8125rem' }}>Affiché en en-tête, sur la page de connexion, et dans toutes les impressions.</p>
+            <div className="d-flex gap-1" style={{ maxWidth: '500px' }}>
+              <input type="text" className="form-input" value={nomDraft} onChange={e => setNomDraft(e.target.value)} placeholder="CHU de Cocody" />
+              <button className="btn-primary" onClick={saveNomEtablissement} disabled={nomDraft.trim() === branding.nom_etablissement}>Enregistrer</button>
+            </div>
+          </div>
+
+          {/* Logo */}
+          <div className="tile mb-2" style={{ padding: '1.5rem' }}>
+            <h3 style={{ fontSize: '1rem', fontWeight: 600, marginBottom: '0.25rem' }}>Logo</h3>
+            <p className="text-muted mb-2" style={{ fontSize: '0.8125rem' }}>PNG, JPG, SVG ou WebP. Max 2 Mo. Affiché en en-tête et sur la page de connexion. Format recommandé : carré ou horizontal, fond transparent.</p>
+            <div className="d-flex align-center gap-2" style={{ flexWrap: 'wrap' }}>
+              <div style={{ width: '120px', height: '120px', display: 'flex', alignItems: 'center', justifyContent: 'center', background: 'var(--cds-ui-01)', border: '1px dashed var(--cds-ui-03)' }}>
+                {branding.logo_url
+                  ? <img src={branding.logo_url} alt="Logo actuel" style={{ maxWidth: '100%', maxHeight: '100%', objectFit: 'contain' }} />
+                  : <i className="bi bi-image text-muted" style={{ fontSize: '2rem' }}></i>}
+              </div>
+              <div className="d-flex gap-1">
+                <label className="btn-primary btn-sm" style={{ cursor: 'pointer' }}>
+                  <i className="bi bi-upload"></i> {uploadingLogo ? 'Upload...' : (branding.logo_url ? 'Remplacer' : 'Téléverser')}
+                  <input type="file" accept="image/png,image/jpeg,image/svg+xml,image/webp" onChange={handleLogoUpload} style={{ display: 'none' }} disabled={uploadingLogo} />
+                </label>
+                {branding.logo_url && (
+                  <button className="btn-ghost btn-sm" onClick={handleLogoDelete}><i className="bi bi-trash"></i> Supprimer</button>
+                )}
+              </div>
+            </div>
+          </div>
+
+          {/* Theme picker */}
+          <div className="tile" style={{ padding: '1.5rem' }}>
+            <h3 style={{ fontSize: '1rem', fontWeight: 600, marginBottom: '0.25rem' }}>Thème de couleur</h3>
+            <p className="text-muted mb-2" style={{ fontSize: '0.8125rem' }}>Couleur d'accentuation utilisée dans toute l'interface. Choisissez parmi les 6 palettes pré-validées pour un rendu cohérent.</p>
+            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(180px, 1fr))', gap: '0.75rem' }}>
+              {THEMES.map(t => {
+                const active = branding.theme === t.key;
+                return (
+                  <button key={t.key} onClick={() => saveTheme(t.key)} style={{ background: 'var(--cds-ui-02)', border: active ? `2px solid ${t.accent}` : '1px solid var(--cds-ui-03)', padding: '0.75rem', cursor: 'pointer', textAlign: 'left', display: 'flex', flexDirection: 'column', gap: '0.5rem' }}>
+                    <div style={{ display: 'flex', gap: '0.25rem' }}>
+                      <div style={{ width: '32px', height: '32px', background: t.header }}></div>
+                      <div style={{ width: '32px', height: '32px', background: t.accent }}></div>
+                    </div>
+                    <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+                      <span style={{ fontSize: '0.8125rem', fontWeight: 500 }}>{t.label}</span>
+                      {active && <i className="bi bi-check-circle-fill" style={{ color: t.accent, fontSize: '1rem' }}></i>}
+                    </div>
+                  </button>
+                );
+              })}
+            </div>
+          </div>
+        </div>
+      )}
 
       {tab === 'settings' && (
         <div>

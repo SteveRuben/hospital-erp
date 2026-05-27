@@ -4,7 +4,7 @@ import { prisma } from '../config/db.js';
 import { authenticate, authorize, AuthRequest } from '../middleware/auth.js';
 import { auditCreate, auditUpdate, auditDelete } from '../services/audit.js';
 import { generatePatientReferenceId } from '../services/reference.js';
-import { canAccessPatient } from '../services/access-control.js';
+import { canAccessPatient, accessiblePatientIds } from '../services/access-control.js';
 import { validate, createPatientSchema } from '../middleware/validation.js';
 import { encryptFields, decryptFields, PATIENT_ENCRYPTED_FIELDS } from '../services/encryption.js';
 
@@ -36,6 +36,10 @@ router.get('/', authenticate, async (req: AuthRequest, res: Response): Promise<v
       if (Number.isInteger(idNum) && idNum > 0) or.push({ id: idNum });
       where.OR = or;
     }
+
+    // HIPAA minimum necessary: medecins only see patients they're attributed to.
+    const allowedIds = await accessiblePatientIds(req.user!);
+    if (allowedIds !== null) where.id = { in: allowedIds };
 
     const pg = Math.max(1, Number(page));
     const lim = Math.min(100, Math.max(1, Number(limit)));
@@ -72,8 +76,12 @@ router.get('/search/quick', authenticate, async (req: AuthRequest, res: Response
       { numeroIdentite: { contains: s, mode: 'insensitive' } },
     ];
     if (Number.isInteger(idNum) && idNum > 0) or.push({ id: idNum });
+    const where: Prisma.PatientWhereInput = { archived: false, OR: or };
+    // HIPAA minimum necessary: medecins only see patients they're attributed to.
+    const allowedIds = await accessiblePatientIds(req.user!);
+    if (allowedIds !== null) where.id = { in: allowedIds };
     const rows = await prisma.patient.findMany({
-      where: { archived: false, OR: or },
+      where,
       // Note: numeroIdentite (encrypted) is not selected for quick-search results
       select: { id: true, nom: true, prenom: true, sexe: true, telephone: true, ville: true, dateNaissance: true },
       orderBy: { nom: 'asc' },
@@ -144,6 +152,10 @@ router.get('/search/advanced', authenticate, async (req: AuthRequest, res: Respo
     }
 
     if (ands.length) where.AND = ands;
+
+    // HIPAA minimum necessary: medecins only see patients they're attributed to.
+    const allowedIds = await accessiblePatientIds(req.user!);
+    if (allowedIds !== null) where.id = { in: allowedIds };
 
     const pg = Math.max(1, Number(page));
     const lim = Math.min(100, Math.max(1, Number(limit)));

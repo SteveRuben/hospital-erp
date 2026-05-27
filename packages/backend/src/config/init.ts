@@ -826,6 +826,65 @@ export const initDB = async (): Promise<void> => {
       ALTER TABLE patients ADD COLUMN IF NOT EXISTS reference_id VARCHAR(30) UNIQUE;
     `);
 
+    // Per-admin onboarding dismissal timestamp. Null = wizard pending.
+    // Wizard re-prompts after a 7-day cooldown handled in the API layer.
+    await client.query(`
+      ALTER TABLE users ADD COLUMN IF NOT EXISTS onboarding_dismissed_at TIMESTAMP;
+    `);
+
+    // In-app staff notifications (distinct from notifications_log which is
+    // outbound SMS/email). Feeds the bell-icon dropdown.
+    await client.query(`
+      CREATE TABLE IF NOT EXISTS notifications (
+        id          SERIAL PRIMARY KEY,
+        user_id     INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+        type        VARCHAR(40) NOT NULL,
+        title       VARCHAR(200) NOT NULL,
+        body        TEXT,
+        link        VARCHAR(500),
+        read        BOOLEAN NOT NULL DEFAULT FALSE,
+        read_at     TIMESTAMP,
+        created_at  TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP
+      );
+      CREATE INDEX IF NOT EXISTS idx_notifications_user_read_created
+        ON notifications (user_id, read, created_at DESC);
+    `);
+
+    // Staff chat (Phase 2). Four channel types: service | garde | custom | dm
+    await client.query(`
+      CREATE TABLE IF NOT EXISTS chat_channels (
+        id           SERIAL PRIMARY KEY,
+        type         VARCHAR(20) NOT NULL,
+        name         VARCHAR(200) NOT NULL,
+        description  TEXT,
+        service_id   INTEGER,
+        created_by   INTEGER,
+        archived     BOOLEAN NOT NULL DEFAULT FALSE,
+        created_at   TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP
+      );
+      CREATE INDEX IF NOT EXISTS idx_chat_channels_type_archived ON chat_channels (type, archived);
+
+      CREATE TABLE IF NOT EXISTS chat_channel_members (
+        channel_id    INTEGER NOT NULL REFERENCES chat_channels(id) ON DELETE CASCADE,
+        user_id       INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+        joined_at     TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+        last_read_at  TIMESTAMP,
+        PRIMARY KEY (channel_id, user_id)
+      );
+      CREATE INDEX IF NOT EXISTS idx_chat_members_user_last_read ON chat_channel_members (user_id, last_read_at);
+
+      CREATE TABLE IF NOT EXISTS chat_messages (
+        id          SERIAL PRIMARY KEY,
+        channel_id  INTEGER NOT NULL REFERENCES chat_channels(id) ON DELETE CASCADE,
+        author_id   INTEGER NOT NULL REFERENCES users(id),
+        content     TEXT NOT NULL,
+        edited_at   TIMESTAMP,
+        deleted_at  TIMESTAMP,
+        created_at  TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP
+      );
+      CREATE INDEX IF NOT EXISTS idx_chat_messages_channel_created ON chat_messages (channel_id, created_at DESC);
+    `);
+
     // Seed default settings
     const defaultSettings = [
       ['patient_id_format', 'PAT-{YYMM}-{NP}-{SEQ:4}', 'Format de l\'ID patient. Variables: {YYYY}, {YY}, {MM}, {DD}, {NP} (initiales nom+prénom), {SEQ:N} (séquentiel sur N chiffres)', 'patients'],
@@ -833,7 +892,24 @@ export const initDB = async (): Promise<void> => {
       ['pavillons_defaut', 'Médecine Générale,Chirurgie,Maternité,Pédiatrie,Urgences,VIP,Réanimation', 'Liste des pavillons par défaut (séparés par virgule)', 'lits'],
       ['services_defaut', 'Consultation générale,Consultation spécialisée,Urgence,Contrôle médical,Hospitalisation,Laboratoire,Imagerie médicale,Soins infirmiers,Vaccination,Soins dentaires,Chirurgie,Maternité,Téléconsultation', 'Liste des services par défaut (séparés par virgule)', 'services'],
       ['devise', 'XAF', 'Devise utilisée', 'general'],
-      ['nom_etablissement', 'Hospital ERP', 'Nom de l\'établissement', 'general'],
+      ['nom_etablissement', 'Hospital ERP', 'Nom de l\'établissement (affiché en en-tête et impressions)', 'branding'],
+      ['logo_url', '', 'URL du logo de l\'établissement (uploadé via POST /api/settings/logo)', 'branding'],
+      ['theme', 'cds-blue', 'Thème de couleur de l\'application. Valeurs: cds-blue, medical-green, royal-purple, coral, teal, slate', 'branding'],
+      ['adresse_etablissement', '', 'Adresse postale complète (affichée dans les impressions)', 'coordonnees'],
+      ['ville_etablissement', '', 'Ville où se situe l\'établissement', 'coordonnees'],
+      ['pays_etablissement', '', 'Pays où se situe l\'établissement', 'coordonnees'],
+      ['telephone_etablissement', '', 'Téléphone principal de l\'établissement', 'coordonnees'],
+      ['email_etablissement', '', 'Email de contact de l\'établissement', 'coordonnees'],
+      ['numero_agrement', '', 'Numéro d\'agrément délivré par le ministère de la santé', 'legal'],
+      ['directeur_etablissement', '', 'Nom du directeur médical (apparaît sur les documents officiels)', 'legal'],
+      ['entete_facture', '', 'En-tête personnalisé pour les factures (texte libre, multi-lignes). Vide = en-tête standard.', 'impressions'],
+      ['pied_facture', '', 'Pied de page personnalisé pour les factures (mentions légales, conditions de paiement, etc.)', 'impressions'],
+      ['entete_ordonnance', '', 'En-tête personnalisé pour les ordonnances. Vide = en-tête standard.', 'impressions'],
+      ['pied_ordonnance', '', 'Pied de page personnalisé pour les ordonnances.', 'impressions'],
+      ['entete_labo', '', 'En-tête personnalisé pour les résultats de laboratoire.', 'impressions'],
+      ['pied_labo', '', 'Pied de page personnalisé pour les résultats de laboratoire.', 'impressions'],
+      ['chat_retention_months', '72', 'Durée de conservation des messages de chat (mois). HIPAA §164.530(j) impose 6 ans (=72 mois).', 'retention'],
+      ['notif_retention_days', '90', 'Durée de conservation des notifications lues (jours). Les notifs non lues ne sont jamais purgées.', 'retention'],
       ['session_timeout_minutes', '30', 'Timeout de session en minutes', 'securite'],
     ];
     for (const [cle, valeur, description, categorie] of defaultSettings) {
