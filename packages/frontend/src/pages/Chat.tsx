@@ -3,6 +3,7 @@ import { useNavigate, useParams } from 'react-router-dom';
 import { io, type Socket } from 'socket.io-client';
 import { AuthContext } from '../App';
 import { useSnackbar } from '../components/Snackbar';
+import MentionTextarea from '../components/MentionTextarea';
 import {
   listMyChannels, getMessages, postMessage, markChannelRead, deleteChatMessage,
   createChannel, lookupUsers,
@@ -163,8 +164,21 @@ export default function Chat() {
                 ))}
                 <div ref={messagesEndRef} />
               </div>
-              <form onSubmit={handleSend} style={{ padding: '0.75rem', borderTop: '1px solid var(--cds-ui-03)', display: 'flex', gap: '0.5rem' }}>
-                <input type="text" className="form-input" placeholder="Écrire un message… (utilisez @username pour mentionner)" value={draft} onChange={e => setDraft(e.target.value)} style={{ flex: 1 }} />
+              <form onSubmit={handleSend} style={{ padding: '0.75rem', borderTop: '1px solid var(--cds-ui-03)', display: 'flex', gap: '0.5rem', alignItems: 'flex-end' }}>
+                <div style={{ flex: 1 }}>
+                  <MentionTextarea
+                    rows={2}
+                    value={draft}
+                    onChange={setDraft}
+                    placeholder="Écrire un message… (tapez @ pour mentionner — Entrée pour envoyer, Maj+Entrée pour saut de ligne)"
+                    onKeyDown={(e) => {
+                      if (e.key === 'Enter' && !e.shiftKey) {
+                        e.preventDefault();
+                        handleSend(e as unknown as React.FormEvent);
+                      }
+                    }}
+                  />
+                </div>
                 <button type="submit" className="btn-primary" disabled={!draft.trim()}><i className="bi bi-send"></i></button>
               </form>
             </>

@@ -2,6 +2,7 @@ import { useState, useEffect } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import { getPatient, getPatientHistorique, getRendezVous, getVitaux, createVitaux, getAllergies, createAllergie, getPathologies, createPathologie, getPrescriptions, createPrescription, getVaccinations, createVaccination, getNotes, createNote, getAlertes, createAlerte, toggleAlerte, getOrdonnances, getMedecins } from '../services/api';
 import type { Patient, RendezVous, Medecin } from '../types';
+import MentionTextarea from '../components/MentionTextarea';
 
 const tabs = ['resume','vitaux','allergies','pathologies','prescriptions','vaccinations','notes','alertes','consultations','examens','finances','rendezvous','timeline'];
 const tabLabels: Record<string,string> = { resume:'Résumé', vitaux:'Signes vitaux', allergies:'Allergies', pathologies:'Pathologies', prescriptions:'Prescriptions', vaccinations:'Vaccinations', notes:'Notes', alertes:'Alertes', consultations:'Consultations', examens:'Examens', finances:'Finances', rendezvous:'RDV', timeline:'Timeline' };
@@ -321,7 +322,10 @@ function NotesTab({ data, patientId, onRefresh, showModal, setShowModal }: any) 
               <div className="form-group"><label className="form-label">Titre</label><input type="text" className="form-input" value={form.titre} onChange={e=>setForm({...form,titre:e.target.value})} /></div>
               <div className="form-group"><label className="form-label">Type</label><select className="form-select" value={form.type_note} onChange={e=>setForm({...form,type_note:e.target.value})}><option value="general">Général</option><option value="clinique">Clinique</option><option value="infirmier">Infirmier</option><option value="administratif">Administratif</option></select></div>
             </div>
-            <div className="form-group"><label className="form-label">Contenu *</label><textarea className="form-textarea" rows={4} value={form.contenu} onChange={e=>setForm({...form,contenu:e.target.value})} required /></div>
+            <div className="form-group">
+              <label className="form-label">Contenu * <span className="text-muted" style={{fontSize:'0.75rem',fontWeight:400}}>— tapez @ pour mentionner un collègue</span></label>
+              <MentionTextarea rows={4} value={form.contenu} onChange={v => setForm({ ...form, contenu: v })} required />
+            </div>
           </div><div className="modal-footer"><button type="button" className="btn-secondary" onClick={()=>setShowModal(null)}>Annuler</button><button type="submit" className="btn-primary">Enregistrer</button></div></form>
         </div></div>
       )}

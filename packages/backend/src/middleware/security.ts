@@ -13,24 +13,26 @@ export const enforceHttps = (req: Request, res: Response, next: NextFunction): v
 };
 
 // OWASP A03 - Injection: parameterized queries already used in all routes
-// Additional: sanitize string inputs
+// Additional: sanitize string inputs. Arrays MUST stay arrays (the previous
+// version used Object.entries on the top-level body which turned arrays of
+// objects into object-keyed-by-index, breaking every bulk endpoint —
+// PUT /settings, PUT /habilitations/menu-order, etc. that send an array body).
 export const sanitizeInput = (req: Request, _res: Response, next: NextFunction): void => {
-  const sanitize = (obj: Record<string, unknown>): Record<string, unknown> => {
-    const cleaned: Record<string, unknown> = {};
-    for (const [key, value] of Object.entries(obj)) {
-      if (typeof value === 'string') {
-        // Strip null bytes, trim whitespace
-        cleaned[key] = value.replace(/\0/g, '').trim();
-      } else if (value && typeof value === 'object' && !Array.isArray(value)) {
-        cleaned[key] = sanitize(value as Record<string, unknown>);
-      } else {
-        cleaned[key] = value;
+  const sanitize = (value: unknown): unknown => {
+    if (value === null || value === undefined) return value;
+    if (typeof value === 'string') return value.replace(/\0/g, '').trim();
+    if (Array.isArray(value)) return value.map(sanitize);
+    if (typeof value === 'object') {
+      const cleaned: Record<string, unknown> = {};
+      for (const [key, v] of Object.entries(value as Record<string, unknown>)) {
+        cleaned[key] = sanitize(v);
       }
+      return cleaned;
     }
-    return cleaned;
+    return value;
   };
 
-  if (req.body && typeof req.body === 'object') {
+  if (req.body !== undefined && req.body !== null) {
     req.body = sanitize(req.body);
   }
   next();
