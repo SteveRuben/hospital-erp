@@ -21,16 +21,9 @@ import { asyncHandler } from '../middleware/asyncHandler.js';
 import { logAudit } from '../services/audit.js';
 import { notifyMany } from '../services/notify.js';
 import { emitToChannel } from '../services/realtime.js';
+import { extractMentions, resolveMentions, BROADCAST_HANDLES } from '../services/mention.js';
 
 const router = Router();
-
-const MENTION_RE = /(?:^|\s)@([a-zA-Z0-9._-]{2,100})\b/g;
-function extractMentions(content: string): string[] {
-  const matches = new Set<string>();
-  let m: RegExpExecArray | null;
-  while ((m = MENTION_RE.exec(content)) !== null) matches.add(m[1].toLowerCase());
-  return Array.from(matches);
-}
 
 async function isMember(channelId: number, userId: number): Promise<boolean> {
   const row = await prisma.channelMember.findUnique({
@@ -137,7 +130,19 @@ router.get('/channels/:id/messages', authenticate, asyncHandler(async (req: Auth
     orderBy: { createdAt: 'desc' },
     take: limit,
   });
-  res.json(rows);
+
+  // Resolve mentions across the page in a single query so the client can
+  // render @username chips with full names.
+  const all = new Set<string>();
+  for (const r of rows) for (const u of extractMentions(r.content)) all.add(u);
+  const mentionedUsers = await resolveMentions(Array.from(all));
+  const userMap = new Map(mentionedUsers.map(u => [u.username.toLowerCase(), u]));
+  const enriched = rows.map(r => {
+    const mentions = extractMentions(r.content).map(u => userMap.get(u)).filter((u): u is NonNullable<typeof u> => u != null);
+    return { ...r, mentions };
+  });
+
+  res.json(enriched);
 }));
 
 // Post a message. Fans out to channel members via Socket.IO + creates
@@ -158,10 +163,15 @@ router.post('/channels/:id/messages', authenticate, asyncHandler(async (req: Aut
     return;
   }
 
-  const message = await prisma.chatMessage.create({
+  const created = await prisma.chatMessage.create({
     data: { channelId, authorId: req.user!.id, content: content.trim() },
     include: { author: { select: { id: true, username: true, nom: true, prenom: true, role: true } } },
   });
+
+  // Resolve mentions for both the realtime push and the HTTP response so
+  // every client renders chips immediately without a separate lookup.
+  const mentionedUsers = await resolveMentions(extractMentions(created.content));
+  const message = { ...created, mentions: mentionedUsers };
 
   // Realtime push to everyone subscribed to the channel room
   emitToChannel(channelId, 'chat_message', message);
@@ -183,12 +193,27 @@ router.post('/channels/:id/messages', authenticate, asyncHandler(async (req: Aut
     if (!channel) return;
     const channelMemberIds = new Set(channel.members.map(m => m.userId));
 
-    // Mention notifs — only fire for users who are channel members.
-    if (mentioned.length > 0) {
-      const users = await prisma.user.findMany({
-        where: { username: { in: mentioned, mode: 'insensitive' } },
-        select: { id: true },
-      });
+    // @tous / @all in group channels broadcasts to every member. Suppressed
+    // in DM (the other party is already notified through the dm branch below)
+    // — avoids a noisy duplicate notif.
+    const hasBroadcast = mentioned.some(u => BROADCAST_HANDLES.has(u));
+    if (hasBroadcast && channel.type !== 'dm') {
+      const broadcastRecipients = Array.from(channelMemberIds).filter(id => id !== req.user!.id);
+      if (broadcastRecipients.length > 0) {
+        await notifyMany(broadcastRecipients, {
+          type: 'chat_mention',
+          title: `Annonce à tous dans #${channel.name}`,
+          body: content.substring(0, 200),
+          link: `/app/chat/${channelId}`,
+        });
+      }
+    }
+
+    // Targeted @-handle mentions — only fire for users who are channel members.
+    // resolveMentions matches both username and custom mention_handle.
+    const realMentions = mentioned.filter(u => !BROADCAST_HANDLES.has(u));
+    if (realMentions.length > 0) {
+      const users = await resolveMentions(realMentions);
       const mentionRecipients = users.map(u => u.id).filter(id => id !== req.user!.id && channelMemberIds.has(id));
       if (mentionRecipients.length > 0) {
         await notifyMany(mentionRecipients, {

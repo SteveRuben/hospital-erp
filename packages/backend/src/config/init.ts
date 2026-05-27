@@ -832,6 +832,15 @@ export const initDB = async (): Promise<void> => {
       ALTER TABLE users ADD COLUMN IF NOT EXISTS onboarding_dismissed_at TIMESTAMP;
     `);
 
+    // Custom @-mention handle per user (takes priority over username when set).
+    // Partial unique index ignores NULLs so existing users don't clash.
+    await client.query(`
+      ALTER TABLE users ADD COLUMN IF NOT EXISTS mention_handle VARCHAR(50);
+      CREATE UNIQUE INDEX IF NOT EXISTS idx_users_mention_handle_unique
+        ON users (LOWER(mention_handle))
+        WHERE mention_handle IS NOT NULL;
+    `);
+
     // In-app staff notifications (distinct from notifications_log which is
     // outbound SMS/email). Feeds the bell-icon dropdown.
     await client.query(`

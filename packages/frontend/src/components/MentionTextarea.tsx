@@ -77,7 +77,10 @@ export default function MentionTextarea({ value, onChange, placeholder, rows = 3
     if (!mentionRange) return;
     const before = value.substring(0, mentionRange.start);
     const after = value.substring(mentionRange.end);
-    const insert = `@${user.username} `;
+    // Prefer the user's custom @-handle when set — that's the shortcut they
+    // chose for themselves. Falls back to the login username.
+    const handle = user.mention_handle || user.username;
+    const insert = `@${handle} `;
     const newValue = before + insert + after;
     onChange(newValue);
     setMentionRange(null);
@@ -125,7 +128,7 @@ export default function MentionTextarea({ value, onChange, placeholder, rows = 3
               onMouseEnter={() => setSelectedIndex(idx)}
               style={{ padding: '0.5rem 0.75rem', cursor: 'pointer', fontSize: '0.8125rem', background: idx === selectedIndex ? 'var(--cds-ui-01)' : 'transparent', borderBottom: idx < suggestions.length - 1 ? '1px solid var(--cds-ui-03)' : 'none' }}
             >
-              <strong>{u.prenom} {u.nom}</strong> <span className="text-muted">@{u.username} · {u.role}</span>
+              <strong>{u.prenom} {u.nom}</strong> <span className="text-muted">@{u.mention_handle || u.username} · {u.role}</span>
             </div>
           ))}
         </div>

@@ -255,6 +255,8 @@ export const uploadLogo = (file: File) => {
 };
 export const deleteLogo = () => api.delete('/settings/logo');
 export const dismissOnboarding = () => api.post<{ onboarding_dismissed_at: string }>('/auth/dismiss-onboarding');
+export const setMyMentionHandle = (mention_handle: string | null) =>
+  api.put<{ mention_handle: string | null }>('/auth/me/mention-handle', { mention_handle });
 
 // In-app notification inbox
 export interface InboxNotification {
@@ -275,12 +277,12 @@ export const markAllNotifsRead = () => api.patch('/inbox/read-all');
 export const deleteNotif = (id: number) => api.delete(`/inbox/${id}`);
 
 // Username typeahead for @mentions
-export interface UserLookup { id: number; username: string; nom: string | null; prenom: string | null; role: string }
+export interface UserLookup { id: number; username: string; mention_handle: string | null; nom: string | null; prenom: string | null; role: string }
 export const lookupUsers = (q: string) => api.get<UserLookup[]>(`/auth/users/lookup?q=${encodeURIComponent(q)}`);
 
 // Staff chat
 export interface ChatChannel { id: number; type: string; name: string; description: string | null; serviceId: number | null; archived: boolean; createdAt: string; lastReadAt: string | null; unread: number }
-export interface ChatMessage { id: number; channelId: number; authorId: number; content: string; createdAt: string; editedAt: string | null; deletedAt: string | null; author: { id: number; username: string; nom: string | null; prenom: string | null; role: string } }
+export interface ChatMessage { id: number; channelId: number; authorId: number; content: string; createdAt: string; editedAt: string | null; deletedAt: string | null; author: { id: number; username: string; nom: string | null; prenom: string | null; role: string }; mentions?: Array<{ id: number; username: string; nom: string | null; prenom: string | null; role: string }> }
 export const listMyChannels = () => api.get<ChatChannel[]>('/chat/channels');
 export const createChannel = (data: { type: 'custom' | 'dm'; name: string; description?: string; member_ids?: number[] }) => api.post<ChatChannel>('/chat/channels', data);
 export const getMessages = (channelId: number, before?: string, limit = 50) =>

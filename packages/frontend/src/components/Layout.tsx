@@ -8,6 +8,7 @@ import LocaleSelector from './LocaleSelector';
 import { useBranding } from './BrandingProvider';
 import OnboardingWizard from './OnboardingWizard';
 import NotificationsBell from './NotificationsBell';
+import MentionHandleDialog from './MentionHandleDialog';
 
 interface MenuItemDB { id: number; groupe: string; groupe_ordre: number; module: string; label: string; icon: string; path: string; ordre: number }
 
@@ -18,6 +19,7 @@ export default function Layout({ children }: { children: React.ReactNode }) {
   const { branding } = useBranding();
   const [menuGroups, setMenuGroups] = useState<Array<{ label: string; items: MenuItemDB[] }>>([]);
   const [showOnboarding, setShowOnboarding] = useState(false);
+  const [showHandleDialog, setShowHandleDialog] = useState(false);
 
   // Onboarding state is now per-admin in the DB (User.onboardingDismissedAt).
   // The wizard auto-pops if:
@@ -89,6 +91,7 @@ export default function Layout({ children }: { children: React.ReactNode }) {
   return (
     <>
       {showOnboarding && <OnboardingWizard onClose={() => setShowOnboarding(false)} />}
+      {showHandleDialog && <MentionHandleDialog onClose={() => setShowHandleDialog(false)} />}
 
       {impersonating && (
         <div style={{ position: 'fixed', top: 0, left: 0, right: 0, zIndex: 200, background: '#da1e28', color: '#fff', padding: '0.5rem 1.5rem', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '1rem', fontSize: '0.8125rem', fontWeight: 500 }}>
@@ -110,7 +113,11 @@ export default function Layout({ children }: { children: React.ReactNode }) {
           <LocaleSelector />
           <button title="Discussion équipe" onClick={() => navigate('/app/chat')}><i className="bi bi-chat-dots"></i></button>
           <NotificationsBell />
-          <div className="header-user"><i className="bi bi-person-circle"></i><span>{user?.prenom} {user?.nom}</span></div>
+          <div className="header-user" onClick={() => setShowHandleDialog(true)} title={`@${user?.mention_handle || user?.username} — cliquez pour personnaliser`} style={{ cursor: 'pointer' }}>
+            <i className="bi bi-person-circle"></i>
+            <span>{user?.prenom} {user?.nom}</span>
+            {user?.mention_handle && <span style={{ fontSize: '0.6875rem', color: '#8d8d8d', marginLeft: '0.25rem' }}>@{user.mention_handle}</span>}
+          </div>
         </div>
       </header>
 

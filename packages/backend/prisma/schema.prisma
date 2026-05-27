@@ -27,6 +27,7 @@ model User {
   must_change_password Boolean  @default(true)
   mfaEnabled          Boolean   @default(false) @map("mfa_enabled")
   mfaSecret           String?   @map("mfa_secret") @db.VarChar(255)
+  mentionHandle       String?   @unique @map("mention_handle") @db.VarChar(50)
   onboardingDismissedAt DateTime? @map("onboarding_dismissed_at")
   createdAt           DateTime  @default(now()) @map("created_at")
 

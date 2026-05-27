@@ -114,6 +114,7 @@ router.post('/login', validate(loginSchema), async (req: Request, res: Response)
         must_change_password: user.must_change_password ?? false,
         mfa_enabled: user.mfaEnabled ?? false,
         onboarding_dismissed_at: user.onboardingDismissedAt ?? null,
+        mention_handle: user.mentionHandle ?? null,
       }
     });
   } catch (err) {
@@ -145,7 +146,7 @@ router.post('/login/mfa', async (req: Request, res: Response): Promise<void> => 
 
     const user = await prisma.user.findUnique({
       where: { id: challenge.userId },
-      select: { id: true, username: true, role: true, nom: true, prenom: true, must_change_password: true, mfaEnabled: true, onboardingDismissedAt: true },
+      select: { id: true, username: true, role: true, nom: true, prenom: true, must_change_password: true, mfaEnabled: true, onboardingDismissedAt: true, mentionHandle: true },
     });
     if (!user) { res.status(401).json({ error: 'Utilisateur non trouvé' }); return; }
 
@@ -162,6 +163,7 @@ router.post('/login/mfa', async (req: Request, res: Response): Promise<void> => 
         must_change_password: user.must_change_password ?? false,
         mfa_enabled: user.mfaEnabled ?? false,
         onboarding_dismissed_at: user.onboardingDismissedAt ?? null,
+        mention_handle: user.mentionHandle ?? null,
       }
     });
   } catch (err) {
@@ -265,7 +267,7 @@ router.get('/me', authenticate, async (req: AuthRequest, res: Response): Promise
   try {
     const user = await prisma.user.findUnique({
       where: { id: req.user!.id },
-      select: { id: true, username: true, role: true, nom: true, prenom: true, telephone: true, mfaEnabled: true, onboardingDismissedAt: true },
+      select: { id: true, username: true, role: true, nom: true, prenom: true, telephone: true, mfaEnabled: true, onboardingDismissedAt: true, mentionHandle: true },
     });
 
     if (!user) {
@@ -273,7 +275,7 @@ router.get('/me', authenticate, async (req: AuthRequest, res: Response): Promise
       return;
     }
 
-    res.json({ ...user, mfa_enabled: user.mfaEnabled, onboarding_dismissed_at: user.onboardingDismissedAt });
+    res.json({ ...user, mfa_enabled: user.mfaEnabled, onboarding_dismissed_at: user.onboardingDismissedAt, mention_handle: user.mentionHandle });
   } catch (err) {
     res.status(500).json({ error: 'Erreur serveur' });
   }
@@ -334,7 +336,8 @@ router.post('/users', authenticate, authorize('admin'), validate(createUserSchem
 
 // Username typeahead for @mentions. Any authenticated user can query, but
 // requires ≥2 chars of prefix to discourage full-roster enumeration. Returns
-// only fields needed to render a mention chip (id, username, nom, prenom, role).
+// the fields needed to render a mention chip. `mention_handle` is the user's
+// custom handle when set, falling back to `username` in the client.
 router.get('/users/lookup', authenticate, async (req: AuthRequest, res: Response): Promise<void> => {
   try {
     const q = String(req.query.q || '').trim();
@@ -343,16 +346,52 @@ router.get('/users/lookup', authenticate, async (req: AuthRequest, res: Response
       where: {
         OR: [
           { username: { contains: q, mode: 'insensitive' } },
+          { mentionHandle: { contains: q, mode: 'insensitive' } },
           { nom: { contains: q, mode: 'insensitive' } },
           { prenom: { contains: q, mode: 'insensitive' } },
         ],
       },
-      select: { id: true, username: true, nom: true, prenom: true, role: true },
+      select: { id: true, username: true, mentionHandle: true, nom: true, prenom: true, role: true },
       orderBy: { username: 'asc' },
       take: 10,
     });
-    res.json(rows);
+    // Client UI shows whichever handle the user types — return both so it can
+    // render `@<handle or username>`.
+    res.json(rows.map(r => ({ ...r, mention_handle: r.mentionHandle })));
   } catch {
+    res.status(500).json({ error: 'Erreur serveur' });
+  }
+});
+
+// Update the current user's @-mention handle. Validates the format and
+// uniqueness via the partial unique index (the DB enforces it; we just
+// translate the resulting error). Set to null to remove.
+router.put('/me/mention-handle', authenticate, async (req: AuthRequest, res: Response): Promise<void> => {
+  try {
+    const raw = req.body?.mention_handle;
+    if (raw === null || raw === '' || raw === undefined) {
+      await prisma.user.update({ where: { id: req.user!.id }, data: { mentionHandle: null } });
+      res.json({ mention_handle: null });
+      return;
+    }
+    const value = String(raw).trim();
+    if (!/^[a-zA-Z0-9._-]{2,50}$/.test(value)) {
+      res.status(400).json({ error: 'Le @-handle doit faire 2 à 50 caractères, lettres/chiffres/._- uniquement' });
+      return;
+    }
+    try {
+      await prisma.user.update({ where: { id: req.user!.id }, data: { mentionHandle: value } });
+      res.json({ mention_handle: value });
+    } catch (err: unknown) {
+      // Unique constraint violation → 409 so the UI can show "déjà pris"
+      if (err instanceof Error && (err.message.includes('Unique') || err.message.includes('unique'))) {
+        res.status(409).json({ error: 'Ce @-handle est déjà utilisé par un autre utilisateur' });
+        return;
+      }
+      throw err;
+    }
+  } catch (err) {
+    console.error('[AUTH] mention handle update failed:', err);
     res.status(500).json({ error: 'Erreur serveur' });
   }
 });

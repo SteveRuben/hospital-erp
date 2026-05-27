@@ -4,6 +4,7 @@ import { io, type Socket } from 'socket.io-client';
 import { AuthContext } from '../App';
 import { useSnackbar } from '../components/Snackbar';
 import MentionTextarea from '../components/MentionTextarea';
+import MentionContent from '../components/MentionContent';
 import {
   listMyChannels, getMessages, postMessage, markChannelRead, deleteChatMessage,
   createChannel, lookupUsers,
@@ -154,7 +155,7 @@ export default function Chat() {
                   <div key={m.id} style={{ display: 'flex', flexDirection: 'column', alignItems: m.author.id === user?.id ? 'flex-end' : 'flex-start' }}>
                     <div style={{ background: m.author.id === user?.id ? 'var(--cds-interactive)' : 'var(--cds-ui-01)', color: m.author.id === user?.id ? '#fff' : 'inherit', padding: '0.5rem 0.75rem', borderRadius: '4px', maxWidth: '70%', position: 'relative' }}>
                       {m.author.id !== user?.id && <div style={{ fontSize: '0.6875rem', fontWeight: 600, marginBottom: '0.125rem', opacity: 0.8 }}>{m.author.prenom} {m.author.nom}</div>}
-                      <div style={{ fontSize: '0.875rem', whiteSpace: 'pre-wrap', wordBreak: 'break-word' }}>{m.content}</div>
+                      <div style={{ fontSize: '0.875rem' }}><MentionContent content={m.content} mentions={m.mentions} /></div>
                       <div style={{ fontSize: '0.625rem', opacity: 0.7, marginTop: '0.25rem' }}>{new Date(m.createdAt).toLocaleTimeString('fr-FR', { hour: '2-digit', minute: '2-digit' })}</div>
                     </div>
                     {(m.author.id === user?.id || user?.role === 'admin') && (

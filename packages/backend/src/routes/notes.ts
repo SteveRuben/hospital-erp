@@ -6,20 +6,9 @@ import { asyncHandler } from '../middleware/asyncHandler.js';
 import { requirePatientAccess } from '../middleware/patient-access.js';
 import { requireResourceAccess } from '../middleware/resource-access.js';
 import { notifyMany } from '../services/notify.js';
+import { extractMentions, resolveMentions } from '../services/mention.js';
 
 const router = Router();
-
-// Matches @username — letters, digits, dot, underscore, hyphen — 2-100 chars.
-// Anchored at word boundaries so "email@example.com" is NOT a mention.
-// Capture group 1 is the bare username.
-const MENTION_RE = /(?:^|\s)@([a-zA-Z0-9._-]{2,100})\b/g;
-
-function extractMentions(content: string): string[] {
-  const matches = new Set<string>();
-  let m: RegExpExecArray | null;
-  while ((m = MENTION_RE.exec(content)) !== null) matches.add(m[1].toLowerCase());
-  return Array.from(matches);
-}
 
 router.get('/:patientId', authenticate, requirePatientAccess, asyncHandler(async (req, res) => {
   const rows = await prisma.note.findMany({
@@ -27,12 +16,38 @@ router.get('/:patientId', authenticate, requirePatientAccess, asyncHandler(async
     include: { auteur: { select: { nom: true, prenom: true, role: true } } },
     orderBy: { createdAt: 'desc' },
   });
-  const mapped = rows.map(n => ({
-    ...n,
-    auteur_nom: n.auteur?.nom ?? null,
-    auteur_prenom: n.auteur?.prenom ?? null,
-    auteur_role: n.auteur?.role ?? null,
-  }));
+  // Resolve @mentions server-side so the frontend renders chips with full
+  // names instead of raw @username tokens. Single query for all notes,
+  // matches both username and custom mention_handle.
+  const allMentions = new Set<string>();
+  for (const n of rows) for (const u of extractMentions(n.contenu)) allMentions.add(u);
+  const mentionedUsers = await resolveMentions(Array.from(allMentions));
+  // A user can be reached by either their username or their custom handle;
+  // build a lookup that resolves both so the chip resolution works whichever
+  // form the author typed.
+  const userByHandle = new Map<string, typeof mentionedUsers[number]>();
+  for (const u of mentionedUsers) {
+    userByHandle.set(u.username.toLowerCase(), u);
+    if (u.mention_handle) userByHandle.set(u.mention_handle.toLowerCase(), u);
+  }
+
+  const mapped = rows.map(n => {
+    const usernames = extractMentions(n.contenu);
+    const mentions = usernames.map(u => userByHandle.get(u)).filter((u): u is NonNullable<typeof u> => u != null);
+    return {
+      ...n,
+      // Frontend expects snake_case; Prisma returns camelCase. The note's
+      // own timestamp was the source of the "Invalid Date" the user saw.
+      created_at: n.createdAt,
+      type_note: n.typeNote,
+      patient_id: n.patientId,
+      auteur_id: n.auteurId,
+      auteur_nom: n.auteur?.nom ?? null,
+      auteur_prenom: n.auteur?.prenom ?? null,
+      auteur_role: n.auteur?.role ?? null,
+      mentions,
+    };
+  });
   res.json(mapped);
 }));
 
@@ -49,15 +64,13 @@ router.post('/', authenticate, validate(createNoteSchema), requirePatientAccess,
     },
   });
 
-  // Fan out @username mentions to in-app notifications. Best-effort: a
-  // notification failure must not roll back the note creation.
+  // Fan out @-mentions to in-app notifications. Best-effort: a notification
+  // failure must not roll back the note creation. Uses the shared mention
+  // service so username + custom mention_handle both work.
   try {
-    const mentionedUsernames = extractMentions(contenu);
-    if (mentionedUsernames.length > 0) {
-      const users = await prisma.user.findMany({
-        where: { username: { in: mentionedUsernames, mode: 'insensitive' } },
-        select: { id: true },
-      });
+    const handles = extractMentions(contenu);
+    if (handles.length > 0) {
+      const users = await resolveMentions(handles);
       // Don't notify the author when they mention themselves.
       const recipientIds = users.map(u => u.id).filter(id => id !== authReq.user!.id);
       if (recipientIds.length > 0) {

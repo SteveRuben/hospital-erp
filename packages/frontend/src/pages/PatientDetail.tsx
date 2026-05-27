@@ -3,6 +3,7 @@ import { useParams, useNavigate } from 'react-router-dom';
 import { getPatient, getPatientHistorique, getRendezVous, getVitaux, createVitaux, getAllergies, createAllergie, getPathologies, createPathologie, getPrescriptions, createPrescription, getVaccinations, createVaccination, getNotes, createNote, getAlertes, createAlerte, toggleAlerte, getOrdonnances, getMedecins } from '../services/api';
 import type { Patient, RendezVous, Medecin } from '../types';
 import MentionTextarea from '../components/MentionTextarea';
+import MentionContent from '../components/MentionContent';
 
 const tabs = ['resume','vitaux','allergies','pathologies','prescriptions','vaccinations','notes','alertes','consultations','examens','finances','rendezvous','timeline'];
 const tabLabels: Record<string,string> = { resume:'Résumé', vitaux:'Signes vitaux', allergies:'Allergies', pathologies:'Pathologies', prescriptions:'Prescriptions', vaccinations:'Vaccinations', notes:'Notes', alertes:'Alertes', consultations:'Consultations', examens:'Examens', finances:'Finances', rendezvous:'RDV', timeline:'Timeline' };
@@ -310,7 +311,7 @@ function NotesTab({ data, patientId, onRefresh, showModal, setShowModal }: any) 
             <div className="d-flex align-center gap-1"><span className={`tag ${typeColors[n.type_note]||'tag-gray'}`}>{n.type_note}</span><strong>{n.titre || 'Sans titre'}</strong></div>
             <span className="text-muted" style={{fontSize:'0.75rem'}}>{new Date(n.created_at).toLocaleString('fr-FR')} — {n.auteur_prenom} {n.auteur_nom}</span>
           </div>
-          <p style={{fontSize:'0.875rem'}}>{n.contenu}</p>
+          <p style={{fontSize:'0.875rem'}}><MentionContent content={n.contenu} mentions={n.mentions} /></p>
         </div>
       ))}
       {!data.length && <div className="table-empty"><i className="bi bi-journal-text" style={{fontSize:'2rem',display:'block',marginBottom:'0.5rem'}}></i>Aucune note</div>}
