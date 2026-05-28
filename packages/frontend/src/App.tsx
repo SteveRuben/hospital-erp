@@ -182,7 +182,7 @@ function App() {
                         <Route path="/imagerie" element={<RoleGuard roles={['admin','medecin']}><Imagerie /></RoleGuard>} />
                         <Route path="/concepts" element={<RoleGuard roles={['admin']}><Concepts /></RoleGuard>} />
                         <Route path="/orders" element={<RoleGuard roles={['admin','medecin','laborantin']}><Orders /></RoleGuard>} />
-                        <Route path="/pharmacie" element={<RoleGuard roles={['admin','medecin']}><Pharmacie /></RoleGuard>} />
+                        <Route path="/pharmacie" element={<RoleGuard roles={['admin','medecin','pharmacien']}><Pharmacie /></RoleGuard>} />
                         <Route path="/patient-merge" element={<RoleGuard roles={['admin']}><PatientMerge /></RoleGuard>} />
                         <Route path="/rapports" element={<RoleGuard roles={['admin','comptable']}><Rapports /></RoleGuard>} />
                         <Route path="/chat" element={<Chat />} />

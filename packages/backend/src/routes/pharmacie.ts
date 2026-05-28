@@ -27,7 +27,7 @@ router.get('/medicaments', authenticate, async (req: AuthRequest, res: Response)
   } catch (err) { res.status(500).json({ error: 'Erreur serveur' }); }
 });
 
-router.post('/medicaments', authenticate, authorize('admin'), validate(createMedicamentSchema), async (req: AuthRequest, res: Response): Promise<void> => {
+router.post('/medicaments', authenticate, authorize('admin', 'pharmacien'), validate(createMedicamentSchema), async (req: AuthRequest, res: Response): Promise<void> => {
   try {
     const { nom, dci, forme, dosage_standard, code_barre, categorie, prix_unitaire } = req.body;
     const n = (v: unknown) => (v === '' || v === undefined) ? null : v;
@@ -74,7 +74,7 @@ router.get('/stock', authenticate, async (_req: AuthRequest, res: Response): Pro
   } catch (err) { res.status(500).json({ error: 'Erreur serveur' }); }
 });
 
-router.post('/stock', authenticate, authorize('admin'), validate(createStockSchema), async (req: AuthRequest, res: Response): Promise<void> => {
+router.post('/stock', authenticate, authorize('admin', 'pharmacien'), validate(createStockSchema), async (req: AuthRequest, res: Response): Promise<void> => {
   try {
     const { medicament_id, lot, date_expiration, quantite, quantite_min, prix_achat, fournisseur } = req.body;
     const n = (v: unknown) => (v === '' || v === undefined) ? null : v;
@@ -382,7 +382,7 @@ router.post('/vente', authenticate, async (req: AuthRequest, res: Response): Pro
 // Single batched createMany (skipDuplicates) replaces N sequential round-trips.
 // The previous code ran a dead upsert({ where: { id: -1 } }) which always threw
 // (caught silently) plus a raw INSERT — net 2 round-trips per row, dead code in one.
-router.post('/import', authenticate, authorize('admin'), upload.single('file'), async (req: AuthRequest, res: Response): Promise<void> => {
+router.post('/import', authenticate, authorize('admin', 'pharmacien'), upload.single('file'), async (req: AuthRequest, res: Response): Promise<void> => {
   try {
     if (!req.file) { res.status(400).json({ error: 'Fichier CSV requis' }); return; }
 

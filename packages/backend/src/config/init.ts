@@ -10,7 +10,7 @@ export const initDB = async (): Promise<void> => {
         id SERIAL PRIMARY KEY,
         username VARCHAR(100) UNIQUE NOT NULL,
         password VARCHAR(255) NOT NULL,
-        role VARCHAR(50) NOT NULL CHECK (role IN ('admin', 'medecin', 'comptable', 'laborantin', 'reception')),
+        role VARCHAR(50) NOT NULL CHECK (role IN ('admin', 'medecin', 'comptable', 'laborantin', 'reception', 'pharmacien')),
         nom VARCHAR(100),
         prenom VARCHAR(100),
         telephone VARCHAR(20),
@@ -724,6 +724,7 @@ export const initDB = async (): Promise<void> => {
       comptable: ['dashboard','finances','documentation','facturation','rapports'],
       laborantin: ['dashboard','laboratoire','documentation','orders'],
       reception: ['dashboard','patients','rendezvous','visites','file-attente','documentation'],
+      pharmacien: ['dashboard','pharmacie','patients','documentation','orders'],
     };
     for (const [role, mods] of Object.entries(roleAccess)) {
       for (const mod of modules) {
@@ -839,6 +840,34 @@ export const initDB = async (): Promise<void> => {
       CREATE UNIQUE INDEX IF NOT EXISTS idx_users_mention_handle_unique
         ON users (LOWER(mention_handle))
         WHERE mention_handle IS NOT NULL;
+    `);
+
+    // Add the 'pharmacien' role to existing databases. Two schema variants
+    // exist in the wild: a native PG enum "UserRole" (Prisma migrate path)
+    // and a VARCHAR + CHECK column (init.ts bootstrap path). Handle both.
+    await client.query(`
+      DO $$
+      BEGIN
+        -- Native enum variant: add the label if the type exists and lacks it.
+        IF EXISTS (SELECT 1 FROM pg_type WHERE typname = 'UserRole') THEN
+          IF NOT EXISTS (
+            SELECT 1 FROM pg_enum e JOIN pg_type t ON e.enumtypid = t.oid
+            WHERE t.typname = 'UserRole' AND e.enumlabel = 'pharmacien'
+          ) THEN
+            ALTER TYPE "UserRole" ADD VALUE 'pharmacien';
+          END IF;
+        END IF;
+
+        -- VARCHAR + CHECK variant: rebuild the constraint to allow pharmacien.
+        IF EXISTS (
+          SELECT 1 FROM information_schema.columns
+          WHERE table_name = 'users' AND column_name = 'role' AND data_type = 'character varying'
+        ) THEN
+          ALTER TABLE users DROP CONSTRAINT IF EXISTS users_role_check;
+          ALTER TABLE users ADD CONSTRAINT users_role_check
+            CHECK (role IN ('admin','medecin','comptable','laborantin','reception','pharmacien'));
+        END IF;
+      END $$;
     `);
 
     // In-app staff notifications (distinct from notifications_log which is

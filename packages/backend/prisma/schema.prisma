@@ -14,6 +14,7 @@ enum UserRole {
   comptable
   laborantin
   reception
+  pharmacien
 }
 
 model User {

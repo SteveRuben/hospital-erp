@@ -36,7 +36,7 @@ export const loginSchema = z.object({
 export const createUserSchema = z.object({
   username: z.string().min(3).max(100).trim().regex(/^[a-zA-Z0-9_]+$/, 'Caractères alphanumériques uniquement'),
   password: z.string().min(8).max(255),
-  role: z.enum(['admin', 'medecin', 'comptable', 'laborantin', 'reception']),
+  role: z.enum(['admin', 'medecin', 'comptable', 'laborantin', 'reception', 'pharmacien']),
   nom: z.string().min(1).max(100).trim().optional(),
   prenom: z.string().min(1).max(100).trim().optional(),
   telephone: z.string().max(20).trim().optional(),

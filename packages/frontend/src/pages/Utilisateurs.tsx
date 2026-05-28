@@ -9,6 +9,7 @@ const roleConfig: Record<string, { label: string; tag: string; desc: string }> =
   comptable: { label: 'Comptable', tag: 'tag-green', desc: 'Finances, facturation' },
   laborantin: { label: 'Laborantin', tag: 'tag-purple', desc: 'Module laboratoire' },
   reception: { label: 'Réception', tag: 'tag-orange', desc: 'Patients, RDV, file d\'attente' },
+  pharmacien: { label: 'Pharmacien', tag: 'tag-teal', desc: 'Pharmacie, stock, dispensations' },
 };
 
 const emptyForm = { username: '', password: '', role: 'reception' as string, nom: '', prenom: '', telephone: '' };

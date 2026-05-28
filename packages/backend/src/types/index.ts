@@ -1,5 +1,5 @@
 // User roles
-export type UserRole = 'admin' | 'medecin' | 'comptable' | 'laborantin' | 'reception';
+export type UserRole = 'admin' | 'medecin' | 'comptable' | 'laborantin' | 'reception' | 'pharmacien';
 
 // User model
 export interface User {

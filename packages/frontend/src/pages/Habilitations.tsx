@@ -7,6 +7,7 @@ const allRoles = [
   { role: 'comptable', label: 'Comptable', tag: 'tag-green' },
   { role: 'laborantin', label: 'Laborantin', tag: 'tag-purple' },
   { role: 'reception', label: 'Réception', tag: 'tag-orange' },
+  { role: 'pharmacien', label: 'Pharmacien', tag: 'tag-teal' },
 ];
 
 interface Hab { id: number; role: string; module: string; acces: boolean }
@@ -173,6 +174,7 @@ export default function Habilitations() {
                 comptable: 'Recettes, dépenses, factures, tarifs, paiements, bilan',
                 laborantin: 'CRUD examens, résultats labo, workflow Kanban',
                 reception: 'Création patients, RDV, file d\'attente, visites',
+                pharmacien: 'Pharmacie : médicaments, stock, dispensations, mouvements',
               };
               return (
                 <div className="tile" key={r.role} style={{ padding: '1.25rem' }}>
