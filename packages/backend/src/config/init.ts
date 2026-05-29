@@ -842,30 +842,42 @@ export const initDB = async (): Promise<void> => {
         WHERE mention_handle IS NOT NULL;
     `);
 
-    // Add the 'pharmacien' role to existing databases. Two schema variants
-    // exist in the wild: a native PG enum "UserRole" (Prisma migrate path)
-    // and a VARCHAR + CHECK column (init.ts bootstrap path). Handle both.
+    // Align users.role with the Prisma schema's native "UserRole" enum.
+    //
+    // The prod DB was bootstrapped here with role as VARCHAR + CHECK, but the
+    // Prisma schema declares `role UserRole` (native enum). prisma.user.create()
+    // therefore casts to ::public."UserRole" and fails with
+    // `type "public.UserRole" does not exist` when the type is absent. We
+    // create the type and migrate the column to it.
+    //
+    // Step 1 (own query so any ALTER TYPE ADD VALUE commits before step 2):
+    // ensure the enum type exists and carries every label including pharmacien.
     await client.query(`
       DO $$
       BEGIN
-        -- Native enum variant: add the label if the type exists and lacks it.
-        IF EXISTS (SELECT 1 FROM pg_type WHERE typname = 'UserRole') THEN
-          IF NOT EXISTS (
-            SELECT 1 FROM pg_enum e JOIN pg_type t ON e.enumtypid = t.oid
-            WHERE t.typname = 'UserRole' AND e.enumlabel = 'pharmacien'
-          ) THEN
-            ALTER TYPE "UserRole" ADD VALUE 'pharmacien';
-          END IF;
+        IF NOT EXISTS (SELECT 1 FROM pg_type WHERE typname = 'UserRole') THEN
+          CREATE TYPE "UserRole" AS ENUM ('admin','medecin','comptable','laborantin','reception','pharmacien');
+        ELSIF NOT EXISTS (
+          SELECT 1 FROM pg_enum e JOIN pg_type t ON e.enumtypid = t.oid
+          WHERE t.typname = 'UserRole' AND e.enumlabel = 'pharmacien'
+        ) THEN
+          ALTER TYPE "UserRole" ADD VALUE 'pharmacien';
         END IF;
+      END $$;
+    `);
 
-        -- VARCHAR + CHECK variant: rebuild the constraint to allow pharmacien.
+    // Step 2: if the column is still VARCHAR, drop the CHECK and convert it to
+    // the enum type so Prisma's generated casts line up with the column.
+    // No-op once the column is already the enum type.
+    await client.query(`
+      DO $$
+      BEGIN
         IF EXISTS (
           SELECT 1 FROM information_schema.columns
           WHERE table_name = 'users' AND column_name = 'role' AND data_type = 'character varying'
         ) THEN
           ALTER TABLE users DROP CONSTRAINT IF EXISTS users_role_check;
-          ALTER TABLE users ADD CONSTRAINT users_role_check
-            CHECK (role IN ('admin','medecin','comptable','laborantin','reception','pharmacien'));
+          ALTER TABLE users ALTER COLUMN role TYPE "UserRole" USING role::"UserRole";
         END IF;
       END $$;
     `);

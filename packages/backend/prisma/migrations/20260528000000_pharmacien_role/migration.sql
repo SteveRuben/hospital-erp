@@ -1,26 +1,33 @@
--- Add the 'pharmacien' role. Two schema variants exist in production:
+-- Add the 'pharmacien' role and align the column with the native "UserRole"
+-- enum the Prisma schema expects. Two schema variants exist in production:
 --   - native PG enum "UserRole" (databases provisioned via prisma migrate)
 --   - VARCHAR + CHECK column (databases bootstrapped via src/config/init.ts)
--- Handle both so the migration is safe regardless of how the DB was created.
+-- The VARCHAR variant makes prisma.user.create() fail with
+-- `type "public.UserRole" does not exist`, so we create the type and convert.
 
+-- Step 1: ensure the enum type exists with every label (separate statement so
+-- ALTER TYPE ADD VALUE commits before the column conversion below).
 DO $$
 BEGIN
-  IF EXISTS (SELECT 1 FROM pg_type WHERE typname = 'UserRole') THEN
-    IF NOT EXISTS (
-      SELECT 1 FROM pg_enum e JOIN pg_type t ON e.enumtypid = t.oid
-      WHERE t.typname = 'UserRole' AND e.enumlabel = 'pharmacien'
-    ) THEN
-      ALTER TYPE "UserRole" ADD VALUE 'pharmacien';
-    END IF;
+  IF NOT EXISTS (SELECT 1 FROM pg_type WHERE typname = 'UserRole') THEN
+    CREATE TYPE "UserRole" AS ENUM ('admin','medecin','comptable','laborantin','reception','pharmacien');
+  ELSIF NOT EXISTS (
+    SELECT 1 FROM pg_enum e JOIN pg_type t ON e.enumtypid = t.oid
+    WHERE t.typname = 'UserRole' AND e.enumlabel = 'pharmacien'
+  ) THEN
+    ALTER TYPE "UserRole" ADD VALUE 'pharmacien';
   END IF;
+END $$;
 
+-- Step 2: convert a VARCHAR role column to the enum type (no-op if already enum).
+DO $$
+BEGIN
   IF EXISTS (
     SELECT 1 FROM information_schema.columns
     WHERE table_name = 'users' AND column_name = 'role' AND data_type = 'character varying'
   ) THEN
     ALTER TABLE users DROP CONSTRAINT IF EXISTS users_role_check;
-    ALTER TABLE users ADD CONSTRAINT users_role_check
-      CHECK (role IN ('admin','medecin','comptable','laborantin','reception','pharmacien'));
+    ALTER TABLE users ALTER COLUMN role TYPE "UserRole" USING role::"UserRole";
   END IF;
 END $$;
 
