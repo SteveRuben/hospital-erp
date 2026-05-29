@@ -900,6 +900,13 @@ export const initDB = async (): Promise<void> => {
         WHERE mention_handle IS NOT NULL;
     `);
 
+    // Account suspension. Suspended users are refused at login; active
+    // sessions are invalidated when an admin suspends them.
+    await client.query(`
+      ALTER TABLE users ADD COLUMN IF NOT EXISTS suspended BOOLEAN NOT NULL DEFAULT FALSE;
+      ALTER TABLE users ADD COLUMN IF NOT EXISTS suspended_at TIMESTAMP;
+    `);
+
     // Align users.role with the Prisma schema's native "UserRole" enum.
     //
     // The prod DB was bootstrapped here with role as VARCHAR + CHECK, but the

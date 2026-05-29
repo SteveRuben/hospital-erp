@@ -1,7 +1,11 @@
 import { useState, useEffect, useContext } from 'react';
-import { getUsers, createUser, impersonateUser } from '../services/api';
+import { getUsers, createUser, impersonateUser, adminResetPassword, adminSuspendUser, adminUnsuspendUser, getUserAuditLog, type UserAuditEntry } from '../services/api';
 import { AuthContext } from '../App';
+import { useSnackbar } from '../components/Snackbar';
+import { useConfirm } from '../components/ConfirmDialog';
 import type { User } from '../types';
+
+interface AdminUser extends User { suspended?: boolean; suspended_at?: string | null; created_at?: string }
 
 const roleConfig: Record<string, { label: string; tag: string; desc: string }> = {
   admin: { label: 'Administrateur', tag: 'tag-red', desc: 'Accès complet à tous les modules' },
@@ -15,12 +19,16 @@ const roleConfig: Record<string, { label: string; tag: string; desc: string }> =
 const emptyForm = { username: '', password: '', role: 'reception' as string, nom: '', prenom: '', telephone: '' };
 
 export default function Utilisateurs() {
-  const [users, setUsers] = useState<User[]>([]);
+  const [users, setUsers] = useState<AdminUser[]>([]);
   const [loading, setLoading] = useState(true);
   const [showModal, setShowModal] = useState(false);
   const [form, setForm] = useState(emptyForm);
   const [error, setError] = useState('');
   const { user: currentUser, startImpersonate } = useContext(AuthContext);
+  const { showSnackbar } = useSnackbar();
+  const { confirm } = useConfirm();
+  const [resetTarget, setResetTarget] = useState<AdminUser | null>(null);
+  const [activityTarget, setActivityTarget] = useState<AdminUser | null>(null);
 
   useEffect(() => { loadUsers(); }, []);
 
@@ -50,7 +58,26 @@ export default function Utilisateurs() {
     try {
       const { data } = await impersonateUser(userId);
       startImpersonate(data.user, data.token, currentUser.id);
-    } catch (err: any) { alert(err.response?.data?.error || 'Erreur'); }
+    } catch (err: any) { showSnackbar(err.response?.data?.error || 'Erreur', 'error'); }
+  };
+
+  const handleSuspendToggle = async (u: AdminUser) => {
+    const action = u.suspended ? 'réactiver' : 'suspendre';
+    const ok = await confirm({
+      title: u.suspended ? 'Réactiver le compte' : 'Suspendre le compte',
+      message: u.suspended
+        ? `Le compte de ${u.prenom} ${u.nom} pourra à nouveau se connecter.`
+        : `Le compte de ${u.prenom} ${u.nom} ne pourra plus se connecter et ses sessions seront invalidées.`,
+      confirmLabel: u.suspended ? 'Réactiver' : 'Suspendre',
+      variant: u.suspended ? 'warning' : 'danger',
+    });
+    if (!ok) return;
+    try {
+      if (u.suspended) await adminUnsuspendUser(u.id);
+      else await adminSuspendUser(u.id);
+      showSnackbar(`Compte ${action === 'suspendre' ? 'suspendu' : 'réactivé'}`, 'success');
+      loadUsers();
+    } catch (err: any) { showSnackbar(err.response?.data?.error || 'Erreur', 'error'); }
   };
 
   if (loading) return <div className="loading"><div className="spinner"></div></div>;
@@ -76,28 +103,51 @@ export default function Utilisateurs() {
 
       {/* Table */}
       <table className="data-table">
-        <thead><tr><th>Nom d'utilisateur</th><th>Nom</th><th>Prénom</th><th>Rôle</th><th>Téléphone</th><th>Créé le</th><th>Actions</th></tr></thead>
+        <thead><tr><th>Nom d'utilisateur</th><th>Nom</th><th>Prénom</th><th>Rôle</th><th>Statut</th><th>Téléphone</th><th>Créé le</th><th>Actions</th></tr></thead>
         <tbody>
           {users.map(u => (
-            <tr key={u.id}>
+            <tr key={u.id} style={u.suspended ? { opacity: 0.6 } : undefined}>
               <td className="fw-600">{u.username}</td>
               <td>{u.nom}</td>
               <td>{u.prenom}</td>
               <td><span className={`tag ${roleConfig[u.role]?.tag || 'tag-gray'}`}>{roleConfig[u.role]?.label || u.role}</span></td>
-              <td>{u.telephone || '-'}</td>
-              <td>{(u as any).created_at ? new Date((u as any).created_at).toLocaleDateString('fr-FR') : '-'}</td>
               <td>
+                {u.suspended
+                  ? <span className="tag tag-red" title={u.suspended_at ? `Suspendu le ${new Date(u.suspended_at).toLocaleString('fr-FR')}` : ''}>Suspendu</span>
+                  : <span className="tag tag-green">Actif</span>}
+              </td>
+              <td>{u.telephone || '-'}</td>
+              <td>{u.created_at ? new Date(u.created_at).toLocaleDateString('fr-FR') : '-'}</td>
+              <td style={{ whiteSpace: 'nowrap' }}>
+                <button className="btn-icon" title="Voir l'activité" onClick={() => setActivityTarget(u)}><i className="bi bi-clock-history"></i></button>
                 {u.id !== currentUser?.id && (
-                  <button className="btn-ghost btn-sm" onClick={() => handleImpersonate(u.id)} title="Voir en tant que cet utilisateur">
-                    <i className="bi bi-eye"></i> Voir en tant que
-                  </button>
+                  <>
+                    <button className="btn-icon" title="Réinitialiser le mot de passe" onClick={() => setResetTarget(u)}><i className="bi bi-key"></i></button>
+                    <button className="btn-icon" title={u.suspended ? 'Réactiver' : 'Suspendre'} onClick={() => handleSuspendToggle(u)}>
+                      <i className={`bi ${u.suspended ? 'bi-unlock' : 'bi-slash-circle'}`}></i>
+                    </button>
+                    {!u.suspended && (
+                      <button className="btn-icon" title="Voir en tant que cet utilisateur" onClick={() => handleImpersonate(u.id)}><i className="bi bi-eye"></i></button>
+                    )}
+                  </>
                 )}
               </td>
             </tr>
           ))}
-          {users.length === 0 && <tr><td colSpan={7} className="table-empty">Aucun utilisateur</td></tr>}
+          {users.length === 0 && <tr><td colSpan={8} className="table-empty">Aucun utilisateur</td></tr>}
         </tbody>
       </table>
+
+      {resetTarget && (
+        <ResetPasswordModal
+          target={resetTarget}
+          onClose={() => setResetTarget(null)}
+          onDone={() => { setResetTarget(null); showSnackbar('Mot de passe réinitialisé — l\'utilisateur devra le changer à sa prochaine connexion', 'success'); }}
+        />
+      )}
+      {activityTarget && (
+        <ActivityDrawer target={activityTarget} onClose={() => setActivityTarget(null)} />
+      )}
 
       {/* Modal création */}
       {showModal && (
@@ -156,6 +206,118 @@ export default function Utilisateurs() {
           </div>
         </div>
       )}
+    </div>
+  );
+}
+
+function ResetPasswordModal({ target, onClose, onDone }: { target: AdminUser; onClose: () => void; onDone: () => void }) {
+  const [pwd, setPwd] = useState('');
+  const [confirmPwd, setConfirmPwd] = useState('');
+  const [error, setError] = useState('');
+  const [saving, setSaving] = useState(false);
+
+  const rules = [
+    { ok: pwd.length >= 8, label: 'Minimum 8 caractères' },
+    { ok: /[A-Z]/.test(pwd), label: 'Au moins 1 majuscule' },
+    { ok: /[a-z]/.test(pwd), label: 'Au moins 1 minuscule' },
+    { ok: /[0-9]/.test(pwd), label: 'Au moins 1 chiffre' },
+    { ok: pwd === confirmPwd && pwd.length > 0, label: 'Confirmation identique' },
+  ];
+  const valid = rules.every(r => r.ok);
+
+  const submit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!valid) return;
+    setSaving(true); setError('');
+    try {
+      await adminResetPassword(target.id, pwd);
+      onDone();
+    } catch (err: any) {
+      setError(err.response?.data?.error || 'Erreur');
+    } finally { setSaving(false); }
+  };
+
+  return (
+    <div className="modal-overlay" onClick={onClose}>
+      <div className="modal-container" onClick={e => e.stopPropagation()}>
+        <div className="modal-header"><h3>Réinitialiser le mot de passe</h3><button className="btn-icon" onClick={onClose}><i className="bi bi-x-lg"></i></button></div>
+        <form onSubmit={submit}>
+          <div className="modal-body">
+            <p className="text-muted mb-2" style={{ fontSize: '0.8125rem' }}>
+              Nouveau mot de passe pour <strong>{target.prenom} {target.nom}</strong> ({target.username}).
+              L'utilisateur sera forcé à le changer à sa prochaine connexion et toutes ses sessions actives seront fermées.
+            </p>
+            {error && <div className="notification notification-error mb-2"><i className="bi bi-exclamation-circle"></i><span>{error}</span></div>}
+            <div className="form-group"><label className="form-label">Nouveau mot de passe</label><input type="password" className="form-input" value={pwd} onChange={e => setPwd(e.target.value)} autoFocus required /></div>
+            <div className="form-group"><label className="form-label">Confirmer</label><input type="password" className="form-input" value={confirmPwd} onChange={e => setConfirmPwd(e.target.value)} required /></div>
+            <div style={{ background: 'var(--cds-field-01)', padding: '0.75rem', fontSize: '0.75rem' }}>
+              {rules.map((r, i) => (
+                <div key={i} style={{ color: r.ok ? 'var(--cds-support-success)' : 'var(--cds-text-secondary)' }}>{r.ok ? '✓' : '○'} {r.label}</div>
+              ))}
+            </div>
+          </div>
+          <div className="modal-footer">
+            <button type="button" className="btn-secondary" onClick={onClose} disabled={saving}>Annuler</button>
+            <button type="submit" className="btn-primary" disabled={!valid || saving}>{saving ? '…' : 'Réinitialiser'}</button>
+          </div>
+        </form>
+      </div>
+    </div>
+  );
+}
+
+function ActivityDrawer({ target, onClose }: { target: AdminUser; onClose: () => void }) {
+  const [entries, setEntries] = useState<UserAuditEntry[]>([]);
+  const [loading, setLoading] = useState(true);
+
+  useEffect(() => {
+    getUserAuditLog(target.id, { limit: 200 })
+      .then(({ data }) => setEntries(data))
+      .catch(() => setEntries([]))
+      .finally(() => setLoading(false));
+  }, [target.id]);
+
+  const actionLabels: Record<string, string> = {
+    login: 'Connexion', logout: 'Déconnexion', create: 'Création', update: 'Mise à jour',
+    delete: 'Suppression', impersonate: 'Impersonation', password_change: 'Changement mot de passe',
+    mfa_setup: 'Configuration MFA', export: 'Export', access_denied: 'Accès refusé',
+    stop_impersonate: 'Fin impersonation',
+  };
+
+  return (
+    <div className="modal-overlay" onClick={onClose}>
+      <div className="modal-container" onClick={e => e.stopPropagation()} style={{ maxWidth: '700px', maxHeight: '85vh', display: 'flex', flexDirection: 'column' }}>
+        <div className="modal-header">
+          <h3>Activité — {target.prenom} {target.nom} <span className="text-muted" style={{ fontSize: '0.75rem' }}>@{target.username}</span></h3>
+          <button className="btn-icon" onClick={onClose}><i className="bi bi-x-lg"></i></button>
+        </div>
+        <div className="modal-body" style={{ overflowY: 'auto' }}>
+          {loading ? (
+            <div className="text-muted">Chargement…</div>
+          ) : entries.length === 0 ? (
+            <div className="table-empty">Aucune activité enregistrée</div>
+          ) : (
+            <table className="data-table" style={{ fontSize: '0.8125rem' }}>
+              <thead><tr><th>Date</th><th>Sens</th><th>Action</th><th>Cible</th><th>Détails</th></tr></thead>
+              <tbody>
+                {entries.map(e => (
+                  <tr key={e.id}>
+                    <td style={{ whiteSpace: 'nowrap' }}>{new Date(e.createdAt).toLocaleString('fr-FR')}</td>
+                    <td>
+                      {e.direction === 'by'
+                        ? <span className="tag tag-blue" title="Action faite par l'utilisateur">par</span>
+                        : <span className="tag tag-purple" title={`Action sur le compte par ${e.actor_prenom ?? ''} ${e.actor_nom ?? e.actor_username ?? '?'}`}>sur</span>}
+                    </td>
+                    <td>{actionLabels[e.action] ?? e.action}</td>
+                    <td>{e.tableName ?? '-'}{e.recordId ? ` #${e.recordId}` : ''}</td>
+                    <td style={{ fontSize: '0.75rem', color: 'var(--cds-text-secondary)' }}>{e.details ?? '-'}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          )}
+        </div>
+      </div>
     </div>
   );
 }

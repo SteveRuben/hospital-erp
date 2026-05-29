@@ -313,6 +313,21 @@ export const postFormulaireReponse = (data: { formulaire_id: number; patient_id:
 export interface Cim10Suggestion { id: number; code: string; libelle: string }
 export const searchCim10 = (q: string) => api.get<Cim10Suggestion[]>(`/concepts/cim-10/search?q=${encodeURIComponent(q)}`);
 
+// Profile + admin user actions
+export const updateMe = (data: { nom?: string; prenom?: string; telephone?: string }) => api.put('/auth/me', data);
+export const adminResetPassword = (userId: number, new_password: string) => api.post(`/auth/users/${userId}/reset-password`, { new_password });
+export const adminSuspendUser = (userId: number) => api.post(`/auth/users/${userId}/suspend`);
+export const adminUnsuspendUser = (userId: number) => api.post(`/auth/users/${userId}/unsuspend`);
+
+export interface UserAuditEntry {
+  id: number; action: string; tableName: string | null; recordId: number | null;
+  details: string | null; createdAt: string;
+  direction: 'by' | 'on';
+  actor_username: string | null; actor_nom: string | null; actor_prenom: string | null;
+}
+export const getUserAuditLog = (userId: number, params?: { limit?: number; before?: string }) =>
+  api.get<UserAuditEntry[]>(`/auth/users/${userId}/audit-log`, { params });
+
 // Staff chat
 export interface ChatChannel { id: number; type: string; name: string; description: string | null; serviceId: number | null; archived: boolean; createdAt: string; lastReadAt: string | null; unread: number }
 export interface ChatMessage { id: number; channelId: number; authorId: number; content: string; createdAt: string; editedAt: string | null; deletedAt: string | null; author: { id: number; username: string; nom: string | null; prenom: string | null; role: string }; mentions?: Array<{ id: number; username: string; nom: string | null; prenom: string | null; role: string }> }

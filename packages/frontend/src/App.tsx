@@ -49,6 +49,7 @@ const PatientMerge = lazy(() => import('./pages/PatientMerge'));
 const Rapports = lazy(() => import('./pages/Rapports'));
 const Chat = lazy(() => import('./pages/Chat'));
 const Formulaires = lazy(() => import('./pages/Formulaires'));
+const Profil = lazy(() => import('./pages/Profil'));
 
 const PageLoader = () => <div className="loading"><div className="spinner"></div></div>;
 
@@ -193,6 +194,7 @@ function App() {
                         <Route path="/chat" element={<Chat />} />
                         <Route path="/chat/:channelId" element={<Chat />} />
                         <Route path="/formulaires" element={<RoleGuard roles={['admin','medecin']}><Formulaires /></RoleGuard>} />
+                        <Route path="/profil" element={<Profil />} />
                       </Routes>
                     </Suspense>
                   </Layout>

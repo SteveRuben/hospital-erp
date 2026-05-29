@@ -1,5 +1,5 @@
 import { NavLink, useNavigate } from 'react-router-dom';
-import { useContext, useEffect, useState } from 'react';
+import { useContext, useEffect, useRef, useState } from 'react';
 import { AuthContext } from '../App';
 import { getMyHabilitations, getMenuConfig, getStockAlerts } from '../services/api';
 import { useSnackbar } from './Snackbar';
@@ -20,6 +20,13 @@ const GROUP_KEY: Record<string, string> = {
   'Administration': 'menu.group.admin',
 };
 
+const menuItemStyle: React.CSSProperties = {
+  display: 'flex', alignItems: 'center', gap: '0.5rem',
+  width: '100%', padding: '0.625rem 1rem', background: 'none',
+  border: 'none', textAlign: 'left', cursor: 'pointer',
+  fontSize: '0.8125rem', color: 'inherit',
+};
+
 interface MenuItemDB { id: number; groupe: string; groupe_ordre: number; module: string; label: string; icon: string; path: string; ordre: number }
 
 export default function Layout({ children }: { children: React.ReactNode }) {
@@ -31,6 +38,16 @@ export default function Layout({ children }: { children: React.ReactNode }) {
   const [menuGroups, setMenuGroups] = useState<Array<{ label: string; items: MenuItemDB[] }>>([]);
   const [showOnboarding, setShowOnboarding] = useState(false);
   const [showHandleDialog, setShowHandleDialog] = useState(false);
+  const [userMenuOpen, setUserMenuOpen] = useState(false);
+  const userMenuRef = useRef<HTMLDivElement>(null);
+  useEffect(() => {
+    if (!userMenuOpen) return;
+    const onClick = (e: MouseEvent) => {
+      if (userMenuRef.current && !userMenuRef.current.contains(e.target as Node)) setUserMenuOpen(false);
+    };
+    document.addEventListener('mousedown', onClick);
+    return () => document.removeEventListener('mousedown', onClick);
+  }, [userMenuOpen]);
 
   // Onboarding state is now per-admin in the DB (User.onboardingDismissedAt).
   // The wizard auto-pops if:
@@ -124,10 +141,35 @@ export default function Layout({ children }: { children: React.ReactNode }) {
           <LocaleSelector />
           <button title={t('chat.title')} onClick={() => navigate('/app/chat')}><i className="bi bi-chat-dots"></i></button>
           <NotificationsBell />
-          <div className="header-user" onClick={() => setShowHandleDialog(true)} title={`@${user?.mention_handle || user?.username} — cliquez pour personnaliser`} style={{ cursor: 'pointer' }}>
-            <i className="bi bi-person-circle"></i>
-            <span>{user?.prenom} {user?.nom}</span>
-            {user?.mention_handle && <span style={{ fontSize: '0.6875rem', color: '#8d8d8d', marginLeft: '0.25rem' }}>@{user.mention_handle}</span>}
+          <div ref={userMenuRef} style={{ position: 'relative' }}>
+            <div className="header-user" onClick={() => setUserMenuOpen(o => !o)} style={{ cursor: 'pointer' }} title={`@${user?.mention_handle || user?.username}`}>
+              <i className="bi bi-person-circle"></i>
+              <span>{user?.prenom} {user?.nom}</span>
+              {user?.mention_handle && <span style={{ fontSize: '0.6875rem', color: '#8d8d8d', marginLeft: '0.25rem' }}>@{user.mention_handle}</span>}
+              <i className="bi bi-chevron-down" style={{ fontSize: '0.625rem', marginLeft: '0.25rem' }}></i>
+            </div>
+            {userMenuOpen && (
+              <div style={{ position: 'absolute', top: 'calc(100% + 4px)', right: 0, minWidth: '200px', background: 'var(--cds-ui-02)', border: '1px solid var(--cds-ui-03)', boxShadow: '0 4px 12px rgba(0,0,0,0.15)', zIndex: 1000, color: 'var(--cds-text-primary)' }}>
+                <div style={{ padding: '0.75rem 1rem', borderBottom: '1px solid var(--cds-ui-03)' }}>
+                  <div style={{ fontWeight: 600, fontSize: '0.8125rem' }}>{user?.prenom} {user?.nom}</div>
+                  <div style={{ fontSize: '0.6875rem', color: 'var(--cds-text-secondary)' }}>@{user?.mention_handle || user?.username} · {user?.role}</div>
+                </div>
+                <button onClick={() => { setUserMenuOpen(false); navigate('/app/profil'); }} style={menuItemStyle}>
+                  <i className="bi bi-person-circle"></i> Mon profil
+                </button>
+                <button onClick={() => { setUserMenuOpen(false); setShowHandleDialog(true); }} style={menuItemStyle}>
+                  <i className="bi bi-at"></i> Mon @-handle
+                </button>
+                <button onClick={() => { setUserMenuOpen(false); navigate('/change-password'); }} style={menuItemStyle}>
+                  <i className="bi bi-shield-lock"></i> Changer le mot de passe
+                </button>
+                <div style={{ borderTop: '1px solid var(--cds-ui-03)' }}>
+                  <button onClick={() => { setUserMenuOpen(false); handleLogout(); }} style={{ ...menuItemStyle, color: 'var(--cds-support-error)' }}>
+                    <i className="bi bi-box-arrow-right"></i> {t('auth.logout')}
+                  </button>
+                </div>
+              </div>
+            )}
           </div>
         </div>
       </header>

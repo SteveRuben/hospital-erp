@@ -84,6 +84,16 @@ router.post('/login', validate(loginSchema), async (req: Request, res: Response)
       return;
     }
 
+    // Suspended accounts pass the password check but are refused here so the
+    // audit trail captures the attempted use of valid credentials separately
+    // from a wrong-password failure.
+    if (user.suspended) {
+      console.warn(`[SECURITY] Login attempt on suspended account: ${username} from IP: ${req.ip}`);
+      await logAudit({ userId: user.id, action: 'login', tableName: 'users', recordId: user.id, details: `Suspended account login attempt from IP: ${req.ip}`, ip: req.ip || undefined });
+      res.status(403).json({ error: 'Compte suspendu — contactez un administrateur' });
+      return;
+    }
+
     if (user.mfaEnabled) {
       if (!mfa_token) {
         const challengeId = crypto.randomUUID();
@@ -363,6 +373,31 @@ router.get('/users/lookup', authenticate, async (req: AuthRequest, res: Response
   }
 });
 
+// Self-service profile update. Locked-down field list — username and role are
+// admin-controlled (changing your own role would be a privilege escalation
+// hole), suspended is admin-controlled too.
+router.put('/me', authenticate, async (req: AuthRequest, res: Response): Promise<void> => {
+  try {
+    const { nom, prenom, telephone } = req.body as { nom?: string; prenom?: string; telephone?: string };
+    const data: Parameters<typeof prisma.user.update>[0]['data'] = {};
+    if (nom !== undefined) data.nom = String(nom).trim().substring(0, 100) || null;
+    if (prenom !== undefined) data.prenom = String(prenom).trim().substring(0, 100) || null;
+    if (telephone !== undefined) data.telephone = String(telephone).trim().substring(0, 20) || null;
+
+    const before = await prisma.user.findUnique({ where: { id: req.user!.id }, select: { nom: true, prenom: true, telephone: true } });
+    const updated = await prisma.user.update({
+      where: { id: req.user!.id },
+      data,
+      select: { id: true, username: true, role: true, nom: true, prenom: true, telephone: true, mfaEnabled: true, mentionHandle: true },
+    });
+    await logAudit({ userId: req.user!.id, action: 'update', tableName: 'users', recordId: req.user!.id, before: before as Record<string, unknown>, after: data as Record<string, unknown> });
+    res.json({ ...updated, mfa_enabled: updated.mfaEnabled, mention_handle: updated.mentionHandle });
+  } catch (err) {
+    console.error('[AUTH] self-update failed:', err);
+    res.status(500).json({ error: 'Erreur serveur' });
+  }
+});
+
 // Update the current user's @-mention handle. Validates the format and
 // uniqueness via the partial unique index (the DB enforces it; we just
 // translate the resulting error). Set to null to remove.
@@ -400,11 +435,134 @@ router.put('/me/mention-handle', authenticate, async (req: AuthRequest, res: Res
 router.get('/users', authenticate, authorize('admin'), async (_req: Request, res: Response): Promise<void> => {
   try {
     const users = await prisma.user.findMany({
-      select: { id: true, username: true, role: true, nom: true, prenom: true, telephone: true, mfaEnabled: true, createdAt: true },
+      select: { id: true, username: true, role: true, nom: true, prenom: true, telephone: true, mfaEnabled: true, suspended: true, suspendedAt: true, createdAt: true },
       orderBy: { createdAt: 'desc' },
     });
-    res.json(users.map(u => ({ ...u, mfa_enabled: u.mfaEnabled, created_at: u.createdAt })));
+    res.json(users.map(u => ({ ...u, mfa_enabled: u.mfaEnabled, suspended_at: u.suspendedAt, created_at: u.createdAt })));
   } catch (err) {
+    res.status(500).json({ error: 'Erreur serveur' });
+  }
+});
+
+// Admin: reset another user's password. Sets the new value, flips
+// must_change_password=true so the target is forced to change at next login,
+// invalidates every active session/token so the cached old creds stop working
+// immediately. Audited with no plaintext in the log.
+router.post('/users/:id/reset-password', authenticate, authorize('admin'), async (req: AuthRequest, res: Response): Promise<void> => {
+  try {
+    const id = Number(req.params.id);
+    if (id === req.user!.id) { res.status(400).json({ error: 'Utilisez /change-password pour votre propre compte' }); return; }
+    const { new_password } = req.body as { new_password?: string };
+    if (!new_password || typeof new_password !== 'string') { res.status(400).json({ error: 'new_password requis' }); return; }
+
+    const passwordCheck = validatePassword(new_password);
+    if (!passwordCheck.valid) { res.status(400).json({ error: passwordCheck.message }); return; }
+    if (isCommonPassword(new_password)) { res.status(400).json({ error: 'Mot de passe trop courant' }); return; }
+
+    const target = await prisma.user.findUnique({ where: { id }, select: { username: true } });
+    if (!target) { res.status(404).json({ error: 'Utilisateur non trouvé' }); return; }
+
+    const hashed = await argon2.hash(new_password, ARGON2_OPTIONS);
+    await prisma.user.update({ where: { id }, data: { password: hashed, must_change_password: true } });
+    // Sign every session/token the target has out — they MUST relog with the
+    // new credentials (and then be forced through the change-password flow).
+    await invalidateUserSessions(id);
+
+    await logAudit({
+      userId: req.user!.id, action: 'password_change', tableName: 'users', recordId: id,
+      details: `Admin ${req.user!.username} reset password for ${target.username}; must_change_password=true`,
+      ip: req.ip,
+    });
+    res.json({ ok: true });
+  } catch (err) {
+    console.error('[AUTH] reset-password failed:', err);
+    res.status(500).json({ error: 'Erreur serveur' });
+  }
+});
+
+// Admin: suspend an account. The user is refused at login and every active
+// session is invalidated. Self-suspension is rejected (would lock the only
+// admin out of their own account).
+router.post('/users/:id/suspend', authenticate, authorize('admin'), async (req: AuthRequest, res: Response): Promise<void> => {
+  try {
+    const id = Number(req.params.id);
+    if (id === req.user!.id) { res.status(400).json({ error: 'Vous ne pouvez pas suspendre votre propre compte' }); return; }
+
+    const target = await prisma.user.findUnique({ where: { id }, select: { username: true, suspended: true } });
+    if (!target) { res.status(404).json({ error: 'Utilisateur non trouvé' }); return; }
+    if (target.suspended) { res.status(400).json({ error: 'Compte déjà suspendu' }); return; }
+
+    await prisma.user.update({ where: { id }, data: { suspended: true, suspendedAt: new Date() } });
+    await invalidateUserSessions(id);
+
+    await logAudit({
+      userId: req.user!.id, action: 'update', tableName: 'users', recordId: id,
+      details: `Admin ${req.user!.username} suspended account ${target.username}`,
+      ip: req.ip,
+    });
+    res.json({ ok: true });
+  } catch (err) {
+    console.error('[AUTH] suspend failed:', err);
+    res.status(500).json({ error: 'Erreur serveur' });
+  }
+});
+
+// Admin: lift a suspension. The account remains in must_change_password state
+// if it was set — we don't clear that here, only the suspended flag.
+router.post('/users/:id/unsuspend', authenticate, authorize('admin'), async (req: AuthRequest, res: Response): Promise<void> => {
+  try {
+    const id = Number(req.params.id);
+    const target = await prisma.user.findUnique({ where: { id }, select: { username: true, suspended: true } });
+    if (!target) { res.status(404).json({ error: 'Utilisateur non trouvé' }); return; }
+    if (!target.suspended) { res.status(400).json({ error: 'Compte non suspendu' }); return; }
+
+    await prisma.user.update({ where: { id }, data: { suspended: false, suspendedAt: null } });
+    await logAudit({
+      userId: req.user!.id, action: 'update', tableName: 'users', recordId: id,
+      details: `Admin ${req.user!.username} reactivated account ${target.username}`,
+      ip: req.ip,
+    });
+    res.json({ ok: true });
+  } catch (err) {
+    console.error('[AUTH] unsuspend failed:', err);
+    res.status(500).json({ error: 'Erreur serveur' });
+  }
+});
+
+// Admin: audit trail for a user. Returns two streams in chronological order:
+//   - actions BY the user (anything they did, userId = :id)
+//   - actions ON the user (changes to their account row: tableName='users' AND recordId=:id)
+// Paginated via ?limit (default 100, max 500) and ?before (ISO timestamp).
+router.get('/users/:id/audit-log', authenticate, authorize('admin'), async (req: AuthRequest, res: Response): Promise<void> => {
+  try {
+    const id = Number(req.params.id);
+    const limit = Math.min(500, Math.max(1, Number(req.query.limit) || 100));
+    const before = req.query.before ? new Date(String(req.query.before)) : undefined;
+
+    const where = {
+      OR: [
+        { userId: id },
+        { tableName: 'users', recordId: id },
+      ],
+      ...(before ? { createdAt: { lt: before } } : {}),
+    };
+    const rows = await prisma.auditLog.findMany({
+      where,
+      include: { user: { select: { username: true, nom: true, prenom: true } } },
+      orderBy: { createdAt: 'desc' },
+      take: limit,
+    });
+    res.json(rows.map(r => ({
+      id: r.id, action: r.action, tableName: r.tableName, recordId: r.recordId,
+      details: r.details, createdAt: r.createdAt,
+      // Distinguish at a glance: "by" = the user did it, "on" = something happened to them
+      direction: r.userId === id ? 'by' : 'on',
+      actor_username: r.user?.username ?? null,
+      actor_nom: r.user?.nom ?? null,
+      actor_prenom: r.user?.prenom ?? null,
+    })));
+  } catch (err) {
+    console.error('[AUTH] user audit-log failed:', err);
     res.status(500).json({ error: 'Erreur serveur' });
   }
 });
