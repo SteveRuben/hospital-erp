@@ -9,6 +9,16 @@ import { useBranding } from './BrandingProvider';
 import OnboardingWizard from './OnboardingWizard';
 import NotificationsBell from './NotificationsBell';
 import MentionHandleDialog from './MentionHandleDialog';
+import { useTranslation } from '../i18n';
+
+// Server-seeded menu groups arrive in French (the seed language). We map them
+// to translation keys here so the sidebar still localises even though the
+// database itself isn't translated.
+const GROUP_KEY: Record<string, string> = {
+  'Accueil': 'menu.group.home',
+  'Clinique': 'menu.group.clinical',
+  'Administration': 'menu.group.admin',
+};
 
 interface MenuItemDB { id: number; groupe: string; groupe_ordre: number; module: string; label: string; icon: string; path: string; ordre: number }
 
@@ -17,6 +27,7 @@ export default function Layout({ children }: { children: React.ReactNode }) {
   const navigate = useNavigate();
   const { showSnackbar } = useSnackbar();
   const { branding } = useBranding();
+  const { t } = useTranslation();
   const [menuGroups, setMenuGroups] = useState<Array<{ label: string; items: MenuItemDB[] }>>([]);
   const [showOnboarding, setShowOnboarding] = useState(false);
   const [showHandleDialog, setShowHandleDialog] = useState(false);
@@ -111,7 +122,7 @@ export default function Layout({ children }: { children: React.ReactNode }) {
         <PatientSearch />
         <div className="header-actions">
           <LocaleSelector />
-          <button title="Discussion équipe" onClick={() => navigate('/app/chat')}><i className="bi bi-chat-dots"></i></button>
+          <button title={t('chat.title')} onClick={() => navigate('/app/chat')}><i className="bi bi-chat-dots"></i></button>
           <NotificationsBell />
           <div className="header-user" onClick={() => setShowHandleDialog(true)} title={`@${user?.mention_handle || user?.username} — cliquez pour personnaliser`} style={{ cursor: 'pointer' }}>
             <i className="bi bi-person-circle"></i>
@@ -125,7 +136,7 @@ export default function Layout({ children }: { children: React.ReactNode }) {
         <div style={{ flex: 1, overflowY: 'auto' }}>
           {menuGroups.map((group, gi) => (
             <div className="sidebar-group" key={gi}>
-              <div className="sidebar-group-label">{group.label}</div>
+              <div className="sidebar-group-label">{GROUP_KEY[group.label] ? t(GROUP_KEY[group.label]) : group.label}</div>
               {group.items.map(item => (
                 <NavLink key={item.path} to={item.path} className={({ isActive }) => `nav-link ${isActive ? 'active' : ''}`} end={item.path === '/app'}>
                   <i className={`bi ${item.icon}`}></i>{item.label}
@@ -137,7 +148,7 @@ export default function Layout({ children }: { children: React.ReactNode }) {
         </div>
         <div className="sidebar-footer">
           <div className="user-info"><div>{user?.prenom} {user?.nom}</div><div><span className="tag tag-blue">{user?.role}</span></div></div>
-          <button className="btn-secondary" style={{ width: '100%', fontSize: '0.75rem' }} onClick={handleLogout}><i className="bi bi-box-arrow-right"></i> Déconnexion</button>
+          <button className="btn-secondary" style={{ width: '100%', fontSize: '0.75rem' }} onClick={handleLogout}><i className="bi bi-box-arrow-right"></i> {t('auth.logout')}</button>
         </div>
       </nav>
 

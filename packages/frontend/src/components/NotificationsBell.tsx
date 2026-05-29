@@ -2,6 +2,7 @@ import { useState, useEffect, useRef, useCallback } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { io, Socket } from 'socket.io-client';
 import { getInbox, getUnreadCount, markNotifRead, markAllNotifsRead, deleteNotif, type InboxNotification } from '../services/api';
+import { useTranslation } from '../i18n';
 
 /**
  * Bell-icon dropdown that drives the in-app notification inbox.
@@ -19,6 +20,7 @@ import { getInbox, getUnreadCount, markNotifRead, markAllNotifsRead, deleteNotif
 const POLL_INTERVAL_MS = 60_000;
 
 export default function NotificationsBell() {
+  const { t } = useTranslation();
   const [open, setOpen] = useState(false);
   const [count, setCount] = useState(0);
   const [items, setItems] = useState<InboxNotification[]>([]);
@@ -107,7 +109,7 @@ export default function NotificationsBell() {
 
   return (
     <div ref={dropdownRef} style={{ position: 'relative' }}>
-      <button title="Notifications" onClick={() => setOpen(o => !o)} style={{ position: 'relative' }}>
+      <button title={t('notif.title')} onClick={() => setOpen(o => !o)} style={{ position: 'relative' }}>
         <i className="bi bi-bell"></i>
         {count > 0 && (
           <span style={{ position: 'absolute', top: 2, right: 2, background: 'var(--cds-support-error)', color: '#fff', borderRadius: '8px', fontSize: '0.625rem', fontWeight: 600, minWidth: '16px', height: '16px', display: 'flex', alignItems: 'center', justifyContent: 'center', padding: '0 4px', lineHeight: 1 }}>
@@ -118,14 +120,14 @@ export default function NotificationsBell() {
       {open && (
         <div style={{ position: 'absolute', top: 'calc(100% + 4px)', right: 0, width: '360px', maxHeight: '500px', background: 'var(--cds-ui-02)', border: '1px solid var(--cds-ui-03)', boxShadow: '0 4px 20px rgba(0,0,0,0.15)', zIndex: 1000, display: 'flex', flexDirection: 'column', color: 'var(--cds-text-primary)' }}>
           <div style={{ padding: '0.75rem 1rem', borderBottom: '1px solid var(--cds-ui-03)', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-            <strong style={{ fontSize: '0.875rem' }}>Notifications</strong>
-            {count > 0 && <button onClick={handleMarkAll} style={{ background: 'none', border: 'none', color: 'var(--cds-interactive)', fontSize: '0.75rem', cursor: 'pointer' }}>Tout marquer lu</button>}
+            <strong style={{ fontSize: '0.875rem' }}>{t('notif.title')}</strong>
+            {count > 0 && <button onClick={handleMarkAll} style={{ background: 'none', border: 'none', color: 'var(--cds-interactive)', fontSize: '0.75rem', cursor: 'pointer' }}>{t('notif.mark_all_read')}</button>}
           </div>
           <div style={{ overflowY: 'auto', flex: 1 }}>
             {items.length === 0 && (
               <div style={{ padding: '2rem 1rem', textAlign: 'center', color: 'var(--cds-text-secondary)', fontSize: '0.8125rem' }}>
                 <i className="bi bi-inbox" style={{ fontSize: '1.5rem', display: 'block', marginBottom: '0.5rem' }}></i>
-                Aucune notification
+                {t('notif.empty')}
               </div>
             )}
             {items.map(n => (

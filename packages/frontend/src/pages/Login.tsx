@@ -3,9 +3,11 @@ import { useNavigate, useSearchParams } from 'react-router-dom';
 import { AuthContext } from '../App';
 import { login as loginApi } from '../services/api';
 import { useBranding } from '../components/BrandingProvider';
+import { useTranslation } from '../i18n';
 
 export default function Login() {
   const { branding } = useBranding();
+  const { t } = useTranslation();
   const [username, setUsername] = useState('');
   const [password, setPassword] = useState('');
   const [error, setError] = useState('');
@@ -45,23 +47,23 @@ export default function Login() {
             ? <img src={branding.logo_url} alt="" style={{ height: '64px', width: 'auto', maxWidth: '200px', objectFit: 'contain', marginBottom: '0.5rem' }} />
             : <i className="bi bi-hospital" style={{ fontSize: '2.5rem', color: 'var(--cds-interactive)' }}></i>}
           <h1>{branding.nom_etablissement}</h1>
-          <p className="subtitle">Connectez-vous à votre compte</p>
+          <p className="subtitle">{t('auth.login_subtitle')}</p>
         </div>
 
-        {sessionExpired && <div className="notification notification-warning mb-2"><i className="bi bi-clock-history"></i><span>Session expirée pour inactivité. Veuillez vous reconnecter.</span></div>}
+        {sessionExpired && <div className="notification notification-warning mb-2"><i className="bi bi-clock-history"></i><span>{t('auth.session_expired')}</span></div>}
         {error && <div className="notification notification-error mb-2"><i className="bi bi-exclamation-circle"></i><span>{error}</span></div>}
 
         <form onSubmit={handleSubmit}>
           <div className="form-group">
-            <label className="form-label">Nom d'utilisateur</label>
+            <label className="form-label">{t('auth.username')}</label>
             <input type="text" className="form-input" value={username} onChange={(e) => setUsername(e.target.value)} required autoFocus />
           </div>
           <div className="form-group">
-            <label className="form-label">Mot de passe</label>
+            <label className="form-label">{t('auth.password')}</label>
             <input type="password" className="form-input" value={password} onChange={(e) => setPassword(e.target.value)} required />
           </div>
           <button type="submit" className="btn-primary" style={{ width: '100%', marginTop: '1rem' }} disabled={loading}>
-            {loading ? 'Connexion...' : 'Se connecter'}
+            {loading ? t('auth.connecting') : t('auth.login')}
           </button>
         </form>
 

@@ -13,7 +13,7 @@ export default function LocaleSelector() {
   const handleChange = (locale: Locale) => {
     setLocale(locale);
     setCurrent(locale);
-    window.location.reload(); // Reload to apply translations
+    // No reload — components using useTranslation() rerender on locale-changed.
   };
 
   return (
