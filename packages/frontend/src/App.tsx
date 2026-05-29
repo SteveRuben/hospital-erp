@@ -71,6 +71,10 @@ function ProtectedRoute({ children }: { children: React.ReactNode }) {
   const { user, loading } = useContext(AuthContext);
   if (loading) return <PageLoader />;
   if (!user) return <Navigate to="/login" />;
+  // Force the first-login password change: any /app/* access is bounced to
+  // /change-password until the flag clears. Catches the case where a user
+  // types the URL directly or refreshes instead of using the login redirect.
+  if (user.must_change_password) return <Navigate to="/change-password" replace />;
   return <>{children}</>;
 }
 

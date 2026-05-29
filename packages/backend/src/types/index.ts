@@ -120,6 +120,9 @@ export interface JWTPayload {
   id: number;
   username: string;
   role: UserRole;
+  // "must change password" — present (true) only while the user hasn't
+  // completed the forced first-login password change. Omitted otherwise.
+  mcp?: boolean;
 }
 
 // API Response types

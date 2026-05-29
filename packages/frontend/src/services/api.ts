@@ -19,6 +19,14 @@ api.interceptors.response.use(
       localStorage.removeItem('user');
       window.location.href = '/login?expired=1';
     }
+    // Safety net: if the server blocks a request because the forced
+    // password change isn't done, bounce to the change-password page.
+    // Scoped to the specific code so ordinary access-denied 403s are untouched.
+    else if (err.response?.status === 403 && err.response?.data?.code === 'PASSWORD_CHANGE_REQUIRED') {
+      if (!window.location.pathname.endsWith('/change-password')) {
+        window.location.href = '/change-password';
+      }
+    }
     return Promise.reject(err);
   }
 );

@@ -98,7 +98,7 @@ router.post('/login', validate(loginSchema), async (req: Request, res: Response)
       }
     }
 
-    const token = generateToken(user);
+    const token = generateToken(user, user.must_change_password ?? false);
     await recordActivity(user.id);
 
     await logAudit({ userId: user.id, action: 'login', tableName: 'users', recordId: user.id, details: `Successful login from IP: ${req.ip}`, ip: req.ip || undefined });
@@ -150,7 +150,7 @@ router.post('/login/mfa', async (req: Request, res: Response): Promise<void> => 
     });
     if (!user) { res.status(401).json({ error: 'Utilisateur non trouvé' }); return; }
 
-    const token = generateToken(user);
+    const token = generateToken(user, user.must_change_password ?? false);
     await recordActivity(user.id);
 
     await logAudit({ userId: user.id, action: 'login', tableName: 'users', recordId: user.id, details: 'MFA login completed' });

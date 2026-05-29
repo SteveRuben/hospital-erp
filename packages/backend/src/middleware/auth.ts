@@ -56,6 +56,19 @@ export const authenticate = async (req: AuthRequest, res: Response, next: NextFu
       return;
     }
 
+    // Enforce the forced first-login password change server-side. While the
+    // token carries mcp=true, only the endpoints needed to complete the change
+    // (or to sign out) are reachable — every PHI/data route is blocked even if
+    // the client bypasses the frontend guard and calls the API directly.
+    if (decoded.mcp === true) {
+      const path = req.originalUrl.split('?')[0];
+      const allowed = ['/api/auth/change-password', '/api/auth/me', '/api/auth/logout'];
+      if (!allowed.includes(path)) {
+        res.status(403).json({ error: 'Vous devez changer votre mot de passe avant de continuer', code: 'PASSWORD_CHANGE_REQUIRED' });
+        return;
+      }
+    }
+
     // Server-side session timeout check
     if (await isSessionExpired(decoded.id)) {
       res.status(401).json({ error: 'Session expirée par inactivité' });
@@ -89,12 +102,16 @@ export const authorize = (...roles: UserRole[]) => {
   };
 };
 
-// OWASP A02 - Token generation with pinned algorithm
-export const generateToken = (user: { id: number; username: string; role: UserRole }): string => {
+// OWASP A02 - Token generation with pinned algorithm.
+// `mustChangePassword` stamps an `mcp` claim so the authenticate middleware
+// can gate the session until the forced first-login change is done. Omitted
+// when false to keep the token small and avoid a stale claim after the change
+// (change-password issues a fresh token without it).
+export const generateToken = (user: { id: number; username: string; role: UserRole }, mustChangePassword = false): string => {
   return jwt.sign(
-    { id: user.id, username: user.username, role: user.role },
+    { id: user.id, username: user.username, role: user.role, ...(mustChangePassword ? { mcp: true } : {}) },
     JWT_SECRET,
-    { 
+    {
       algorithm: JWT_ALGORITHM,
       expiresIn: '8h',
       issuer: 'hospital-erp',

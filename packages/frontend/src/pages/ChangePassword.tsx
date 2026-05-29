@@ -1,5 +1,5 @@
 import { useState, useContext } from 'react';
-import { useNavigate } from 'react-router-dom';
+import { useNavigate, Navigate } from 'react-router-dom';
 import { AuthContext } from '../App';
 import api from '../services/api';
 
@@ -10,8 +10,12 @@ export default function ChangePassword() {
   const [error, setError] = useState('');
   const [success, setSuccess] = useState(false);
   const [loading, setLoading] = useState(false);
-  const { user, login } = useContext(AuthContext);
+  const { user, loading: authLoading, login } = useContext(AuthContext);
   const navigate = useNavigate();
+
+  // Only reachable while authenticated — an anonymous visitor is bounced to
+  // login (the change-password API would 401 anyway).
+  if (!authLoading && !user) return <Navigate to="/login" replace />;
 
   const rules = [
     { ok: newPwd.length >= 8, label: 'Minimum 8 caractères' },
