@@ -792,6 +792,63 @@ export const initDB = async (): Promise<void> => {
       await client.query('INSERT INTO concepts (code, nom, datatype, classe, unite, valeur_min, valeur_max) SELECT $1::varchar,$2::varchar,$3::varchar,$4::varchar,$5::varchar,$6::decimal,$7::decimal WHERE NOT EXISTS (SELECT 1 FROM concepts WHERE code = $1::varchar)', [code, nom, datatype, classe, unite, vmin, vmax]);
     }
 
+    // Seed a baseline set of ICD-10 (CIM-10) diagnostic concepts so the
+    // pathology / consultation forms can offer real coded diagnoses out of
+    // the box. Each entry becomes a Concept (classe='diagnostic') plus a
+    // ConceptMapping (source='ICD-10', code_externe=<code>) so external
+    // systems and FHIR consumers can resolve to the standard terminology.
+    // ~30 codes covering the most common WHO primary-care presentations —
+    // not exhaustive, deliberately small to start.
+    const icd10: Array<[string, string]> = [
+      ['A09', 'Diarrhée et gastroentérite d\'origine infectieuse présumée'],
+      ['A15', 'Tuberculose respiratoire'],
+      ['B20', 'Maladie due au VIH'],
+      ['B50', 'Paludisme à Plasmodium falciparum'],
+      ['B54', 'Paludisme, sans précision'],
+      ['E11', 'Diabète sucré de type 2'],
+      ['E14', 'Diabète sucré, sans précision'],
+      ['E66', 'Obésité'],
+      ['F32', 'Épisode dépressif'],
+      ['G43', 'Migraine'],
+      ['I10', 'Hypertension essentielle (primaire)'],
+      ['I21', 'Infarctus aigu du myocarde'],
+      ['I64', 'Accident vasculaire cérébral, non précisé'],
+      ['J06', 'Infections aiguës des voies respiratoires supérieures'],
+      ['J18', 'Pneumonie, à micro-organisme non précisé'],
+      ['J45', 'Asthme'],
+      ['K29', 'Gastrite et duodénite'],
+      ['K59', 'Constipation'],
+      ['L08', 'Autres infections locales de la peau et du tissu cellulaire sous-cutané'],
+      ['M54', 'Dorsalgie'],
+      ['N39', 'Infection des voies urinaires, siège non précisé'],
+      ['O80', 'Accouchement unique et spontané'],
+      ['O82', 'Accouchement unique, par césarienne'],
+      ['P07', 'Troubles liés à un raccourcissement de la gestation et à un poids insuffisant à la naissance'],
+      ['Q90', 'Syndrome de Down (Trisomie 21)'],
+      ['R10', 'Douleurs abdominales et pelviennes'],
+      ['R50', 'Fièvre d\'origine autre et inconnue'],
+      ['R51', 'Céphalée'],
+      ['S52', 'Fracture de l\'avant-bras'],
+      ['Z00', 'Examen général et investigation de personnes sans plainte ni diagnostic rapporté'],
+      ['Z34', 'Surveillance d\'une grossesse normale'],
+    ];
+    for (const [code, nom] of icd10) {
+      // Upsert the concept by its code; idempotent.
+      await client.query(
+        `INSERT INTO concepts (code, nom, datatype, classe)
+         SELECT $1::varchar, $2::varchar, 'coded'::varchar, 'diagnostic'::varchar
+         WHERE NOT EXISTS (SELECT 1 FROM concepts WHERE code = $1::varchar)`,
+        [`ICD10-${code}`, nom],
+      );
+      // Attach the ICD-10 mapping (idempotent thanks to the unique constraint).
+      await client.query(
+        `INSERT INTO concept_mappings (concept_id, source, code_externe)
+         SELECT c.id, 'ICD-10', $1::varchar FROM concepts c WHERE c.code = $2::varchar
+         ON CONFLICT (concept_id, source, code_externe) DO NOTHING`,
+        [code, `ICD10-${code}`],
+      );
+    }
+
     // Settings table (configurable parameters)
     await client.query(`
       CREATE TABLE IF NOT EXISTS settings (

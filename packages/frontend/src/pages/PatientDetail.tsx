@@ -5,6 +5,7 @@ import type { Patient, RendezVous, Medecin } from '../types';
 import MentionTextarea from '../components/MentionTextarea';
 import MentionContent from '../components/MentionContent';
 import FormRenderer from '../components/FormRenderer';
+import Cim10Input from '../components/Cim10Input';
 import { useBranding } from '../components/BrandingProvider';
 import { formatPhone } from '../components/format';
 import { listFormulaires, getFormulaireReponsesPatient, postFormulaireReponse, type Formulaire as FormulaireDef, type FormulaireReponse } from '../services/api';
@@ -227,7 +228,7 @@ function PathologiesTab({ data, patientId, onRefresh, showModal, setShowModal }:
           <form onSubmit={handleSubmit}><div className="modal-body">
             <div className="grid-2">
               <div className="form-group"><label className="form-label">Nom *</label><input type="text" className="form-input" value={form.nom} onChange={e=>setForm({...form,nom:e.target.value})} required /></div>
-              <div className="form-group"><label className="form-label">Code CIM</label><input type="text" className="form-input" value={form.code_cim} onChange={e=>setForm({...form,code_cim:e.target.value})} /></div>
+              <div className="form-group"><label className="form-label">Code CIM-10</label><Cim10Input value={form.code_cim} onChange={(code, suggestion) => setForm({ ...form, code_cim: code, nom: suggestion ? suggestion.libelle : form.nom })} /></div>
             </div>
             <div className="grid-2">
               <div className="form-group"><label className="form-label">Statut</label><select className="form-select" value={form.statut} onChange={e=>setForm({...form,statut:e.target.value})}><option value="active">Active</option><option value="inactive">Inactive</option><option value="resolue">Résolue</option></select></div>

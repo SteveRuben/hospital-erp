@@ -309,6 +309,10 @@ export const deleteFormulaire = (id: number) => api.delete(`/formulaires/${id}`)
 export const getFormulaireReponsesPatient = (patientId: number) => api.get<FormulaireReponse[]>(`/formulaires/reponses/patient/${patientId}`);
 export const postFormulaireReponse = (data: { formulaire_id: number; patient_id: number; donnees: Record<string, unknown> }) => api.post<FormulaireReponse>('/formulaires/reponses', data);
 
+// ICD-10 (CIM-10) typeahead
+export interface Cim10Suggestion { id: number; code: string; libelle: string }
+export const searchCim10 = (q: string) => api.get<Cim10Suggestion[]>(`/concepts/cim-10/search?q=${encodeURIComponent(q)}`);
+
 // Staff chat
 export interface ChatChannel { id: number; type: string; name: string; description: string | null; serviceId: number | null; archived: boolean; createdAt: string; lastReadAt: string | null; unread: number }
 export interface ChatMessage { id: number; channelId: number; authorId: number; content: string; createdAt: string; editedAt: string | null; deletedAt: string | null; author: { id: number; username: string; nom: string | null; prenom: string | null; role: string }; mentions?: Array<{ id: number; username: string; nom: string | null; prenom: string | null; role: string }> }

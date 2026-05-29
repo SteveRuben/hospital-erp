@@ -6,6 +6,35 @@ import { validate, createConceptSchema } from '../middleware/validation.js';
 
 const router = Router();
 
+// ICD-10 (CIM-10) typeahead. Searches concepts joined to their ICD-10
+// mapping so we can match either the standard code (e.g. "I10") or the
+// French label ("hypertension"). Used by pathology / consultation forms
+// to coded diagnoses without leaving the keyboard.
+router.get('/cim-10/search', authenticate, async (req: AuthRequest, res: Response): Promise<void> => {
+  try {
+    const q = String(req.query.q || '').trim();
+    if (q.length < 1) { res.json([]); return; }
+    // Search by code (exact / prefix) OR by concept name (substring), all
+    // restricted to concepts that carry an ICD-10 mapping.
+    const rows = await prisma.$queryRaw<Array<{ id: number; code: string; nom: string; cim10_code: string }>>`
+      SELECT c.id, c.code, c.nom, cm.code_externe AS cim10_code
+      FROM concepts c
+      JOIN concept_mappings cm ON cm.concept_id = c.id AND cm.source = 'ICD-10'
+      WHERE c.classe = 'diagnostic'
+        AND c.actif = TRUE
+        AND (cm.code_externe ILIKE ${q + '%'} OR c.nom ILIKE ${'%' + q + '%'})
+      ORDER BY
+        CASE WHEN cm.code_externe ILIKE ${q + '%'} THEN 0 ELSE 1 END,
+        cm.code_externe ASC
+      LIMIT 20
+    `;
+    res.json(rows.map(r => ({ id: r.id, code: r.cim10_code, libelle: r.nom })));
+  } catch (err) {
+    console.error('[CIM-10] search failed:', err);
+    res.status(500).json({ error: 'Erreur serveur' });
+  }
+});
+
 // Get all concepts (with optional search/filter)
 router.get('/', authenticate, async (req: AuthRequest, res: Response): Promise<void> => {
   try {
