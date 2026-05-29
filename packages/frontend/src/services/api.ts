@@ -295,6 +295,20 @@ export const deleteNotif = (id: number) => api.delete(`/inbox/${id}`);
 export interface UserLookup { id: number; username: string; mention_handle: string | null; nom: string | null; prenom: string | null; role: string }
 export const lookupUsers = (q: string) => api.get<UserLookup[]>(`/auth/users/lookup?q=${encodeURIComponent(q)}`);
 
+// Dynamic forms
+export type FormFieldType = 'text' | 'textarea' | 'number' | 'date' | 'boolean' | 'select';
+export interface FormField { id: string; label: string; type: FormFieldType; required?: boolean; options?: string[]; placeholder?: string }
+export interface FormSchema { fields: FormField[] }
+export interface Formulaire { id: number; nom: string; description: string | null; serviceId: number | null; actif: boolean; createdAt: string; schemaJson: string; schema: FormSchema | null }
+export interface FormulaireReponse { id: number; formulaireId: number | null; patientId: number | null; rempliPar: number | null; donneesJson: string; createdAt: string; donnees: Record<string, unknown> | null; formulaire_nom: string | null; schema: FormSchema | null; rempli_par_nom: string | null; rempli_par_prenom: string | null }
+export const listFormulaires = (params?: { actif?: boolean; service_id?: number }) => api.get<Formulaire[]>('/formulaires', { params });
+export const getFormulaire = (id: number) => api.get<Formulaire>(`/formulaires/${id}`);
+export const createFormulaire = (data: { nom: string; description?: string; service_id?: number; schema: FormSchema }) => api.post<Formulaire>('/formulaires', data);
+export const updateFormulaire = (id: number, data: Partial<{ nom: string; description: string; service_id: number | null; schema: FormSchema; actif: boolean }>) => api.put<Formulaire>(`/formulaires/${id}`, data);
+export const deleteFormulaire = (id: number) => api.delete(`/formulaires/${id}`);
+export const getFormulaireReponsesPatient = (patientId: number) => api.get<FormulaireReponse[]>(`/formulaires/reponses/patient/${patientId}`);
+export const postFormulaireReponse = (data: { formulaire_id: number; patient_id: number; donnees: Record<string, unknown> }) => api.post<FormulaireReponse>('/formulaires/reponses', data);
+
 // Staff chat
 export interface ChatChannel { id: number; type: string; name: string; description: string | null; serviceId: number | null; archived: boolean; createdAt: string; lastReadAt: string | null; unread: number }
 export interface ChatMessage { id: number; channelId: number; authorId: number; content: string; createdAt: string; editedAt: string | null; deletedAt: string | null; author: { id: number; username: string; nom: string | null; prenom: string | null; role: string }; mentions?: Array<{ id: number; username: string; nom: string | null; prenom: string | null; role: string }> }

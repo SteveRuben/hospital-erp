@@ -60,6 +60,7 @@ import adminRoutes from './routes/admin.js';
 import inboxRoutes from './routes/inbox.js';
 import chatRoutes from './routes/chat.js';
 import fhirRoutes from './routes/fhir.js';
+import formulairesRoutes from './routes/formulaires.js';
 
 const app = express();
 
@@ -178,6 +179,7 @@ app.use('/api/chat', chatRoutes);
 // FHIR R4 facade — mounted at /fhir (not /api/fhir) so the URLs match the
 // FHIR convention and external clients can use them as base URLs directly.
 app.use('/fhir', fhirRoutes);
+app.use('/api/formulaires', formulairesRoutes);
 
 // Serve uploaded files
 app.use('/uploads', express.static(path.resolve(__dirname, '../uploads')));

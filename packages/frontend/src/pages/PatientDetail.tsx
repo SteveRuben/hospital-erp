@@ -4,11 +4,13 @@ import { getPatient, getPatientHistorique, getRendezVous, getVitaux, createVitau
 import type { Patient, RendezVous, Medecin } from '../types';
 import MentionTextarea from '../components/MentionTextarea';
 import MentionContent from '../components/MentionContent';
+import FormRenderer from '../components/FormRenderer';
 import { useBranding } from '../components/BrandingProvider';
 import { formatPhone } from '../components/format';
+import { listFormulaires, getFormulaireReponsesPatient, postFormulaireReponse, type Formulaire as FormulaireDef, type FormulaireReponse } from '../services/api';
 
-const tabs = ['resume','vitaux','allergies','pathologies','prescriptions','vaccinations','notes','alertes','consultations','examens','finances','rendezvous','timeline'];
-const tabLabels: Record<string,string> = { resume:'Résumé', vitaux:'Signes vitaux', allergies:'Allergies', pathologies:'Pathologies', prescriptions:'Prescriptions', vaccinations:'Vaccinations', notes:'Notes', alertes:'Alertes', consultations:'Consultations', examens:'Examens', finances:'Finances', rendezvous:'RDV', timeline:'Timeline' };
+const tabs = ['resume','vitaux','allergies','pathologies','prescriptions','vaccinations','notes','alertes','consultations','examens','finances','rendezvous','formulaires','timeline'];
+const tabLabels: Record<string,string> = { resume:'Résumé', vitaux:'Signes vitaux', allergies:'Allergies', pathologies:'Pathologies', prescriptions:'Prescriptions', vaccinations:'Vaccinations', notes:'Notes', alertes:'Alertes', consultations:'Consultations', examens:'Examens', finances:'Finances', rendezvous:'RDV', formulaires:'Formulaires', timeline:'Timeline' };
 
 export default function PatientDetail() {
   const { id } = useParams<{ id: string }>();
@@ -101,6 +103,7 @@ export default function PatientDetail() {
         {tab === 'examens' && <table className="data-table"><thead><tr><th>Date</th><th>Type</th><th>Résultat</th><th>Montant</th></tr></thead><tbody>{hist?.examens?.map((e:any) => <tr key={e.id}><td>{new Date(e.date_examen).toLocaleDateString('fr-FR')}</td><td>{e.type_examen}</td><td>{e.resultat||'-'}</td><td>{e.montant ? fmt(e.montant) : '-'}</td></tr>)}{!hist?.examens?.length && <tr><td colSpan={4} className="table-empty">Aucun</td></tr>}</tbody></table>}
         {tab === 'finances' && <table className="data-table"><thead><tr><th>Date</th><th>Type</th><th>Montant</th><th>Paiement</th></tr></thead><tbody>{hist?.recettes?.map((r:any) => <tr key={r.id}><td>{new Date(r.date_recette).toLocaleDateString('fr-FR')}</td><td>{r.type_acte}</td><td className="text-success fw-600">{fmt(r.montant)}</td><td><span className="tag tag-gray">{r.mode_paiement}</span></td></tr>)}{!hist?.recettes?.length && <tr><td colSpan={4} className="table-empty">Aucun</td></tr>}</tbody></table>}
         {tab === 'rendezvous' && <table className="data-table"><thead><tr><th>Date</th><th>Médecin</th><th>Motif</th><th>Statut</th></tr></thead><tbody>{rdvs.map(r => <tr key={r.id}><td>{new Date(r.date_rdv).toLocaleString('fr-FR')}</td><td>Dr. {r.medecin_prenom} {r.medecin_nom}</td><td>{r.motif||'-'}</td><td><span className={`tag ${r.statut==='termine'?'tag-green':r.statut==='annule'?'tag-red':'tag-blue'}`}>{r.statut}</span></td></tr>)}{!rdvs.length && <tr><td colSpan={4} className="table-empty">Aucun</td></tr>}</tbody></table>}
+        {tab === 'formulaires' && <FormulairesTab patientId={patient.id} />}
         {tab === 'timeline' && <TimelineTab hist={hist} fmt={fmt} />}
       </div>
 
@@ -416,4 +419,104 @@ function TimelineTab({ hist, fmt }: any) {
       {!timeline.length && <div className="table-empty">Aucune activité</div>}
     </div>
   );
+}
+
+function FormulairesTab({ patientId }: { patientId: number }) {
+  const [forms, setForms] = useState<FormulaireDef[]>([]);
+  const [reponses, setReponses] = useState<FormulaireReponse[]>([]);
+  const [selectedFormId, setSelectedFormId] = useState<number | null>(null);
+  const [loading, setLoading] = useState(true);
+  const [viewing, setViewing] = useState<FormulaireReponse | null>(null);
+
+  const load = async () => {
+    setLoading(true);
+    try {
+      const [f, r] = await Promise.all([
+        listFormulaires({ actif: true }),
+        getFormulaireReponsesPatient(patientId),
+      ]);
+      setForms(f.data);
+      setReponses(r.data);
+    } catch { /* ignored — empty state */ }
+    finally { setLoading(false); }
+  };
+
+  useEffect(() => { load(); }, [patientId]);
+
+  const selectedForm = forms.find(f => f.id === selectedFormId);
+
+  const handleSubmit = async (donnees: Record<string, unknown>) => {
+    if (!selectedFormId) return;
+    await postFormulaireReponse({ formulaire_id: selectedFormId, patient_id: patientId, donnees });
+    setSelectedFormId(null);
+    load();
+  };
+
+  if (loading) return <div className="text-muted" style={{ fontSize: '0.8125rem' }}>Chargement…</div>;
+
+  return (
+    <div>
+      <div className="d-flex justify-between align-center mb-2">
+        <h3 style={{ fontSize: '1rem' }}>Formulaires</h3>
+        <select className="form-select" style={{ maxWidth: '280px' }} value={selectedFormId ?? ''} onChange={e => setSelectedFormId(e.target.value ? Number(e.target.value) : null)}>
+          <option value="">— Remplir un formulaire —</option>
+          {forms.map(f => <option key={f.id} value={f.id}>{f.nom}</option>)}
+        </select>
+      </div>
+
+      {selectedForm && selectedForm.schema && (
+        <div className="tile mb-2" style={{ padding: '1.5rem' }}>
+          <h4 style={{ fontSize: '0.9375rem', fontWeight: 600, marginBottom: '0.25rem' }}>{selectedForm.nom}</h4>
+          {selectedForm.description && <p className="text-muted mb-2" style={{ fontSize: '0.8125rem' }}>{selectedForm.description}</p>}
+          <FormRenderer schema={selectedForm.schema} onSubmit={handleSubmit} onCancel={() => setSelectedFormId(null)} submitLabel="Enregistrer la réponse" />
+        </div>
+      )}
+
+      <h4 style={{ fontSize: '0.9375rem', fontWeight: 600, marginBottom: '0.5rem' }}>Réponses précédentes</h4>
+      {reponses.length === 0 ? (
+        <div className="table-empty">Aucune réponse enregistrée</div>
+      ) : (
+        <table className="data-table">
+          <thead><tr><th>Date</th><th>Formulaire</th><th>Rempli par</th><th></th></tr></thead>
+          <tbody>
+            {reponses.map(r => (
+              <tr key={r.id}>
+                <td>{new Date(r.createdAt).toLocaleString('fr-FR')}</td>
+                <td>{r.formulaire_nom ?? '—'}</td>
+                <td>{r.rempli_par_prenom ?? ''} {r.rempli_par_nom ?? ''}</td>
+                <td><button className="btn-ghost btn-sm" onClick={() => setViewing(r)}><i className="bi bi-eye"></i> Voir</button></td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      )}
+
+      {viewing && (
+        <div className="modal-overlay" onClick={() => setViewing(null)}>
+          <div className="modal-container" onClick={e => e.stopPropagation()} style={{ maxWidth: '600px' }}>
+            <div className="modal-header"><h3>{viewing.formulaire_nom ?? 'Réponse'}</h3><button className="btn-icon" onClick={() => setViewing(null)}><i className="bi bi-x-lg"></i></button></div>
+            <div className="modal-body">
+              <p className="text-muted" style={{ fontSize: '0.75rem', marginBottom: '1rem' }}>
+                {new Date(viewing.createdAt).toLocaleString('fr-FR')} — {viewing.rempli_par_prenom ?? ''} {viewing.rempli_par_nom ?? ''}
+              </p>
+              <dl style={{ display: 'grid', gridTemplateColumns: '180px 1fr', gap: '0.5rem 1rem', fontSize: '0.875rem' }}>
+                {(viewing.schema?.fields ?? []).map(f => (
+                  <>
+                    <dt key={`l-${f.id}`} style={{ color: 'var(--cds-text-secondary)' }}>{f.label}</dt>
+                    <dd key={`v-${f.id}`}>{formatValue(viewing.donnees?.[f.id])}</dd>
+                  </>
+                ))}
+              </dl>
+            </div>
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
+
+function formatValue(v: unknown): string {
+  if (v === undefined || v === null || v === '') return '—';
+  if (typeof v === 'boolean') return v ? 'Oui' : 'Non';
+  return String(v);
 }
