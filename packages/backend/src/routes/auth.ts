@@ -435,10 +435,26 @@ router.put('/me/mention-handle', authenticate, async (req: AuthRequest, res: Res
 router.get('/users', authenticate, authorize('admin'), async (_req: Request, res: Response): Promise<void> => {
   try {
     const users = await prisma.user.findMany({
-      select: { id: true, username: true, role: true, nom: true, prenom: true, telephone: true, mfaEnabled: true, suspended: true, suspendedAt: true, createdAt: true },
+      select: {
+        id: true, username: true, role: true, nom: true, prenom: true, telephone: true,
+        mfaEnabled: true, suspended: true, suspendedAt: true, createdAt: true,
+        // Phase 2 bis fields — exposed so the admin UI can render and edit
+        // the organisational hooks.
+        specialite: true, serviceId: true, suppleantUserId: true,
+        service: { select: { nom: true } },
+        suppleant: { select: { id: true, nom: true, prenom: true } },
+      },
       orderBy: { createdAt: 'desc' },
     });
-    res.json(users.map(u => ({ ...u, mfa_enabled: u.mfaEnabled, suspended_at: u.suspendedAt, created_at: u.createdAt })));
+    res.json(users.map(u => ({
+      ...u,
+      mfa_enabled: u.mfaEnabled,
+      suspended_at: u.suspendedAt,
+      created_at: u.createdAt,
+      service_id: u.serviceId,
+      suppleant_user_id: u.suppleantUserId,
+      service_nom: u.service?.nom ?? null,
+    })));
   } catch (err) {
     res.status(500).json({ error: 'Erreur serveur' });
   }
@@ -571,21 +587,75 @@ router.get('/users/:id/audit-log', authenticate, authorize('admin'), async (req:
 router.put('/users/:id', authenticate, authorize('admin'), async (req: AuthRequest, res: Response): Promise<void> => {
   try {
     const id = Number(req.params.id);
-    const { nom, prenom, telephone, role } = req.body;
+    // Phase 2 bis: serviceId (the unit the user belongs to),
+    // suppleantUserId (the medecin who covers their patients while
+    // they're suspended), and specialite (the medecin's clinical
+    // specialty) are now part of the user profile. Validate the FKs at
+    // the boundary so a typo can't land an integrity-broken row.
+    const { nom, prenom, telephone, role, specialite, service_id, suppleant_user_id } = req.body as {
+      nom?: string; prenom?: string; telephone?: string; role?: string;
+      specialite?: string | null;
+      service_id?: number | string | null;
+      suppleant_user_id?: number | string | null;
+    };
 
-    const before = await prisma.user.findUnique({ where: { id }, select: { nom: true, prenom: true, telephone: true, role: true } });
+    const before = await prisma.user.findUnique({
+      where: { id },
+      select: { nom: true, prenom: true, telephone: true, role: true, specialite: true, serviceId: true, suppleantUserId: true },
+    });
     if (!before) { res.status(404).json({ error: 'Utilisateur non trouvé' }); return; }
+
+    // Validate serviceId targets an existing service (when set).
+    let serviceIdParsed: number | null | undefined = undefined;
+    if (service_id !== undefined) {
+      if (service_id === null || service_id === '') {
+        serviceIdParsed = null;
+      } else {
+        const sid = Number(service_id);
+        const svc = await prisma.service.findUnique({ where: { id: sid }, select: { id: true } });
+        if (!svc) { res.status(400).json({ error: 'service_id introuvable' }); return; }
+        serviceIdParsed = sid;
+      }
+    }
+
+    // Validate suppleantUserId targets an existing medecin (when set),
+    // and is not the user themselves (no self-substitution).
+    let suppleantIdParsed: number | null | undefined = undefined;
+    if (suppleant_user_id !== undefined) {
+      if (suppleant_user_id === null || suppleant_user_id === '') {
+        suppleantIdParsed = null;
+      } else {
+        const sid = Number(suppleant_user_id);
+        if (sid === id) { res.status(400).json({ error: 'L\'utilisateur ne peut pas être son propre suppléant' }); return; }
+        const sup = await prisma.user.findFirst({ where: { id: sid, role: 'medecin' }, select: { id: true } });
+        if (!sup) { res.status(400).json({ error: 'suppleant_user_id doit cibler un médecin existant' }); return; }
+        suppleantIdParsed = sid;
+      }
+    }
+
+    const data: Parameters<typeof prisma.user.update>[0]['data'] = {};
+    if (nom !== undefined) data.nom = nom;
+    if (prenom !== undefined) data.prenom = prenom;
+    if (telephone !== undefined) data.telephone = telephone;
+    if (role !== undefined) data.role = role as any;
+    if (specialite !== undefined) data.specialite = specialite ?? null;
+    if (serviceIdParsed !== undefined) data.serviceId = serviceIdParsed;
+    if (suppleantIdParsed !== undefined) data.suppleantUserId = suppleantIdParsed;
 
     const updated = await prisma.user.update({
       where: { id },
-      data: { nom, prenom, telephone, role },
-      select: { id: true, username: true, role: true, nom: true, prenom: true, telephone: true },
+      data,
+      select: {
+        id: true, username: true, role: true, nom: true, prenom: true, telephone: true,
+        specialite: true, serviceId: true, suppleantUserId: true,
+      },
     });
 
-    await logAudit({ userId: req.user!.id, action: 'update', tableName: 'users', recordId: id, before, after: { nom, prenom, telephone, role } });
+    await logAudit({ userId: req.user!.id, action: 'update', tableName: 'users', recordId: id, before, after: data as Record<string, unknown> });
 
     res.json(updated);
   } catch (err) {
+    console.error('[AUTH] update user failed:', err);
     res.status(500).json({ error: 'Erreur serveur' });
   }
 });

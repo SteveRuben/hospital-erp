@@ -129,7 +129,7 @@ router.post('/', authenticate, authorize('admin'), asyncHandler(async (req: Auth
 // Update service
 router.put('/:id', authenticate, authorize('admin'), asyncHandler(async (req, res) => {
   const id = Number(req.params.id);
-  const { nom, description, parent_id, prix, poids, code, actif } = req.body;
+  const { nom, description, parent_id, prix, poids, code, actif, chef_medecin_user_id } = req.body;
 
   // Build update data
   const existing = await prisma.service.findUnique({ where: { id } });
@@ -143,6 +143,19 @@ router.put('/:id', authenticate, authorize('admin'), asyncHandler(async (req, re
   if (poids !== undefined) data.poids = Number(poids) || 0;
   if (code !== undefined) data.code = code || null;
   if (actif !== undefined) data.actif = Boolean(actif);
+
+  // Phase 2 bis: chef médecin. Empty / null clears the link. Any other
+  // value must resolve to an existing User with role='medecin'.
+  if (chef_medecin_user_id !== undefined) {
+    if (chef_medecin_user_id === null || chef_medecin_user_id === '') {
+      data.chefMedecinUserId = null;
+    } else {
+      const uid = Number(chef_medecin_user_id);
+      const chef = await prisma.user.findFirst({ where: { id: uid, role: 'medecin' }, select: { id: true } });
+      if (!chef) { res.status(400).json({ error: 'chef_medecin_user_id doit cibler un médecin existant' }); return; }
+      data.chefMedecinUserId = uid;
+    }
+  }
 
   const updated = await prisma.service.update({ where: { id }, data });
   res.json(updated);

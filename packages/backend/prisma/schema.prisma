@@ -8,6 +8,11 @@ datasource db {
 
 // ===== AUTH =====
 
+// Adding a new role here MUST also (1) add the label to the UserRole
+// Postgres enum (migration + init.ts ALTER TYPE ADD VALUE), (2) seed
+// habilitations for the new role in init.ts so the role gets the
+// modules it should access, (3) extend access-control.ts if the role
+// participates in patient-level filtering.
 enum UserRole {
   admin
   medecin
@@ -15,6 +20,7 @@ enum UserRole {
   laborantin
   reception
   pharmacien
+  infirmier
 }
 
 model User {
@@ -35,6 +41,15 @@ model User {
   onboardingDismissedAt DateTime? @map("onboarding_dismissed_at")
   suspended           Boolean   @default(false)
   suspendedAt         DateTime? @map("suspended_at")
+  // Phase 2 bis — organisational hooks.
+  // suppleantUserId: backup user who inherits access while this user is
+  //   suspended. Self-FK; admins set it on a per-medecin basis. Anyone
+  //   with role='medecin' is a valid target.
+  // serviceId: the unit the user belongs to. Used by access-control to
+  //   grant infirmier (and any unit-scoped role) access to patients
+  //   with an active visite/hospitalisation in that service.
+  suppleantUserId     Int?      @map("suppleant_user_id")
+  serviceId           Int?      @map("service_id")
   createdAt           DateTime  @default(now()) @map("created_at")
 
   notes               Note[]
@@ -57,6 +72,12 @@ model User {
   ordonnancesAsMedecin      Ordonnance[]      @relation("OrdonnanceMedecin")
   vaccinationsAsMedecin     Vaccination[]     @relation("VaccinationMedecin")
   hospitalisationsAsMedecin Hospitalisation[] @relation("HospitalisationMedecin")
+  // Phase 2 bis relations.
+  suppleant                 User?             @relation("UserSuppleant", fields: [suppleantUserId], references: [id])
+  // Inverse: users who have *this* user as their suppleant.
+  backupFor                 User[]            @relation("UserSuppleant")
+  service                   Service?          @relation("UserService", fields: [serviceId], references: [id])
+  servicesAsChef            Service[]         @relation("ServiceChefMedecin")
 
   @@map("users")
 }
@@ -147,18 +168,24 @@ model Patient {
 // ===== SERVICES =====
 
 model Service {
-  id          Int       @id @default(autoincrement())
-  nom         String    @db.VarChar(200)
-  description String?
-  parentId    Int?      @map("parent_id")
-  prix        Decimal?  @default(0) @db.Decimal(12, 2)
-  poids       Int?      @default(0)
-  code        String?   @db.VarChar(50)
-  actif       Boolean   @default(true)
-  createdAt   DateTime  @default(now()) @map("created_at")
+  id                Int       @id @default(autoincrement())
+  nom               String    @db.VarChar(200)
+  description       String?
+  parentId          Int?      @map("parent_id")
+  prix              Decimal?  @default(0) @db.Decimal(12, 2)
+  poids             Int?      @default(0)
+  code              String?   @db.VarChar(50)
+  actif             Boolean   @default(true)
+  // Phase 2 bis: optional chief doctor. A chef médecin gets HIPAA
+  // access to every patient with a consultation in this service.
+  // Validated to be a User with role='medecin' at the route boundary.
+  chefMedecinUserId Int?      @map("chef_medecin_user_id")
+  createdAt         DateTime  @default(now()) @map("created_at")
 
   parent        Service?  @relation("ServiceHierarchy", fields: [parentId], references: [id])
   children      Service[] @relation("ServiceHierarchy")
+  chefMedecin   User?     @relation("ServiceChefMedecin", fields: [chefMedecinUserId], references: [id])
+  membres       User[]    @relation("UserService")
   consultations Consultation[]
   recettes      Recette[]
   rendezVous    RendezVous[]

@@ -728,6 +728,10 @@ export const initDB = async (): Promise<void> => {
       laborantin: ['dashboard','laboratoire','documentation','orders'],
       reception: ['dashboard','patients','rendezvous','visites','file-attente','documentation'],
       pharmacien: ['dashboard','pharmacie','patients','documentation','orders'],
+      // Infirmier (Phase 2 bis): bedside support — needs the patient
+      // chart, vitals capture, queue management, file d'attente, and
+      // the visite / hospitalisation views to see who is in the unit.
+      infirmier: ['dashboard','patients','consultations','visites','file-attente','lits','listes-patients','documentation','programmes','imagerie','formulaires'],
     };
     for (const [role, mods] of Object.entries(roleAccess)) {
       for (const mod of modules) {
@@ -1146,6 +1150,52 @@ export const initDB = async (): Promise<void> => {
         console.log('[INIT] Phase 2 complete — medecins table dropped, FKs repointed to users');
       }
     }
+
+    // Phase 2 bis — organisational links: chef médecin per service,
+    // suppléant per user, service rattachement per user, infirmier
+    // role. See migration 20260530100000 for the rationale.
+    //
+    // ALTER TYPE ADD VALUE must be its own statement (cannot run inside
+    // a transaction block that already used the type), hence two
+    // separate client.query calls.
+    await client.query(`
+      DO $$
+      BEGIN
+        IF EXISTS (SELECT 1 FROM pg_type WHERE typname = 'UserRole')
+           AND NOT EXISTS (
+             SELECT 1 FROM pg_enum e JOIN pg_type t ON e.enumtypid = t.oid
+             WHERE t.typname = 'UserRole' AND e.enumlabel = 'infirmier'
+           ) THEN
+          ALTER TYPE "UserRole" ADD VALUE 'infirmier';
+        END IF;
+      END $$;
+    `);
+    await client.query(`
+      ALTER TABLE services ADD COLUMN IF NOT EXISTS chef_medecin_user_id INTEGER;
+      ALTER TABLE users    ADD COLUMN IF NOT EXISTS suppleant_user_id   INTEGER;
+      ALTER TABLE users    ADD COLUMN IF NOT EXISTS service_id          INTEGER;
+      DO $$
+      BEGIN
+        IF NOT EXISTS (SELECT 1 FROM pg_constraint WHERE conname = 'services_chef_medecin_user_id_fkey') THEN
+          ALTER TABLE services
+            ADD CONSTRAINT services_chef_medecin_user_id_fkey
+            FOREIGN KEY (chef_medecin_user_id) REFERENCES users(id) ON DELETE SET NULL;
+        END IF;
+        IF NOT EXISTS (SELECT 1 FROM pg_constraint WHERE conname = 'users_suppleant_user_id_fkey') THEN
+          ALTER TABLE users
+            ADD CONSTRAINT users_suppleant_user_id_fkey
+            FOREIGN KEY (suppleant_user_id) REFERENCES users(id) ON DELETE SET NULL;
+        END IF;
+        IF NOT EXISTS (SELECT 1 FROM pg_constraint WHERE conname = 'users_service_id_fkey') THEN
+          ALTER TABLE users
+            ADD CONSTRAINT users_service_id_fkey
+            FOREIGN KEY (service_id) REFERENCES services(id) ON DELETE SET NULL;
+        END IF;
+      END $$;
+      CREATE INDEX IF NOT EXISTS idx_services_chef_medecin ON services(chef_medecin_user_id);
+      CREATE INDEX IF NOT EXISTS idx_users_suppleant       ON users(suppleant_user_id);
+      CREATE INDEX IF NOT EXISTS idx_users_service         ON users(service_id);
+    `);
 
     // Examen payment tracking — adds a "à payer" step to the Kanban before
     // prélèvement when montant > 0. Paid exams skip straight to prélèvement.
