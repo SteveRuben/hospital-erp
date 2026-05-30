@@ -4,6 +4,7 @@ import { prisma } from '../config/db.js';
 import { authenticate, authorize, AuthRequest } from '../middleware/auth.js';
 import { generateReference } from '../services/reference.js';
 import { validate, createOrderSchema } from '../middleware/validation.js';
+import { patientAccessScope, canAccessPatient } from '../services/access-control.js';
 
 const router = Router();
 
@@ -17,8 +18,13 @@ function isValidOrderStatut(v: unknown): v is OrderStatut {
 // Get orders for a patient
 router.get('/patient/:patientId', authenticate, async (req: AuthRequest, res: Response): Promise<void> => {
   try {
+    const patientId = Number(req.params.patientId);
+    if (!(await canAccessPatient(req.user!, patientId))) {
+      res.status(403).json({ error: 'Accès refusé — ce patient ne vous est pas attribué' });
+      return;
+    }
     const { type_order, statut } = req.query;
-    const where: Prisma.OrderWhereInput = { patientId: Number(req.params.patientId) };
+    const where: Prisma.OrderWhereInput = { patientId };
     if (type_order) where.typeOrder = String(type_order);
     if (statut && isValidOrderStatut(String(statut))) where.statut = String(statut) as OrderStatut;
     const rows = await prisma.order.findMany({
@@ -47,6 +53,8 @@ router.get('/', authenticate, async (req: AuthRequest, res: Response): Promise<v
     const statutVal: OrderStatut = isValidOrderStatut(String(statut)) ? (String(statut) as OrderStatut) : OrderStatut.actif;
     const where: Prisma.OrderWhereInput = { statut: statutVal };
     if (type_order) where.typeOrder = String(type_order);
+    const scope = await patientAccessScope(req.user!);
+    if (scope.kind === 'restricted') where.patientId = { in: scope.ids };
 
     const pg = Math.max(1, Number(page));
     const lim = Math.min(100, Math.max(1, Number(limit)));

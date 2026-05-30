@@ -3,6 +3,7 @@ import { Prisma, ExamenStatut } from '@prisma/client';
 import { prisma } from '../config/db.js';
 import { authenticate, authorize, AuthRequest } from '../middleware/auth.js';
 import { notifyMany } from '../services/notify.js';
+import { patientAccessScope, canAccessPatient } from '../services/access-control.js';
 
 const router = Router();
 
@@ -50,6 +51,12 @@ router.get('/', authenticate, async (req: AuthRequest, res: Response): Promise<v
       if (date_debut) (where.dateExamen as Prisma.DateTimeFilter).gte = new Date(String(date_debut));
       if (date_fin) (where.dateExamen as Prisma.DateTimeFilter).lte = new Date(String(date_fin));
     }
+    const scope = await patientAccessScope(req.user!);
+    if (scope.kind === 'restricted') {
+      where.patientId = where.patientId
+        ? (scope.ids.includes(where.patientId as number) ? where.patientId : -1)
+        : { in: scope.ids };
+    }
     const rows = await prisma.examen.findMany({
       where,
       include: { patient: { select: { nom: true, prenom: true, telephone: true } } },
@@ -84,6 +91,8 @@ router.get('/stats', authenticate, async (req: AuthRequest, res: Response): Prom
     if (debut && fin) {
       where.dateExamen = { gte: new Date(String(debut)), lte: new Date(String(fin)) };
     }
+    const scope = await patientAccessScope(req.user!);
+    if (scope.kind === 'restricted') where.patientId = { in: scope.ids };
 
     const totalAgg = await prisma.examen.aggregate({
       where,
@@ -119,6 +128,10 @@ router.get('/:id', authenticate, async (req: AuthRequest, res: Response): Promis
       include: { patient: { select: { nom: true, prenom: true } } },
     });
     if (!e) { res.status(404).json({ error: 'Examen non trouvé' }); return; }
+    if (!(await canAccessPatient(req.user!, e.patientId))) {
+      res.status(403).json({ error: 'Accès refusé — ce patient ne vous est pas attribué' });
+      return;
+    }
     res.json({
       ...e,
       date_examen: e.dateExamen,
@@ -140,6 +153,10 @@ router.get('/:id', authenticate, async (req: AuthRequest, res: Response): Promis
 router.get('/patient/:patientId/types', authenticate, async (req: AuthRequest, res: Response): Promise<void> => {
   try {
     const patientId = Number(req.params.patientId);
+    if (!(await canAccessPatient(req.user!, patientId))) {
+      res.status(403).json({ error: 'Accès refusé — ce patient ne vous est pas attribué' });
+      return;
+    }
     const rows = await prisma.examen.findMany({
       where: { patientId },
       select: { typeExamen: true },

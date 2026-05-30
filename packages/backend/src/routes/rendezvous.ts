@@ -3,6 +3,7 @@ import { prisma } from '../config/db.js';
 import { authenticate, authorize, AuthRequest } from '../middleware/auth.js';
 import { validate, createRendezVousSchema } from '../middleware/validation.js';
 import { Prisma, RendezVousStatut } from '@prisma/client';
+import { patientAccessScope, canAccessPatient } from '../services/access-control.js';
 
 const router = Router();
 
@@ -37,6 +38,14 @@ router.get('/', authenticate, async (req: AuthRequest, res: Response): Promise<v
     if (statut && isValidRdvStatut(String(statut))) {
       filters.push(Prisma.sql`r.statut = ${String(statut)}::"RendezVousStatut"`);
     }
+    const scope = await patientAccessScope(req.user!);
+    if (scope.kind === 'restricted') {
+      filters.push(
+        scope.ids.length === 0
+          ? Prisma.sql`FALSE`
+          : Prisma.sql`r.patient_id IN (${Prisma.join(scope.ids)})`,
+      );
+    }
     const whereClause = filters.length ? Prisma.sql`WHERE ${Prisma.join(filters, ' AND ')}` : Prisma.empty;
     const rows = await prisma.$queryRaw<Array<Record<string, unknown>>>`
       ${baseSelect}
@@ -50,11 +59,16 @@ router.get('/', authenticate, async (req: AuthRequest, res: Response): Promise<v
 });
 
 // Get today's rendez-vous
-router.get('/today', authenticate, async (_req: AuthRequest, res: Response): Promise<void> => {
+router.get('/today', authenticate, async (req: AuthRequest, res: Response): Promise<void> => {
   try {
+    const scope = await patientAccessScope(req.user!);
+    const patientFilter = scope.kind === 'restricted'
+      ? (scope.ids.length === 0 ? Prisma.sql`AND FALSE` : Prisma.sql`AND r.patient_id IN (${Prisma.join(scope.ids)})`)
+      : Prisma.empty;
     const rows = await prisma.$queryRaw<Array<Record<string, unknown>>>`
       ${baseSelect}
       WHERE DATE(r.date_rdv) = CURRENT_DATE
+      ${patientFilter}
       ORDER BY r.date_rdv ASC
     `;
     res.json(rows);
@@ -73,6 +87,11 @@ router.get('/:id', authenticate, async (req: AuthRequest, res: Response): Promis
     `;
     if (rows.length === 0) {
       res.status(404).json({ error: 'Rendez-vous non trouvé' });
+      return;
+    }
+    const patientId = Number(rows[0].patient_id);
+    if (!(await canAccessPatient(req.user!, patientId))) {
+      res.status(403).json({ error: 'Accès refusé — ce patient ne vous est pas attribué' });
       return;
     }
     res.json(rows[0]);

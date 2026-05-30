@@ -4,6 +4,7 @@ import { prisma } from '../config/db.js';
 import { authenticate, authorize, AuthRequest } from '../middleware/auth.js';
 import { getPaginationParams, paginatedResponse } from '../middleware/pagination.js';
 import { validate, createConsultationSchema } from '../middleware/validation.js';
+import { patientAccessScope, canAccessPatient } from '../services/access-control.js';
 
 const router = Router();
 
@@ -20,6 +21,16 @@ router.get('/', authenticate, async (req: AuthRequest, res: Response): Promise<v
       where.dateConsultation = {};
       if (date_debut) (where.dateConsultation as Prisma.DateTimeFilter).gte = new Date(String(date_debut));
       if (date_fin) (where.dateConsultation as Prisma.DateTimeFilter).lte = new Date(String(date_fin));
+    }
+    // HIPAA minimum-necessary: a medecin can only see consultations for
+    // patients they're attributed to. Intersect with any caller-supplied
+    // patient_id filter so a medecin asking about an unattributed patient
+    // gets an empty list instead of nothing-blocked.
+    const scope = await patientAccessScope(req.user!);
+    if (scope.kind === 'restricted') {
+      where.patientId = where.patientId
+        ? (scope.ids.includes(where.patientId as number) ? where.patientId : -1)
+        : { in: scope.ids };
     }
 
     const [total, rows] = await Promise.all([
@@ -62,6 +73,10 @@ router.get('/:id', authenticate, async (req: AuthRequest, res: Response): Promis
       },
     });
     if (!c) { res.status(404).json({ error: 'Consultation non trouvée' }); return; }
+    if (!(await canAccessPatient(req.user!, c.patientId))) {
+      res.status(403).json({ error: 'Accès refusé — ce patient ne vous est pas attribué' });
+      return;
+    }
     res.json({
       ...c,
       patient_nom: c.patient?.nom ?? null,

@@ -3,6 +3,7 @@ import { prisma } from '../config/db.js';
 import { authenticate, authorize, AuthRequest } from '../middleware/auth.js';
 import { validate, createFileAttenteSchema } from '../middleware/validation.js';
 import { Prisma, FileAttenteStatut } from '@prisma/client';
+import { patientAccessScope } from '../services/access-control.js';
 
 const router = Router();
 
@@ -18,7 +19,13 @@ router.get('/', authenticate, async (req: AuthRequest, res: Response): Promise<v
   try {
     const { service_id, statut } = req.query;
     const serviceFilter = service_id ? Prisma.sql`AND f.service_id = ${Number(service_id)}` : Prisma.empty;
-    const statutFilter = statut ? Prisma.sql`AND f.statut = ${String(statut)}` : Prisma.empty;
+    const statutFilter = (statut && isValidFAStatut(String(statut)))
+      ? Prisma.sql`AND f.statut = ${String(statut)}::"FileAttenteStatut"`
+      : Prisma.empty;
+    const scope = await patientAccessScope(req.user!);
+    const patientFilter = scope.kind === 'restricted'
+      ? (scope.ids.length === 0 ? Prisma.sql`AND FALSE` : Prisma.sql`AND f.patient_id IN (${Prisma.join(scope.ids)})`)
+      : Prisma.empty;
     const rows = await prisma.$queryRaw<Array<Record<string, unknown>>>`
       SELECT f.*,
              p.nom as patient_nom, p.prenom as patient_prenom, p.sexe, p.telephone as patient_telephone,
@@ -29,6 +36,7 @@ router.get('/', authenticate, async (req: AuthRequest, res: Response): Promise<v
       WHERE DATE(f.date_arrivee) = CURRENT_DATE
       ${serviceFilter}
       ${statutFilter}
+      ${patientFilter}
       ORDER BY f.priorite ASC, f.numero_ordre ASC
     `;
     res.json(rows);

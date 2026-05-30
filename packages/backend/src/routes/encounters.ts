@@ -3,6 +3,7 @@ import { prisma } from '../config/db.js';
 import { authenticate, authorize, AuthRequest } from '../middleware/auth.js';
 import { generateReference } from '../services/reference.js';
 import { validate, createEncounterSchema } from '../middleware/validation.js';
+import { canAccessPatient } from '../services/access-control.js';
 
 const router = Router();
 
@@ -17,8 +18,13 @@ router.get('/types', authenticate, async (_req: AuthRequest, res: Response): Pro
 // Get encounters for a patient
 router.get('/patient/:patientId', authenticate, async (req: AuthRequest, res: Response): Promise<void> => {
   try {
+    const patientId = Number(req.params.patientId);
+    if (!(await canAccessPatient(req.user!, patientId))) {
+      res.status(403).json({ error: 'Accès refusé — ce patient ne vous est pas attribué' });
+      return;
+    }
     const rows = await prisma.encounter.findMany({
-      where: { patientId: Number(req.params.patientId) },
+      where: { patientId },
       include: {
         encounterType: { select: { nom: true } },
         provider: { select: { nom: true, prenom: true } },
@@ -49,6 +55,10 @@ router.get('/:id', authenticate, async (req: AuthRequest, res: Response): Promis
       },
     });
     if (!enc) { res.status(404).json({ error: 'Encounter non trouvé' }); return; }
+    if (!(await canAccessPatient(req.user!, enc.patientId))) {
+      res.status(403).json({ error: 'Accès refusé — ce patient ne vous est pas attribué' });
+      return;
+    }
 
     const obs = await prisma.observation.findMany({
       where: { encounterId: enc.id, voided: false },

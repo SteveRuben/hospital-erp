@@ -3,10 +3,17 @@
  * Centralizes authorization checks beyond simple role-gates.
  *
  * canAccessPatient:
- *   - admin / comptable / laborantin / reception → all patients (full access)
+ *   - admin / comptable / laborantin / reception / pharmacien → all patients
  *   - medecin → only patients linked via:
  *       1. patient_attributions table (explicit attribution, recommended)
  *       2. consultations history (medecin name/prenom matches user) — legacy fallback
+ *
+ * patientAccessScope:
+ *   - returns a discriminated union { kind: 'all' } | { kind: 'restricted', ids: number[] }
+ *   - replaces the older nullable-array contract from accessiblePatientIds()
+ *     which is HIPAA-fragile: a single missed null check at a call site
+ *     silently grants full access. The discriminated union makes that
+ *     mistake impossible — the caller must handle both kinds.
  */
 
 import { prisma } from '../config/db.js';
@@ -15,6 +22,10 @@ export interface AccessUser {
   id: number;
   role: string;
 }
+
+export type PatientAccessScope =
+  | { kind: 'all' }
+  | { kind: 'restricted'; ids: number[] };
 
 /**
  * Returns true if the given user can access the given patient's record.
@@ -39,18 +50,21 @@ export async function canAccessPatient(user: AccessUser, patientId: number): Pro
 }
 
 /**
- * HIPAA "Minimum Necessary" (§164.502(b)): when a medecin lists/searches patients,
- * the result set must be restricted to patients they're attributed to (or have an
- * existing consultation with). Without this, an unattributed medecin can enumerate
- * the entire patient roster via /patients, /patients/search/quick, /search/advanced
- * — they can't OPEN a record (canAccessPatient blocks that), but names + phones
- * leak via the list, which is PHI under HIPAA.
+ * HIPAA "Minimum Necessary" (§164.502(b)): when a medecin lists/searches
+ * any patient-scoped resource (patients, consultations, RDV, lab exams,
+ * orders, invoices, …), the result set must be restricted to patients
+ * they're attributed to (or have an existing consultation with).
  *
- * Returns a Prisma `where` fragment to AND into list queries. For non-medecin
- * roles, returns {} (no extra filter — full roster access by role design).
+ * Returns a discriminated union so the caller cannot accidentally treat
+ * "unrestricted" as "empty list" or vice versa. Apply with:
+ *
+ *   const scope = await patientAccessScope(user);
+ *   if (scope.kind === 'restricted') where.patientId = { in: scope.ids };
+ *
+ * Non-medecin roles → { kind: 'all' }.
  */
-export async function accessiblePatientIds(user: AccessUser): Promise<number[] | null> {
-  if (user.role !== 'medecin') return null; // null = no filter, full access
+export async function patientAccessScope(user: AccessUser): Promise<PatientAccessScope> {
+  if (user.role !== 'medecin') return { kind: 'all' };
 
   const rows = await prisma.$queryRaw<Array<{ patient_id: number }>>`
     SELECT DISTINCT patient_id FROM (
@@ -63,7 +77,17 @@ export async function accessiblePatientIds(user: AccessUser): Promise<number[] |
     ) t
   `;
 
-  return rows.map(r => r.patient_id);
+  return { kind: 'restricted', ids: rows.map(r => r.patient_id) };
 }
 
-export default { canAccessPatient, accessiblePatientIds };
+/**
+ * @deprecated Use patientAccessScope. The nullable-array return makes it
+ * easy to silently disable the filter by forgetting the null check. Kept
+ * as a thin shim while existing call sites migrate.
+ */
+export async function accessiblePatientIds(user: AccessUser): Promise<number[] | null> {
+  const scope = await patientAccessScope(user);
+  return scope.kind === 'all' ? null : scope.ids;
+}
+
+export default { canAccessPatient, accessiblePatientIds, patientAccessScope };

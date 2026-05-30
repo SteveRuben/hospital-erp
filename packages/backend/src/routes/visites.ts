@@ -3,15 +3,27 @@ import { prisma } from '../config/db.js';
 import { authenticate, authorize } from '../middleware/auth.js';
 import { validate, createVisiteSchema } from '../middleware/validation.js';
 import { asyncHandler } from '../middleware/asyncHandler.js';
-import { Prisma } from '@prisma/client';
+import { Prisma, VisiteStatut } from '@prisma/client';
+import { patientAccessScope } from '../services/access-control.js';
 
 const router = Router();
 
+const VALID_VISITE_STATUTS: ReadonlySet<VisiteStatut> = new Set(
+  Object.values(VisiteStatut) as VisiteStatut[],
+);
+function isValidVisiteStatut(v: unknown): v is VisiteStatut {
+  return typeof v === 'string' && VALID_VISITE_STATUTS.has(v as VisiteStatut);
+}
+
 // Get active visits
-router.get('/', authenticate, asyncHandler(async (req, res) => {
+router.get('/', authenticate, asyncHandler(async (req: any, res) => {
   const { statut = 'active', service_id } = req.query;
-  const statutStr = String(statut);
+  const statutStr: VisiteStatut = isValidVisiteStatut(String(statut)) ? (String(statut) as VisiteStatut) : VisiteStatut.active;
   const serviceFilter = service_id ? Prisma.sql`AND v.service_id = ${Number(service_id)}` : Prisma.empty;
+  const scope = await patientAccessScope(req.user!);
+  const patientFilter = scope.kind === 'restricted'
+    ? (scope.ids.length === 0 ? Prisma.sql`AND FALSE` : Prisma.sql`AND v.patient_id IN (${Prisma.join(scope.ids)})`)
+    : Prisma.empty;
   const rows = await prisma.$queryRaw<Array<Record<string, unknown>>>`
     SELECT v.*,
            p.nom as patient_nom, p.prenom as patient_prenom, p.sexe, p.telephone as patient_telephone,
@@ -19,8 +31,9 @@ router.get('/', authenticate, asyncHandler(async (req, res) => {
     FROM visites v
     LEFT JOIN patients p ON v.patient_id = p.id
     LEFT JOIN services s ON v.service_id = s.id
-    WHERE v.statut = ${statutStr}
+    WHERE v.statut = ${statutStr}::"VisiteStatut"
     ${serviceFilter}
+    ${patientFilter}
     ORDER BY v.date_debut DESC
   `;
   res.json(rows);
@@ -30,7 +43,7 @@ router.get('/', authenticate, asyncHandler(async (req, res) => {
 router.post('/', authenticate, authorize('admin', 'medecin', 'reception'), validate(createVisiteSchema), asyncHandler(async (req, res) => {
   const { patient_id, service_id, type_visite, notes } = req.body;
   if (!patient_id) { res.status(400).json({ error: 'Patient requis' }); return; }
-  const existing = await prisma.visite.findFirst({ where: { patientId: Number(patient_id), statut: 'active' }, select: { id: true } });
+  const existing = await prisma.visite.findFirst({ where: { patientId: Number(patient_id), statut: VisiteStatut.active }, select: { id: true } });
   if (existing) { res.status(400).json({ error: 'Ce patient a déjà une visite active' }); return; }
   const n = (v: unknown) => (v === '' || v === undefined) ? null : v;
   const created = await prisma.visite.create({
@@ -48,8 +61,8 @@ router.post('/', authenticate, authorize('admin', 'medecin', 'reception'), valid
 router.put('/:id/terminer', authenticate, asyncHandler(async (req, res) => {
   const id = Number(req.params.id);
   const result = await prisma.visite.updateMany({
-    where: { id, statut: 'active' },
-    data: { statut: 'terminee', dateFin: new Date() },
+    where: { id, statut: VisiteStatut.active },
+    data: { statut: VisiteStatut.terminee, dateFin: new Date() },
   });
   if (result.count === 0) { res.status(404).json({ error: 'Visite non trouvée ou déjà terminée' }); return; }
   const updated = await prisma.visite.findUnique({ where: { id } });
@@ -60,7 +73,7 @@ router.put('/:id/terminer', authenticate, asyncHandler(async (req, res) => {
 router.get('/stats', authenticate, asyncHandler(async (_req, res) => {
   const startOfDay = new Date(); startOfDay.setHours(0, 0, 0, 0);
   const endOfDay = new Date(); endOfDay.setHours(23, 59, 59, 999);
-  const actives = await prisma.visite.count({ where: { statut: 'active' } });
+  const actives = await prisma.visite.count({ where: { statut: VisiteStatut.active } });
   const today = await prisma.visite.count({ where: { dateDebut: { gte: startOfDay, lte: endOfDay } } });
   const parService = await prisma.$queryRaw<Array<{ nom: string; total: bigint }>>`
     SELECT s.nom, COUNT(v.id)::bigint as total
