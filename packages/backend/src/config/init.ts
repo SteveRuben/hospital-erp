@@ -719,7 +719,7 @@ export const initDB = async (): Promise<void> => {
     }
 
     // Seed default habilitations
-    const modules = ['dashboard','patients','medecins','consultations','rendezvous','laboratoire','visites','file-attente','finances','services','listes-patients','documentation','utilisateurs','habilitations','import','lits','programmes','facturation','imagerie','orders','concepts','pharmacie','patient-merge','rapports','configuration','securite','formulaires','catalogue-examens'];
+    const modules = ['dashboard','patients','medecins','consultations','rendezvous','laboratoire','visites','file-attente','finances','services','listes-patients','documentation','utilisateurs','habilitations','import','lits','programmes','facturation','imagerie','orders','concepts','pharmacie','patient-merge','rapports','configuration','securite','formulaires','catalogue-examens','impressions','parametres-generaux','listes-reference'];
     const roleAccess: Record<string, string[]> = {
       admin: modules,
       medecin: ['dashboard','patients','medecins','consultations','rendezvous','visites','file-attente','listes-patients','documentation','lits','programmes','imagerie','orders','pharmacie','formulaires'],
@@ -766,6 +766,9 @@ export const initDB = async (): Promise<void> => {
       // Tuple format gained an optional 8th slot: parent_module. When set,
       // the sidebar nests this item under that parent with an indent.
       ['Administration', 2, 'catalogue-examens', "Catalogue d'examens", 'bi-list-check', '/app/catalogue-examens', 12, 'configuration'],
+      ['Administration', 2, 'impressions', 'Impressions', 'bi-printer', '/app/impressions', 14, 'configuration'],
+      ['Administration', 2, 'parametres-generaux', 'Paramètres généraux', 'bi-sliders', '/app/parametres-generaux', 15, 'configuration'],
+      ['Administration', 2, 'listes-reference', 'Listes de référence', 'bi-list-ul', '/app/listes-reference', 16, 'configuration'],
     ] as Array<readonly [string, number, string, string, string, string, number] | readonly [string, number, string, string, string, string, number, string]>;
     for (const item of menuItems) {
       const [groupe, groupe_ordre, module, label, icon, path, ordre] = item;

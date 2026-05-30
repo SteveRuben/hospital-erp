@@ -55,6 +55,9 @@ const Chat = lazy(() => import('./pages/Chat'));
 const Formulaires = lazy(() => import('./pages/Formulaires'));
 const Profil = lazy(() => import('./pages/Profil'));
 const CatalogueExamens = lazy(() => import('./pages/CatalogueExamens'));
+const Impressions = lazy(() => import('./pages/Impressions'));
+const ParametresGeneraux = lazy(() => import('./pages/ParametresGeneraux'));
+const ListesReference = lazy(() => import('./pages/ListesReference'));
 
 const PageLoader = () => <div className="loading"><div className="spinner"></div></div>;
 
@@ -201,6 +204,9 @@ function App() {
                         <Route path="/formulaires" element={<RoleGuard roles={['admin','medecin']}><Formulaires /></RoleGuard>} />
                         <Route path="/profil" element={<Profil />} />
                         <Route path="/catalogue-examens" element={<RoleGuard roles={['admin','comptable']}><CatalogueExamens /></RoleGuard>} />
+                        <Route path="/impressions" element={<RoleGuard roles={['admin']}><Impressions /></RoleGuard>} />
+                        <Route path="/parametres-generaux" element={<RoleGuard roles={['admin']}><ParametresGeneraux /></RoleGuard>} />
+                        <Route path="/listes-reference" element={<RoleGuard roles={['admin']}><ListesReference /></RoleGuard>} />
                       </Routes>
                     </Suspense>
                   </Layout>
