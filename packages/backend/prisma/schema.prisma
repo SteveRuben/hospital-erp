@@ -351,17 +351,20 @@ model Recette {
 }
 
 model Examen {
-  id          Int      @id @default(autoincrement())
-  reference   String?  @unique @db.VarChar(20)
-  patientId   Int      @map("patient_id")
-  typeExamen  String   @map("type_examen") @db.VarChar(100)
-  resultat    String?
-  dateExamen  DateTime @default(now()) @map("date_examen") @db.Date
-  montant     Decimal? @db.Decimal(10, 2)
-  statut      String?  @default("demande") @db.VarChar(50)
-  demandeurId Int?     @map("demandeur_id")
-  createdAt   DateTime @default(now()) @map("created_at")
-  patient     Patient  @relation(fields: [patientId], references: [id])
+  id            Int       @id @default(autoincrement())
+  reference     String?   @unique @db.VarChar(20)
+  patientId     Int       @map("patient_id")
+  typeExamen    String    @map("type_examen") @db.VarChar(100)
+  resultat      String?
+  dateExamen    DateTime  @default(now()) @map("date_examen") @db.Date
+  montant       Decimal?  @db.Decimal(10, 2)
+  statut        String?   @default("demande") @db.VarChar(50)
+  demandeurId   Int?      @map("demandeur_id")
+  paye          Boolean   @default(false)
+  datePaiement  DateTime? @map("date_paiement")
+  modePaiement  String?   @map("mode_paiement") @db.VarChar(50)
+  createdAt     DateTime  @default(now()) @map("created_at")
+  patient       Patient   @relation(fields: [patientId], references: [id])
   @@map("examens")
 }
 

@@ -43,8 +43,20 @@ router.get('/', authenticate, async (req: AuthRequest, res: Response): Promise<v
       include: { patient: { select: { nom: true, prenom: true, telephone: true } } },
       orderBy: [{ dateExamen: 'desc' }, { id: 'desc' }],
     });
+    // Prisma returns camelCase (dateExamen, typeExamen, patientId, demandeurId).
+    // The frontend Examen TS type + the Kanban / form read snake_case fields.
+    // Without explicit mapping the dates render as "Invalid Date" and the edit
+    // form initializes empty. Always emit snake_case from this surface.
     const mapped = rows.map(e => ({
       ...e,
+      date_examen: e.dateExamen,
+      type_examen: e.typeExamen,
+      patient_id: e.patientId,
+      demandeur_id: e.demandeurId,
+      statut: e.statut,
+      paye: e.paye,
+      date_paiement: e.datePaiement,
+      mode_paiement: e.modePaiement,
       patient_nom: e.patient?.nom ?? null,
       patient_prenom: e.patient?.prenom ?? null,
       patient_telephone: e.patient?.telephone ?? null,
@@ -97,20 +109,50 @@ router.get('/:id', authenticate, async (req: AuthRequest, res: Response): Promis
     if (!e) { res.status(404).json({ error: 'Examen non trouvé' }); return; }
     res.json({
       ...e,
+      date_examen: e.dateExamen,
+      type_examen: e.typeExamen,
+      patient_id: e.patientId,
+      demandeur_id: e.demandeurId,
+      statut: e.statut,
+      paye: e.paye,
+      date_paiement: e.datePaiement,
+      mode_paiement: e.modePaiement,
       patient_nom: e.patient?.nom ?? null,
       patient_prenom: e.patient?.prenom ?? null,
     });
   } catch (err) { res.status(500).json({ error: 'Erreur serveur' }); }
 });
 
+// Distinct exam types this patient has had before — used by ExamenForm to
+// suggest "previously ordered" types alongside the standard list.
+router.get('/patient/:patientId/types', authenticate, async (req: AuthRequest, res: Response): Promise<void> => {
+  try {
+    const patientId = Number(req.params.patientId);
+    const rows = await prisma.examen.findMany({
+      where: { patientId },
+      select: { typeExamen: true },
+      distinct: ['typeExamen'],
+      orderBy: { typeExamen: 'asc' },
+      take: 50,
+    });
+    res.json(rows.map(r => r.typeExamen));
+  } catch (err) { res.status(500).json({ error: 'Erreur serveur' }); }
+});
+
 router.post('/', authenticate, authorize('admin', 'laborantin'), async (req: AuthRequest, res: Response): Promise<void> => {
   try {
     const { patient_id, type_examen, resultat, date_examen, montant } = req.body;
+    const montantNum = montant !== undefined && montant !== null && montant !== '' ? Number(montant) : null;
+    // Workflow gate: a non-zero-amount exam starts at 'a_payer' so it surfaces
+    // in the cashier's lane before reaching prélèvement. Zero / free exams
+    // skip straight to 'demande' (the prélèvement gate has no payment block).
+    const initialStatut = montantNum && montantNum > 0 ? 'a_payer' : 'demande';
     const data: Parameters<typeof prisma.examen.create>[0]['data'] = {
       patientId: Number(patient_id),
       typeExamen: type_examen,
       resultat: resultat ?? null,
-      montant: montant ?? null,
+      montant: montantNum,
+      statut: initialStatut,
     };
     if (date_examen) data.dateExamen = new Date(date_examen);
     const created = await prisma.examen.create({ data });
@@ -118,7 +160,35 @@ router.post('/', authenticate, authorize('admin', 'laborantin'), async (req: Aut
   } catch (err) { res.status(500).json({ error: 'Erreur serveur' }); }
 });
 
-const ALLOWED_STATUTS = new Set(['demande', 'prelevement', 'analyse', 'resultat', 'valide', 'transmis']);
+// Mark an exam as paid → flip paye=true, stamp date/mode, advance the
+// Kanban to 'prelevement'. Audit trail captured via the standard log.
+router.post('/:id/marquer-paye', authenticate, authorize('admin', 'laborantin', 'comptable', 'reception'), async (req: AuthRequest, res: Response): Promise<void> => {
+  try {
+    const id = Number(req.params.id);
+    const { mode_paiement } = req.body as { mode_paiement?: string };
+    const before = await prisma.examen.findUnique({ where: { id }, select: { paye: true, statut: true } });
+    if (!before) { res.status(404).json({ error: 'Examen non trouvé' }); return; }
+    if (before.paye) { res.status(400).json({ error: 'Examen déjà payé' }); return; }
+
+    const updated = await prisma.examen.update({
+      where: { id },
+      data: {
+        paye: true,
+        datePaiement: new Date(),
+        modePaiement: mode_paiement ? String(mode_paiement).substring(0, 50) : null,
+        // Only advance the Kanban if it was sitting at 'a_payer'. If a user
+        // marked something paid from a later state, keep the current statut.
+        ...(before.statut === 'a_payer' ? { statut: 'prelevement' } : {}),
+      },
+    });
+    res.json(updated);
+  } catch (err) {
+    console.error('[LABO] marquer-paye failed:', err);
+    res.status(500).json({ error: 'Erreur serveur' });
+  }
+});
+
+const ALLOWED_STATUTS = new Set(['demande', 'a_payer', 'prelevement', 'analyse', 'resultat', 'valide', 'transmis']);
 
 router.put('/:id', authenticate, authorize('admin', 'laborantin'), async (req: AuthRequest, res: Response): Promise<void> => {
   try {

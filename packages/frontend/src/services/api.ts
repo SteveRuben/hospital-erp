@@ -313,6 +313,15 @@ export const postFormulaireReponse = (data: { formulaire_id: number; patient_id:
 export interface Cim10Suggestion { id: number; code: string; libelle: string }
 export const searchCim10 = (q: string) => api.get<Cim10Suggestion[]>(`/concepts/cim-10/search?q=${encodeURIComponent(q)}`);
 
+// Laboratoire workflow extras
+export const markExamenPaid = (examenId: number, mode_paiement?: string) =>
+  api.post(`/laboratoire/${examenId}/marquer-paye`, { mode_paiement });
+export const getExamenTypesForPatient = (patientId: number) =>
+  api.get<string[]>(`/laboratoire/patient/${patientId}/types`);
+export interface TarifRow { id: number; code: string; libelle: string; categorie: string; montant: number; service_nom: string | null }
+export const getTarifsByCategorie = (categorie: string) =>
+  api.get<TarifRow[]>('/facturation/tarifs', { params: { categorie } });
+
 // Profile + admin user actions
 export const updateMe = (data: { nom?: string; prenom?: string; telephone?: string }) => api.put('/auth/me', data);
 export const adminResetPassword = (userId: number, new_password: string) => api.post(`/auth/users/${userId}/reset-password`, { new_password });

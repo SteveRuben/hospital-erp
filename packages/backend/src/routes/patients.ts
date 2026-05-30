@@ -74,6 +74,7 @@ router.get('/search/quick', authenticate, async (req: AuthRequest, res: Response
       { telephone: { contains: s, mode: 'insensitive' } },
       { email: { contains: s, mode: 'insensitive' } },
       { numeroIdentite: { contains: s, mode: 'insensitive' } },
+      { referenceId: { contains: s, mode: 'insensitive' } },
     ];
     if (Number.isInteger(idNum) && idNum > 0) or.push({ id: idNum });
     const where: Prisma.PatientWhereInput = { archived: false, OR: or };
@@ -82,8 +83,9 @@ router.get('/search/quick', authenticate, async (req: AuthRequest, res: Response
     if (allowedIds !== null) where.id = { in: allowedIds };
     const rows = await prisma.patient.findMany({
       where,
-      // Note: numeroIdentite (encrypted) is not selected for quick-search results
-      select: { id: true, nom: true, prenom: true, sexe: true, telephone: true, ville: true, dateNaissance: true },
+      // referenceId is exposed so the typeahead can show "PAT-2605-MJ-0042"
+      // alongside the name. numeroIdentite (encrypted) stays out.
+      select: { id: true, nom: true, prenom: true, sexe: true, telephone: true, ville: true, dateNaissance: true, referenceId: true },
       orderBy: { nom: 'asc' },
       take: 10,
     });

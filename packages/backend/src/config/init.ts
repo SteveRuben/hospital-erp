@@ -907,6 +907,14 @@ export const initDB = async (): Promise<void> => {
       ALTER TABLE users ADD COLUMN IF NOT EXISTS suspended_at TIMESTAMP;
     `);
 
+    // Examen payment tracking — adds a "à payer" step to the Kanban before
+    // prélèvement when montant > 0. Paid exams skip straight to prélèvement.
+    await client.query(`
+      ALTER TABLE examens ADD COLUMN IF NOT EXISTS paye BOOLEAN NOT NULL DEFAULT FALSE;
+      ALTER TABLE examens ADD COLUMN IF NOT EXISTS date_paiement TIMESTAMP;
+      ALTER TABLE examens ADD COLUMN IF NOT EXISTS mode_paiement VARCHAR(50);
+    `);
+
     // Align users.role with the Prisma schema's native "UserRole" enum.
     //
     // The prod DB was bootstrapped here with role as VARCHAR + CHECK, but the
