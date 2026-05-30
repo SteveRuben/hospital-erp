@@ -24,10 +24,26 @@
 #   Recommended:
 #     - REDIS_URL                 (distributed session blacklist for multi-replica)
 #
-#   Schema bootstrap: src/config/init.ts runs at boot and idempotently
-#   creates the schema via CREATE TABLE IF NOT EXISTS. No separate
-#   `prisma migrate deploy` step needed today (see db.ts:8 — Prisma
-#   migrations are the planned successor).
+#   Schema bootstrap (transitional): two layers run before the app
+#   process to converge on prisma migrate deploy as the source of truth
+#   without breaking the existing init.ts-bootstrapped prod DBs.
+#
+#     1. migrate-bootstrap.js — detects whether the DB was already
+#        shaped by init.ts (heuristic: `patients` table exists). If yes
+#        AND _prisma_migrations is empty, marks every existing migration
+#        directory as applied so `prisma migrate deploy` does not try to
+#        re-apply the baseline CREATE TABLE statements. Idempotent.
+#
+#     2. prisma migrate deploy — applies any migration not yet recorded
+#        in _prisma_migrations. After the bootstrap step on existing
+#        DBs this is effectively a no-op on first run; it picks up
+#        every future migration normally.
+#
+#     3. init.ts still runs from inside the Node process for the seed
+#        data (users, habilitations, menu config, reference lists,
+#        starter concepts). Its idempotent ALTERs remain as a belt-and-
+#        suspenders safety net until init.ts is split into a pure seed
+#        script (see prisma/migrations/README.md "Phase 2").
 #
 #   See RAILWAY.md for the full deploy walkthrough.
 # ============================================================================
@@ -45,4 +61,8 @@ cmds = ["npm install --include=dev && npm install @rollup/rollup-linux-x64-gnu -
 cmds = ["npm run build"]
 
 [start]
-cmd = "node packages/backend/dist/index.js"
+# Two-step boot: bootstrap _prisma_migrations from existing schema state,
+# apply any pending Prisma migrations, then hand off to the app process.
+# Each `&&` ensures we abort on failure rather than starting the app
+# against a half-migrated schema.
+cmd = "node packages/backend/dist/scripts/migrate-bootstrap.js && cd packages/backend && npx prisma migrate deploy && cd ../.. && node packages/backend/dist/index.js"
