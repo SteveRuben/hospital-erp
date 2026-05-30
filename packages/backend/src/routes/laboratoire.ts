@@ -30,9 +30,10 @@ async function findResultRecipients(patientId: number, demandeurId: number | nul
 
 router.get('/', authenticate, async (req: AuthRequest, res: Response): Promise<void> => {
   try {
-    const { patient_id, date_debut, date_fin } = req.query;
+    const { patient_id, date_debut, date_fin, statut } = req.query;
     const where: Prisma.ExamenWhereInput = {};
     if (patient_id) where.patientId = Number(patient_id);
+    if (statut) where.statut = String(statut);
     if (date_debut || date_fin) {
       where.dateExamen = {};
       if (date_debut) (where.dateExamen as Prisma.DateTimeFilter).gte = new Date(String(date_debut));
@@ -162,7 +163,10 @@ router.post('/', authenticate, authorize('admin', 'laborantin'), async (req: Aut
 
 // Mark an exam as paid → flip paye=true, stamp date/mode, advance the
 // Kanban to 'prelevement'. Audit trail captured via the standard log.
-router.post('/:id/marquer-paye', authenticate, authorize('admin', 'laborantin', 'comptable', 'reception'), async (req: AuthRequest, res: Response): Promise<void> => {
+// Cashier action (not the lab): admin + comptable + reception. Laborantin
+// is excluded because in the operational flow money is collected at the
+// front desk, and the lab only sees the workflow advance to 'prelevement'.
+router.post('/:id/marquer-paye', authenticate, authorize('admin', 'comptable', 'reception'), async (req: AuthRequest, res: Response): Promise<void> => {
   try {
     const id = Number(req.params.id);
     const { mode_paiement } = req.body as { mode_paiement?: string };

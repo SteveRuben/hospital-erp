@@ -1,6 +1,6 @@
 import { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { getExamens, updateExamen, deleteExamen, getPatients, markExamenPaid } from '../services/api';
+import { getExamens, updateExamen, deleteExamen, getPatients } from '../services/api';
 import { useSnackbar } from '../components/Snackbar';
 import { useBranding } from '../components/BrandingProvider';
 import { formatMoney } from '../components/format';
@@ -46,7 +46,6 @@ export default function Laboratoire() {
   const [, setPatients] = useState<Patient[]>([]);
   const [loading, setLoading] = useState(true);
   const [view, setView] = useState<'table' | 'kanban'>('kanban');
-  const [payModal, setPayModal] = useState<ExamenAug | null>(null);
   const [resultModal, setResultModal] = useState<ExamenAug | null>(null);
   const navigate = useNavigate();
   const { showSnackbar } = useSnackbar();
@@ -132,9 +131,12 @@ export default function Laboratoire() {
                         </p>
                       )}
                       {s === 'a_payer' && (
-                        <button className="btn-primary btn-sm mt-1" onClick={() => setPayModal(ex)}>
-                          <i className="bi bi-cash"></i> Encaisser
-                        </button>
+                        // Payment is collected at the front desk (Facturation),
+                        // not at the lab. Show a read-only badge so the lab knows
+                        // why the card hasn't moved to prélèvement yet.
+                        <div style={{ fontSize: '0.6875rem', color: 'var(--cds-text-secondary)', marginTop: '0.5rem', fontStyle: 'italic' }}>
+                          <i className="bi bi-cash-stack"></i> En attente de paiement à la caisse
+                        </div>
                       )}
                       {s === 'analyse' && (
                         <button className="btn-primary btn-sm mt-1" onClick={() => handleAnalyseClick(ex)}>
@@ -180,13 +182,6 @@ export default function Laboratoire() {
         </table>
       )}
 
-      {payModal && (
-        <PayModal
-          examen={payModal}
-          onClose={() => setPayModal(null)}
-          onDone={() => { setPayModal(null); showSnackbar('Paiement enregistré, examen prêt pour prélèvement', 'success'); loadData(); }}
-        />
-      )}
       {resultModal && (
         <ResultEntryModal
           examen={resultModal}
@@ -194,54 +189,6 @@ export default function Laboratoire() {
           onDone={() => { setResultModal(null); showSnackbar('Résultat enregistré', 'success'); loadData(); }}
         />
       )}
-    </div>
-  );
-}
-
-function PayModal({ examen, onClose, onDone }: { examen: ExamenAug; onClose: () => void; onDone: () => void }) {
-  const [mode, setMode] = useState('especes');
-  const [saving, setSaving] = useState(false);
-  const { showSnackbar } = useSnackbar();
-  const { branding } = useBranding();
-
-  const submit = async (e: React.FormEvent) => {
-    e.preventDefault();
-    setSaving(true);
-    try {
-      await markExamenPaid(examen.id, mode);
-      onDone();
-    } catch (err: any) {
-      showSnackbar(err.response?.data?.error || 'Erreur', 'error');
-    } finally { setSaving(false); }
-  };
-
-  return (
-    <div className="modal-overlay" onClick={onClose}>
-      <div className="modal-container" onClick={e => e.stopPropagation()}>
-        <div className="modal-header"><h3>Encaisser le paiement</h3><button className="btn-icon" onClick={onClose}><i className="bi bi-x-lg"></i></button></div>
-        <form onSubmit={submit}>
-          <div className="modal-body">
-            <p className="text-muted mb-2" style={{ fontSize: '0.8125rem' }}>
-              Examen <strong>{examen.type_examen}</strong> pour <strong>{examen.patient_prenom} {examen.patient_nom}</strong>.
-              Montant : <strong>{formatMoney(Number(examen.montant ?? 0), branding.devise)}</strong>.
-            </p>
-            <div className="form-group">
-              <label className="form-label">Mode de paiement</label>
-              <select className="form-select" value={mode} onChange={e => setMode(e.target.value)}>
-                <option value="especes">Espèces</option>
-                <option value="mobile_money">Mobile Money</option>
-                <option value="carte">Carte bancaire</option>
-                <option value="virement">Virement</option>
-                <option value="assurance">Assurance</option>
-              </select>
-            </div>
-          </div>
-          <div className="modal-footer">
-            <button type="button" className="btn-secondary" onClick={onClose} disabled={saving}>Annuler</button>
-            <button type="submit" className="btn-primary" disabled={saving}>{saving ? '…' : 'Encaisser'}</button>
-          </div>
-        </form>
-      </div>
     </div>
   );
 }

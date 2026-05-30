@@ -1,9 +1,23 @@
 import { useState, useEffect } from 'react';
-import { getTarifs, createTarif, getFactures, getFacture, createFacture, createPaiement, getPatients, printFacture } from '../services/api';
+import { getTarifs, createTarif, getFactures, getFacture, createFacture, createPaiement, getPatients, printFacture, getExamens, markExamenPaid } from '../services/api';
+import { useSnackbar } from '../components/Snackbar';
 import type { Patient } from '../types';
 
+interface PendingExamen {
+  id: number;
+  type_examen: string;
+  montant: number | string | null;
+  patient_id: number;
+  patient_nom: string | null;
+  patient_prenom: string | null;
+  patient_telephone: string | null;
+  date_examen: string;
+}
+
 export default function Facturation() {
-  const [tab, setTab] = useState<'factures' | 'tarifs' | 'detail'>('factures');
+  const [tab, setTab] = useState<'caisse' | 'factures' | 'tarifs' | 'detail'>('caisse');
+  const { showSnackbar } = useSnackbar();
+  const [pendingExamens, setPendingExamens] = useState<PendingExamen[]>([]);
   const [tarifs, setTarifs] = useState<any[]>([]);
   const [factures, setFactures] = useState<any[]>([]);
   const [detail, setDetail] = useState<any>(null);
@@ -18,10 +32,28 @@ export default function Facturation() {
 
   const loadAll = async () => {
     try {
-      const [t, f, p] = await Promise.all([getTarifs(), getFactures(), getPatients({ archived: 'false' })]);
+      const [t, f, p, e] = await Promise.all([
+        getTarifs(), getFactures(), getPatients({ archived: 'false' }),
+        getExamens({ statut: 'a_payer' }),
+      ]);
       setTarifs(t.data); setFactures(f.data); setPatients(p.data.data);
+      setPendingExamens(e.data as unknown as PendingExamen[]);
     } catch (err) { console.error(err); }
     finally { setLoading(false); }
+  };
+
+  // Quick-pay an exam in 1 click with the chosen mode. Optimistic UI: remove
+  // the row immediately so the cashier doesn't accidentally double-click.
+  const quickPay = async (examen: PendingExamen, mode: string) => {
+    setPendingExamens(prev => prev.filter(p => p.id !== examen.id));
+    try {
+      await markExamenPaid(examen.id, mode);
+      showSnackbar(`${examen.type_examen} — payé (${mode})`, 'success');
+    } catch (err: any) {
+      showSnackbar(err.response?.data?.error || 'Erreur — examen restauré dans la liste', 'error');
+      // Rollback the optimistic removal so the cashier can retry.
+      loadAll();
+    }
   };
 
   const viewDetail = async (id: number) => { try { const { data } = await getFacture(id); setDetail(data); setTab('detail'); } catch { alert('Erreur'); } };
@@ -105,10 +137,50 @@ ${paiement.notes ? `<tr><td><strong>Notes</strong></td><td>${paiement.notes}</td
       </div>
 
       <div className="tabs mb-2">
+        <button className={`tab-item ${tab === 'caisse' ? 'active' : ''}`} onClick={() => setTab('caisse')}>
+          Caisse {pendingExamens.length > 0 && <span className="tag tag-orange" style={{ marginLeft: '0.25rem' }}>{pendingExamens.length}</span>}
+        </button>
         <button className={`tab-item ${tab === 'factures' ? 'active' : ''}`} onClick={() => setTab('factures')}>Factures</button>
         <button className={`tab-item ${tab === 'tarifs' ? 'active' : ''}`} onClick={() => setTab('tarifs')}>Grille tarifaire</button>
         {detail && <button className={`tab-item ${tab === 'detail' ? 'active' : ''}`} onClick={() => setTab('detail')}>Facture #{detail.numero}</button>}
       </div>
+
+      {tab === 'caisse' && (
+        <div>
+          <p className="text-muted mb-2" style={{ fontSize: '0.8125rem' }}>
+            Examens en attente de paiement. Un clic sur le mode = encaissé et envoyé en prélèvement au labo.
+          </p>
+          <table className="data-table">
+            <thead><tr><th>Patient</th><th>Téléphone</th><th>Examen</th><th>Date</th><th>Montant</th><th style={{ width: 1, whiteSpace: 'nowrap' }}>Encaisser</th></tr></thead>
+            <tbody>
+              {pendingExamens.map(ex => (
+                <tr key={ex.id}>
+                  <td className="fw-600">{ex.patient_prenom} {ex.patient_nom}</td>
+                  <td>{ex.patient_telephone || '-'}</td>
+                  <td>{ex.type_examen}</td>
+                  <td>{new Date(ex.date_examen).toLocaleDateString('fr-FR')}</td>
+                  <td className="fw-600">{ex.montant ? fmt(Number(ex.montant)) : '-'}</td>
+                  <td>
+                    <div className="d-flex gap-1" style={{ flexWrap: 'nowrap' }}>
+                      <button className="btn-primary btn-sm" title="Espèces" onClick={() => quickPay(ex, 'especes')}><i className="bi bi-cash"></i> Esp.</button>
+                      <button className="btn-primary btn-sm" title="Mobile Money" onClick={() => quickPay(ex, 'mobile_money')}><i className="bi bi-phone"></i> MM</button>
+                      <button className="btn-primary btn-sm" title="Carte bancaire" onClick={() => quickPay(ex, 'carte')}><i className="bi bi-credit-card"></i> Carte</button>
+                      <select className="form-select" style={{ padding: '0.25rem', fontSize: '0.75rem', width: 'auto' }} value="" onChange={e => { if (e.target.value) quickPay(ex, e.target.value); }} title="Autres modes">
+                        <option value="">⋯</option>
+                        <option value="virement">Virement</option>
+                        <option value="assurance">Assurance</option>
+                      </select>
+                    </div>
+                  </td>
+                </tr>
+              ))}
+              {pendingExamens.length === 0 && (
+                <tr><td colSpan={6} className="table-empty"><i className="bi bi-cash-stack" style={{ fontSize: '2rem', display: 'block', marginBottom: '0.5rem' }}></i>Aucun paiement en attente</td></tr>
+              )}
+            </tbody>
+          </table>
+        </div>
+      )}
 
       {tab === 'factures' && (
         <table className="data-table"><thead><tr><th>N°</th><th>Date</th><th>Patient</th><th>Total</th><th>Payé</th><th>Reste</th><th>Statut</th><th></th></tr></thead>
