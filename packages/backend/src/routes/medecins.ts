@@ -64,9 +64,56 @@ router.get('/specialites', authenticate, asyncHandler(async (_req, res) => {
 
 // Get single doctor
 router.get('/:id', authenticate, asyncHandler(async (req, res) => {
-  const row = await prisma.medecin.findUnique({ where: { id: Number(req.params.id) } });
+  const row = await prisma.medecin.findUnique({
+    where: { id: Number(req.params.id) },
+    include: { user: { select: { id: true, username: true, role: true, suspended: true } } },
+  });
   if (!row) { res.status(404).json({ error: 'Médecin non trouvé' }); return; }
   res.json(row);
+}));
+
+// P0-6: list every Medecin row that has no linked User. Admin uses this
+// to repair the after-effect of an automatic backfill (ambiguous name
+// matches stay null, ditto for medecins whose user account didn't exist
+// at backfill time).
+router.get('/admin/unlinked', authenticate, authorize('admin'), asyncHandler(async (_req, res) => {
+  const rows = await prisma.medecin.findMany({
+    where: { userId: null },
+    orderBy: [{ nom: 'asc' }, { prenom: 'asc' }],
+    select: { id: true, nom: true, prenom: true, specialite: true, telephone: true },
+  });
+  res.json(rows);
+}));
+
+// Manually attach a Medecin to a User. Admin-only. Validates the User
+// has role='medecin' so we don't mislink an admin or a comptable.
+router.put('/:id/link-user', authenticate, authorize('admin'), asyncHandler(async (req, res) => {
+  const medecinId = Number(req.params.id);
+  const { user_id } = req.body as { user_id?: number | string };
+  if (user_id === undefined || user_id === null || user_id === '') {
+    // Unlink — admin is explicitly detaching the medecin from a user.
+    await prisma.medecin.update({ where: { id: medecinId }, data: { userId: null } });
+    res.json({ message: 'Lien retiré' });
+    return;
+  }
+  const userId = Number(user_id);
+  const user = await prisma.user.findUnique({ where: { id: userId }, select: { role: true } });
+  if (!user) { res.status(404).json({ error: 'Utilisateur non trouvé' }); return; }
+  if (user.role !== 'medecin') {
+    res.status(400).json({ error: 'L\'utilisateur doit avoir le rôle medecin' });
+    return;
+  }
+  try {
+    const updated = await prisma.medecin.update({ where: { id: medecinId }, data: { userId } });
+    res.json(updated);
+  } catch (err: any) {
+    // Unique constraint — the user is already linked to another medecin.
+    if (err?.code === 'P2002') {
+      res.status(409).json({ error: 'Cet utilisateur est déjà lié à un autre médecin' });
+      return;
+    }
+    throw err;
+  }
 }));
 
 // Create doctor

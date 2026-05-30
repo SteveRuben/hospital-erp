@@ -929,6 +929,42 @@ export const initDB = async (): Promise<void> => {
       ALTER TABLE users ADD COLUMN IF NOT EXISTS suspended_at TIMESTAMP;
     `);
 
+    // P0-6 Phase 1: link Medecin to User. Before this, access-control
+    // joined the two by (nom, prenom) string match — fragile to typos
+    // and renames. Now a Medecin carries an explicit user_id FK; the
+    // name-match join remains as a fallback for unmigrated rows.
+    await client.query(`
+      ALTER TABLE medecins ADD COLUMN IF NOT EXISTS user_id INTEGER;
+      DO $$
+      BEGIN
+        IF NOT EXISTS (SELECT 1 FROM pg_constraint WHERE conname = 'medecins_user_id_fkey') THEN
+          ALTER TABLE medecins
+            ADD CONSTRAINT medecins_user_id_fkey
+            FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE SET NULL;
+        END IF;
+        IF NOT EXISTS (SELECT 1 FROM pg_constraint WHERE conname = 'medecins_user_id_key') THEN
+          ALTER TABLE medecins ADD CONSTRAINT medecins_user_id_key UNIQUE (user_id);
+        END IF;
+      END $$;
+    `);
+    // Best-effort backfill. Only the unambiguous (nom, prenom) matches
+    // get linked — duplicates and orphans stay null for an admin to
+    // resolve manually via the /medecins admin UI.
+    await client.query(`
+      UPDATE medecins m
+      SET user_id = u.id
+      FROM (
+        SELECT nom, prenom, MIN(id) AS id
+        FROM users
+        WHERE role = 'medecin'
+        GROUP BY nom, prenom
+        HAVING COUNT(*) = 1
+      ) u
+      WHERE m.user_id IS NULL
+        AND m.nom = u.nom
+        AND m.prenom = u.prenom;
+    `);
+
     // Examen payment tracking — adds a "à payer" step to the Kanban before
     // prélèvement when montant > 0. Paid exams skip straight to prélèvement.
     await client.query(`

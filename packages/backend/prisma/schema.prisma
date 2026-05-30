@@ -43,6 +43,10 @@ model User {
   notifications       Notification[]
   channelMembers      ChannelMember[]
   chatMessages        ChatMessage[] @relation("chat_author")
+  // Optional 1:1 link to the Medecin profile. Only populated for users
+  // with role='medecin'; admins/reception/etc. stay null. Backfilled by
+  // (nom, prenom) match on boot — see init.ts and the bootstrap docs.
+  medecinProfile      Medecin?
 
   @@map("users")
 }
@@ -132,14 +136,20 @@ model Medecin {
   prenom      String    @db.VarChar(100)
   specialite  String?   @db.VarChar(100)
   telephone   String?   @db.VarChar(20)
+  // 1:1 link to the User row that signs in as this medecin. Nullable
+  // during the rollout — backfill matches by (nom, prenom) where a
+  // User with role='medecin' exists. Once every medecin row has a
+  // userId, the access-control name-match fallback can be removed.
+  userId      Int?      @unique @map("user_id")
   createdAt   DateTime  @default(now()) @map("created_at")
 
-  consultations Consultation[]
-  rendezVous    RendezVous[]
-  vitaux        Vital[]
-  prescriptions Prescription[]
-  ordonnances   Ordonnance[]
-  vaccinations  Vaccination[]
+  user             User?            @relation(fields: [userId], references: [id], onDelete: SetNull)
+  consultations    Consultation[]
+  rendezVous       RendezVous[]
+  vitaux           Vital[]
+  prescriptions    Prescription[]
+  ordonnances      Ordonnance[]
+  vaccinations     Vaccination[]
   hospitalisations Hospitalisation[]
 
   @@map("medecins")
