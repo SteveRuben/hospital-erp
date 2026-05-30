@@ -122,7 +122,7 @@ export const initDB = async (): Promise<void> => {
         resultat TEXT,
         date_examen DATE DEFAULT CURRENT_DATE,
         montant DECIMAL(10,2),
-        statut VARCHAR(50) DEFAULT 'demande' CHECK (statut IN ('demande', 'prelevement', 'analyse', 'resultat', 'valide', 'transmis')),
+        statut VARCHAR(50) DEFAULT 'demande' CHECK (statut IN ('demande', 'a_payer', 'prelevement', 'analyse', 'resultat', 'valide', 'transmis')),
         demandeur_id INTEGER REFERENCES medecins(id),
         created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
       );
@@ -937,6 +937,16 @@ export const initDB = async (): Promise<void> => {
       ALTER TABLE examens ADD COLUMN IF NOT EXISTS mode_paiement VARCHAR(50);
     `);
 
+    // The original CHECK constraint on examens.statut predates the 'a_payer'
+    // workflow step. On existing DBs creating a new exam with statut='a_payer'
+    // fails with examens_statut_check. Drop and recreate idempotently so prod
+    // and freshly-bootstrapped DBs converge on the same vocabulary.
+    await client.query(`
+      ALTER TABLE examens DROP CONSTRAINT IF EXISTS examens_statut_check;
+      ALTER TABLE examens ADD CONSTRAINT examens_statut_check
+        CHECK (statut IN ('demande', 'a_payer', 'prelevement', 'analyse', 'resultat', 'valide', 'transmis'));
+    `);
+
     // Align users.role with the Prisma schema's native "UserRole" enum.
     //
     // The prod DB was bootstrapped here with role as VARCHAR + CHECK, but the
@@ -973,6 +983,64 @@ export const initDB = async (): Promise<void> => {
         ) THEN
           ALTER TABLE users DROP CONSTRAINT IF EXISTS users_role_check;
           ALTER TABLE users ALTER COLUMN role TYPE "UserRole" USING role::"UserRole";
+        END IF;
+      END $$;
+    `);
+
+    // Align patients.sexe / statut_matrimonial / groupe_sanguin with their
+    // Prisma native enum types. Same root cause as the UserRole block above:
+    // the baseline migration created these columns as VARCHAR + CHECK, but
+    // the Prisma schema declares them as enums (Sexe, StatutMatrimonial,
+    // GroupeSanguin). prisma.patient.update() casts to ::public."Sexe" and
+    // crashes on prod with `type "public.Sexe" does not exist`. Create the
+    // types and migrate the columns.
+    //
+    // Note on GroupeSanguin: the schema uses @map("A+") etc., so the
+    // Postgres enum LABELS are the human-readable forms ('A+', 'A-', …).
+    // Prisma translates between the enum NAME ('Aplus') and the LABEL when
+    // it serializes/deserializes.
+    await client.query(`
+      DO $$
+      BEGIN
+        IF NOT EXISTS (SELECT 1 FROM pg_type WHERE typname = 'Sexe') THEN
+          CREATE TYPE "Sexe" AS ENUM ('M','F','autre');
+        END IF;
+        IF NOT EXISTS (SELECT 1 FROM pg_type WHERE typname = 'StatutMatrimonial') THEN
+          CREATE TYPE "StatutMatrimonial" AS ENUM ('celibataire','marie','divorce','veuf');
+        END IF;
+        IF NOT EXISTS (SELECT 1 FROM pg_type WHERE typname = 'GroupeSanguin') THEN
+          CREATE TYPE "GroupeSanguin" AS ENUM ('A+','A-','B+','B-','AB+','AB-','O+','O-');
+        END IF;
+      END $$;
+    `);
+
+    // Step 2: convert the columns if they are still VARCHAR. The CHECK
+    // constraints (auto-named patients_sexe_check, etc.) must be dropped
+    // first; the USING cast is straightforward because every legal
+    // VARCHAR value is also a valid enum label.
+    await client.query(`
+      DO $$
+      BEGIN
+        IF EXISTS (
+          SELECT 1 FROM information_schema.columns
+          WHERE table_name = 'patients' AND column_name = 'sexe' AND data_type = 'character varying'
+        ) THEN
+          ALTER TABLE patients DROP CONSTRAINT IF EXISTS patients_sexe_check;
+          ALTER TABLE patients ALTER COLUMN sexe TYPE "Sexe" USING sexe::"Sexe";
+        END IF;
+        IF EXISTS (
+          SELECT 1 FROM information_schema.columns
+          WHERE table_name = 'patients' AND column_name = 'statut_matrimonial' AND data_type = 'character varying'
+        ) THEN
+          ALTER TABLE patients DROP CONSTRAINT IF EXISTS patients_statut_matrimonial_check;
+          ALTER TABLE patients ALTER COLUMN statut_matrimonial TYPE "StatutMatrimonial" USING statut_matrimonial::"StatutMatrimonial";
+        END IF;
+        IF EXISTS (
+          SELECT 1 FROM information_schema.columns
+          WHERE table_name = 'patients' AND column_name = 'groupe_sanguin' AND data_type = 'character varying'
+        ) THEN
+          ALTER TABLE patients DROP CONSTRAINT IF EXISTS patients_groupe_sanguin_check;
+          ALTER TABLE patients ALTER COLUMN groupe_sanguin TYPE "GroupeSanguin" USING groupe_sanguin::"GroupeSanguin";
         END IF;
       END $$;
     `);

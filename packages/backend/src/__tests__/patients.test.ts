@@ -47,6 +47,8 @@ jest.unstable_mockModule('../services/session.js', () => ({
   isSessionExpired: mockIsSessionExpired,
   blacklistToken: jest.fn(async () => {}),
   invalidateUserSessions: jest.fn(async () => {}),
+  getSessionTimeoutMs: jest.fn(async () => 30 * 60 * 1000),
+  invalidateSessionTimeoutCache: jest.fn(),
   default: {},
 }));
 

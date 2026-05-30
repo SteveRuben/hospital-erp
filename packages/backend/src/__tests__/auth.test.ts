@@ -47,6 +47,8 @@ jest.unstable_mockModule('../services/session.js', () => ({
   isSessionExpired: mockIsSessionExpired,
   blacklistToken: mockBlacklistToken,
   invalidateUserSessions: mockInvalidateUserSessions,
+  getSessionTimeoutMs: jest.fn<() => Promise<number>>().mockResolvedValue(30 * 60 * 1000),
+  invalidateSessionTimeoutCache: jest.fn<() => void>(),
   default: {
     isTokenBlacklisted: mockIsTokenBlacklisted,
     recordActivity: mockRecordActivity,

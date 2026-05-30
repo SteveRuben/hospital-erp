@@ -2,6 +2,7 @@ import { Router, Response } from 'express';
 import { prisma } from '../config/db.js';
 import { authenticate, authorize, AuthRequest } from '../middleware/auth.js';
 import { isEncryptionEnabled } from '../services/encryption.js';
+import { getSessionTimeoutMs } from '../services/session.js';
 
 const router = Router();
 
@@ -70,7 +71,7 @@ router.get('/posture', authenticate, authorize('admin'), async (_req: AuthReques
       sessions: {
         redisConfigured: !!process.env.REDIS_URL,
         activeSessions,
-        timeoutMinutes: 30,
+        timeoutMinutes: Math.floor((await getSessionTimeoutMs()) / 60_000),
       },
       auth: {
         failedLogins24h,

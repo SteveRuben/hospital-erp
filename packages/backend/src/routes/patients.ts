@@ -17,6 +17,24 @@ function decryptPatient<T extends Record<string, unknown> | null>(row: T): T {
   return row ? decryptFields(row as Record<string, unknown>, ENC_FIELDS) as T : row;
 }
 
+// Prisma's GroupeSanguin enum names are { Aplus, Amoins, Bplus, Bmoins,
+// ABplus, ABmoins, Oplus, Omoins } with @map("A+") etc. The frontend sends
+// the human label ("A+") because that's what the <select> displays. Without
+// translation Prisma rejects the value with `Invalid value 'A+' for field
+// 'groupeSanguin'`, surfacing as a 500 on POST/PUT. Accept both shapes so
+// round-tripping (API → form → API) also works.
+const GROUPE_LABEL_TO_ENUM: Record<string, string> = {
+  'A+': 'Aplus', 'A-': 'Amoins',
+  'B+': 'Bplus', 'B-': 'Bmoins',
+  'AB+': 'ABplus', 'AB-': 'ABmoins',
+  'O+': 'Oplus', 'O-': 'Omoins',
+};
+function toGroupeSanguin(v: unknown): string | null {
+  if (v === '' || v === null || v === undefined) return null;
+  const s = String(v);
+  return GROUPE_LABEL_TO_ENUM[s] ?? s; // pass through enum names unchanged
+}
+
 const router = Router();
 
 // Get all patients (with optional search)
@@ -251,7 +269,7 @@ router.post('/', authenticate, authorize('admin', 'medecin', 'reception'), valid
       nationalite: n(nationalite),
       numeroIdentite: n(numero_identite),
       statutMatrimonial: n(statut_matrimonial) as Prisma.PatientCreateInput['statutMatrimonial'],
-      groupeSanguin: n(groupe_sanguin) as Prisma.PatientCreateInput['groupeSanguin'],
+      groupeSanguin: toGroupeSanguin(groupe_sanguin) as Prisma.PatientCreateInput['groupeSanguin'],
       pays: n(pays),
       province: n(province),
       ville: n(ville),
@@ -307,7 +325,7 @@ router.put('/:id', authenticate, authorize('admin', 'medecin', 'reception'), asy
       nationalite: n(nationalite),
       numeroIdentite: n(numero_identite),
       statutMatrimonial: n(statut_matrimonial) as Prisma.PatientUpdateInput['statutMatrimonial'],
-      groupeSanguin: n(groupe_sanguin) as Prisma.PatientUpdateInput['groupeSanguin'],
+      groupeSanguin: toGroupeSanguin(groupe_sanguin) as Prisma.PatientUpdateInput['groupeSanguin'],
       pays: n(pays),
       province: n(province),
       ville: n(ville),

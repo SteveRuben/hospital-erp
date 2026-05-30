@@ -7,6 +7,7 @@ import { prisma } from '../config/db.js';
 import { authenticate, authorize, AuthRequest } from '../middleware/auth.js';
 import { asyncHandler } from '../middleware/asyncHandler.js';
 import { invalidateCache } from '../services/reference.js';
+import { invalidateSessionTimeoutCache } from '../services/session.js';
 import { validateUpload } from '../middleware/upload-validation.js';
 import { logAudit } from '../services/audit.js';
 
@@ -156,6 +157,10 @@ router.put('/:cle', authenticate, authorize('admin'), asyncHandler(async (req: A
   });
 
   invalidateCache();
+  // Session timeout is read via a 60 s in-memory cache in session.ts —
+  // bust it now so an admin's edit takes effect on the very next request
+  // instead of waiting for the TTL.
+  if (req.params.cle === 'session_timeout_minutes') invalidateSessionTimeoutCache();
   res.json(updated);
 }));
 
@@ -183,6 +188,7 @@ router.put('/', authenticate, authorize('admin'), asyncHandler(async (req, res) 
   );
 
   invalidateCache();
+  if (settings.some(s => s.cle === 'session_timeout_minutes')) invalidateSessionTimeoutCache();
   res.json({ message: `${settings.length} paramètres mis à jour` });
 }));
 

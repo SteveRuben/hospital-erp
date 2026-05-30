@@ -20,6 +20,55 @@ const formatPhone = (value: string): string => {
   return `+${digits.slice(0, 3)} ${digits.slice(3, 6)} ${digits.slice(6, 9)} ${digits.slice(9, 12)}`;
 };
 
+// Prisma's GroupeSanguin enum is { Aplus, Amoins, ... } with @map("A+"/"A-"/…),
+// so the API returns the variant *name* (e.g. "Aplus"). The form's <select>
+// options use the human-friendly "A+" labels — bridge both directions here.
+const GROUPE_API_TO_FORM: Record<string, string> = {
+  Aplus: 'A+', Amoins: 'A-', Bplus: 'B+', Bmoins: 'B-',
+  ABplus: 'AB+', ABmoins: 'AB-', Oplus: 'O+', Omoins: 'O-',
+};
+
+// Coerce server camelCase / nullable patient payload into the snake-case
+// string-only shape the form state expects. Without this, nulls leak into
+// <select value> and the wizard silently loses values on save.
+function serverToForm(p: Record<string, any>): typeof emptyForm {
+  const s = (v: unknown) => (v == null ? '' : String(v));
+  const dateOnly = (v: unknown) => {
+    if (!v) return '';
+    const iso = String(v);
+    return iso.length >= 10 ? iso.slice(0, 10) : '';
+  };
+  return {
+    nom: s(p.nom),
+    prenom: s(p.prenom),
+    deuxieme_prenom: s(p.deuxiemePrenom ?? p.deuxieme_prenom),
+    sexe: s(p.sexe),
+    date_naissance: dateOnly(p.dateNaissance ?? p.date_naissance),
+    age_estime: s(p.ageEstime ?? p.age_estime),
+    lieu_naissance: s(p.lieuNaissance ?? p.lieu_naissance),
+    nationalite: s(p.nationalite),
+    numero_identite: s(p.numeroIdentite ?? p.numero_identite),
+    statut_matrimonial: s(p.statutMatrimonial ?? p.statut_matrimonial),
+    groupe_sanguin: (() => {
+      const raw = p.groupeSanguin ?? p.groupe_sanguin;
+      if (raw == null) return '';
+      return GROUPE_API_TO_FORM[String(raw)] ?? String(raw);
+    })(),
+    pays: s(p.pays),
+    province: s(p.province),
+    ville: s(p.ville),
+    commune: s(p.commune),
+    quartier: s(p.quartier),
+    adresse: s(p.adresse),
+    profession: s(p.profession),
+    telephone: s(p.telephone),
+    email: s(p.email),
+    contact_urgence_nom: s(p.contactUrgenceNom ?? p.contact_urgence_nom),
+    contact_urgence_relation: s(p.contactUrgenceRelation ?? p.contact_urgence_relation),
+    contact_urgence_telephone: s(p.contactUrgenceTelephone ?? p.contact_urgence_telephone),
+  };
+}
+
 export default function PatientForm() {
   const { id } = useParams();
   const navigate = useNavigate();
@@ -35,7 +84,6 @@ export default function PatientForm() {
   const { clearSaved } = useFormPersist(isEdit ? `patient_edit_${id}` : 'patient_new', form, setForm);
 
   useEffect(() => {
-    // Load reference lists + patient data
     Promise.all([
       api.get('/reference-lists/pays'),
       api.get('/reference-lists/ville'),
@@ -43,9 +91,7 @@ export default function PatientForm() {
     ]).then(([paysRes, villesRes, patientRes]) => {
       setPaysList(paysRes.data);
       setVillesList(villesRes.data);
-      if (patientRes?.data) {
-        setForm({ ...emptyForm, ...patientRes.data, age_estime: patientRes.data.age_estime ? String(patientRes.data.age_estime) : '' });
-      }
+      if (patientRes?.data) setForm(serverToForm(patientRes.data));
     }).catch(() => setError('Erreur de chargement')).finally(() => setLoading(false));
   }, [id]);
 

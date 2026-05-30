@@ -69,7 +69,20 @@ export default function RendezVous() {
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!form.patient_id) { alert('Sélectionnez un patient dans la liste'); return; }
-    try { await createRendezVous(form); setShowModal(false); resetForm(); loadData(); } catch { alert('Erreur'); }
+    if (!form.medecin_id) { alert('Sélectionnez un médecin'); return; }
+    // The backend schema (createRendezVousSchema) types *_id as numbers.
+    // HTML <select> and the typeahead store strings, so coerce here and
+    // drop optional fields that are still empty so Zod sees `undefined`
+    // instead of NaN.
+    const payload: Record<string, unknown> = {
+      patient_id: Number(form.patient_id),
+      medecin_id: Number(form.medecin_id),
+      date_rdv: form.date_rdv,
+      motif: form.motif || undefined,
+      notes: form.notes || undefined,
+    };
+    if (form.service_id) payload.service_id = Number(form.service_id);
+    try { await createRendezVous(payload); setShowModal(false); resetForm(); loadData(); } catch { alert('Erreur'); }
   };
 
   const changeStatut = async (id: number, statut: string) => {
