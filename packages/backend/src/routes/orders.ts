@@ -5,6 +5,7 @@ import { authenticate, authorize, AuthRequest } from '../middleware/auth.js';
 import { generateReference } from '../services/reference.js';
 import { validate, createOrderSchema } from '../middleware/validation.js';
 import { patientAccessScope, canAccessPatient } from '../services/access-control.js';
+import { assertTransition, WorkflowError } from '../services/workflow.js';
 
 const router = Router();
 
@@ -121,13 +122,21 @@ router.put('/:id/statut', authenticate, async (req: AuthRequest, res: Response):
   try {
     const { statut, resultat } = req.body;
     if (!isValidOrderStatut(statut)) { res.status(400).json({ error: 'Statut invalide' }); return; }
+    const id = Number(req.params.id);
+    const before = await prisma.order.findUnique({ where: { id }, select: { statut: true } });
+    if (!before) { res.status(404).json({ error: 'Non trouvé' }); return; }
+    try { assertTransition('order', before.statut, statut); }
+    catch (e) {
+      if (e instanceof WorkflowError) { res.status(400).json({ error: e.message }); return; }
+      throw e;
+    }
     const data: Parameters<typeof prisma.order.update>[0]['data'] = { statut };
     if (resultat) {
       data.resultat = resultat;
       data.dateResultat = new Date();
     }
     try {
-      const updated = await prisma.order.update({ where: { id: Number(req.params.id) }, data });
+      const updated = await prisma.order.update({ where: { id }, data });
       res.json(updated);
     } catch {
       res.status(404).json({ error: 'Non trouvé' });

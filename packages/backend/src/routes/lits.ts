@@ -2,10 +2,18 @@ import { Router, Response } from 'express';
 import { prisma } from '../config/db.js';
 import { authenticate, authorize, AuthRequest } from '../middleware/auth.js';
 import { validate, createPavillonSchema, createLitSchema } from '../middleware/validation.js';
-import { Prisma } from '@prisma/client';
+import { Prisma, LitStatut, HospitalisationStatut } from '@prisma/client';
 import { notifyMany } from '../services/notify.js';
+import { assertTransition, WorkflowError } from '../services/workflow.js';
 
 const router = Router();
+
+const VALID_LIT_STATUTS: ReadonlySet<LitStatut> = new Set(
+  Object.values(LitStatut) as LitStatut[],
+);
+function isValidLitStatut(v: unknown): v is LitStatut {
+  return typeof v === 'string' && VALID_LIT_STATUTS.has(v as LitStatut);
+}
 
 // === PAVILLONS ===
 router.get('/pavillons', authenticate, async (_req: AuthRequest, res: Response): Promise<void> => {
@@ -81,12 +89,17 @@ router.post('/', authenticate, authorize('admin'), validate(createLitSchema), as
 router.put('/:id/statut', authenticate, async (req: AuthRequest, res: Response): Promise<void> => {
   try {
     const { statut } = req.body;
-    try {
-      const updated = await prisma.lit.update({ where: { id: Number(req.params.id) }, data: { statut } });
-      res.json(updated);
-    } catch {
-      res.status(404).json({ error: 'Lit non trouvé' });
+    if (!isValidLitStatut(statut)) { res.status(400).json({ error: 'Statut invalide' }); return; }
+    const id = Number(req.params.id);
+    const before = await prisma.lit.findUnique({ where: { id }, select: { statut: true } });
+    if (!before) { res.status(404).json({ error: 'Lit non trouvé' }); return; }
+    try { assertTransition('lit', before.statut, statut); }
+    catch (e) {
+      if (e instanceof WorkflowError) { res.status(400).json({ error: e.message }); return; }
+      throw e;
     }
+    const updated = await prisma.lit.update({ where: { id }, data: { statut } });
+    res.json(updated);
   } catch (err) { res.status(500).json({ error: 'Erreur serveur' }); }
 });
 
@@ -120,7 +133,7 @@ router.post('/hospitalisations', authenticate, authorize('admin', 'medecin'), as
     const n = (v: unknown) => (v === '' || v === undefined) ? null : v;
     const created = await prisma.$transaction(async (tx) => {
       if (lit_id) {
-        await tx.lit.update({ where: { id: Number(lit_id) }, data: { statut: 'occupe' } });
+        await tx.lit.update({ where: { id: Number(lit_id) }, data: { statut: LitStatut.occupe } });
       }
       return tx.hospitalisation.create({
         data: {
@@ -174,15 +187,23 @@ router.post('/hospitalisations', authenticate, authorize('admin', 'medecin'), as
 router.put('/hospitalisations/:id/sortie', authenticate, authorize('admin', 'medecin'), async (req: AuthRequest, res: Response): Promise<void> => {
   try {
     const id = Number(req.params.id);
-    const hosp = await prisma.hospitalisation.findUnique({ where: { id }, select: { litId: true } });
+    const hosp = await prisma.hospitalisation.findUnique({ where: { id }, select: { litId: true, statut: true } });
     if (!hosp) { res.status(404).json({ error: 'Non trouvé' }); return; }
+    try { assertTransition('hospitalisation', hosp.statut, HospitalisationStatut.sortie); }
+    catch (e) {
+      if (e instanceof WorkflowError) { res.status(400).json({ error: e.message }); return; }
+      throw e;
+    }
     const updated = await prisma.$transaction(async (tx) => {
       if (hosp.litId) {
-        await tx.lit.update({ where: { id: hosp.litId }, data: { statut: 'disponible' } });
+        // occupe → disponible is the canonical discharge transition.
+        // If the bed had been re-flagged (maintenance/reserve) in the
+        // meantime we still release it because the patient is gone.
+        await tx.lit.update({ where: { id: hosp.litId }, data: { statut: LitStatut.disponible } });
       }
       return tx.hospitalisation.update({
         where: { id },
-        data: { statut: 'sortie', dateSortie: new Date() },
+        data: { statut: HospitalisationStatut.sortie, dateSortie: new Date() },
       });
     });
     res.json(updated);
@@ -194,9 +215,9 @@ router.get('/stats', authenticate, async (_req: AuthRequest, res: Response): Pro
   try {
     const [totalLits, disponibles, occupes, hospActives] = await Promise.all([
       prisma.lit.count(),
-      prisma.lit.count({ where: { statut: 'disponible' } }),
-      prisma.lit.count({ where: { statut: 'occupe' } }),
-      prisma.hospitalisation.count({ where: { statut: 'active' } }),
+      prisma.lit.count({ where: { statut: LitStatut.disponible } }),
+      prisma.lit.count({ where: { statut: LitStatut.occupe } }),
+      prisma.hospitalisation.count({ where: { statut: HospitalisationStatut.active } }),
     ]);
     res.json({ totalLits, disponibles, occupes, hospitalisations: hospActives });
   } catch (err) { res.status(500).json({ error: 'Erreur serveur' }); }

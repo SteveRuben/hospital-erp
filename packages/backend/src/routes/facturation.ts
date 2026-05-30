@@ -2,7 +2,8 @@ import { Router, Response } from 'express';
 import { prisma } from '../config/db.js';
 import { authenticate, authorize, AuthRequest } from '../middleware/auth.js';
 import { validate, createTarifSchema, createFactureSchema, createPaiementSchema } from '../middleware/validation.js';
-import { Prisma } from '@prisma/client';
+import { Prisma, FactureStatut } from '@prisma/client';
+import { canTransition } from '../services/workflow.js';
 
 const router = Router();
 
@@ -190,13 +191,18 @@ router.post('/paiements', authenticate, authorize('admin', 'comptable'), validat
       where: { factureId: Number(facture_id) },
       _sum: { montant: true },
     });
-    const facture = await prisma.facture.findUnique({ where: { id: Number(facture_id) }, select: { montantTotal: true } });
+    const facture = await prisma.facture.findUnique({ where: { id: Number(facture_id) }, select: { montantTotal: true, statut: true } });
     const paye = Number(agg._sum.montant ?? 0);
     const total = Number(facture?.montantTotal ?? 0);
-    const statut = paye >= total ? 'payee' : 'partielle';
+    const nextStatut: FactureStatut = paye >= total ? FactureStatut.payee : FactureStatut.partielle;
+    // Only advance the statut if the workflow allows it. A cancelled
+    // facture (annulee) should not silently reopen because a stale
+    // payment arrived. canTransition allows self-transitions, so
+    // re-recording a payment on a 'partielle' invoice still works.
+    const newStatut = facture && canTransition('facture', facture.statut, nextStatut) ? nextStatut : facture?.statut ?? nextStatut;
     await prisma.facture.update({
       where: { id: Number(facture_id) },
-      data: { montantPaye: paye, statut },
+      data: { montantPaye: paye, statut: newStatut },
     });
 
     res.status(201).json(paiement);

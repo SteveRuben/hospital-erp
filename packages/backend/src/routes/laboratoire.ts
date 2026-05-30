@@ -4,6 +4,7 @@ import { prisma } from '../config/db.js';
 import { authenticate, authorize, AuthRequest } from '../middleware/auth.js';
 import { notifyMany } from '../services/notify.js';
 import { patientAccessScope, canAccessPatient } from '../services/access-control.js';
+import { assertTransition, WorkflowError } from '../services/workflow.js';
 
 const router = Router();
 
@@ -240,12 +241,21 @@ router.put('/:id', authenticate, authorize('admin', 'laborantin'), async (req: A
       data.statut = statut;
     }
 
-    // Need the previous state to detect "result newly added" — null/empty → set.
+    // Need the previous state to detect "result newly added" — null/empty → set —
+    // and (when statut is changing) to validate the workflow transition.
     const before = await prisma.examen.findUnique({
       where: { id: Number(req.params.id) },
-      select: { resultat: true, patientId: true, demandeurId: true, typeExamen: true },
+      select: { resultat: true, patientId: true, demandeurId: true, typeExamen: true, statut: true },
     });
     if (!before) { res.status(404).json({ error: 'Examen non trouvé' }); return; }
+
+    if (statut !== undefined) {
+      try { assertTransition('examen', before.statut, statut); }
+      catch (e) {
+        if (e instanceof WorkflowError) { res.status(400).json({ error: e.message }); return; }
+        throw e;
+      }
+    }
 
     const updated = await prisma.examen.update({ where: { id: Number(req.params.id) }, data });
 

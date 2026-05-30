@@ -1,5 +1,6 @@
 import { Router, Response } from 'express';
 import { ProgrammePatientStatut } from '@prisma/client';
+import { assertTransition, WorkflowError } from '../services/workflow.js';
 import { prisma } from '../config/db.js';
 import { authenticate, authorize, AuthRequest } from '../middleware/auth.js';
 import { validate, createProgrammeSchema } from '../middleware/validation.js';
@@ -66,6 +67,13 @@ router.put('/:progId/patients/:id/statut', authenticate, async (req: AuthRequest
     const { statut } = req.body;
     if (!isValidPPStatut(statut)) { res.status(400).json({ error: 'Statut invalide' }); return; }
     const id = Number(req.params.id);
+    const before = await prisma.programmePatient.findUnique({ where: { id }, select: { statut: true } });
+    if (!before) { res.status(404).json({ error: 'Non trouvé' }); return; }
+    try { assertTransition('programmePatient', before.statut, statut); }
+    catch (e) {
+      if (e instanceof WorkflowError) { res.status(400).json({ error: e.message }); return; }
+      throw e;
+    }
     const data: { statut: ProgrammePatientStatut; dateSortie?: Date } = { statut };
     if (statut !== ProgrammePatientStatut.actif) data.dateSortie = new Date();
     try {
