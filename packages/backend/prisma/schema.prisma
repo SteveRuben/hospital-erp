@@ -1112,13 +1112,34 @@ model NotificationLog {
 
 // ===== PATIENT ATTRIBUTIONS / WEBHOOKS =====
 
+// Attribution lifecycle:
+//   propose  → created by an infirmier/réception/chef awaiting medecin OK.
+//   actif    → patient is on the medecin's chart for the current episode.
+//   cloture  → episode ended (discharge, transfer, refusal). Kept for audit.
+enum AttributionStatut {
+  propose
+  actif
+  cloture
+}
+
 model PatientAttribution {
-  id              Int      @id @default(autoincrement())
-  patientId       Int?     @map("patient_id")
-  medecinUserId   Int?     @map("medecin_user_id")
-  dateAttribution DateTime @default(now()) @map("date_attribution")
-  actif           Boolean  @default(true)
+  id                Int               @id @default(autoincrement())
+  patientId         Int?              @map("patient_id")
+  medecinUserId     Int?              @map("medecin_user_id")
+  dateAttribution   DateTime          @default(now()) @map("date_attribution")
+  actif             Boolean           @default(true)
+  // Phase post-2 bis: full lifecycle + audit trail. `actif` stays as a
+  // denormalised flag (= statut='actif') so the existing access-control
+  // queries don't need to be rewritten.
+  statut            AttributionStatut @default(actif)
+  createdByUserId   Int?              @map("created_by_user_id")
+  validatedByUserId Int?              @map("validated_by_user_id")
+  dateValidation    DateTime?         @map("date_validation")
+  dateCloture       DateTime?         @map("date_cloture")
+  motifCloture      String?           @map("motif_cloture") @db.VarChar(500)
   @@unique([patientId, medecinUserId])
+  @@index([medecinUserId, statut])
+  @@index([statut])
   @@map("patient_attributions")
 }
 

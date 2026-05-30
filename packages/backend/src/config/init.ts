@@ -927,6 +927,58 @@ export const initDB = async (): Promise<void> => {
         WHERE mention_handle IS NOT NULL;
     `);
 
+    // CRITICAL ORDER NOTE: the patient demographic enums (Sexe,
+    // StatutMatrimonial, GroupeSanguin) live HERE — early in init.ts,
+    // before any block that can plausibly throw (Phase 2 medecin
+    // fusion below, the ALTER TYPE … ADD VALUE blocks, etc.). Without
+    // these types every prisma.patient.update() returns
+    //   type "public.Sexe" does not exist
+    // because the Prisma client casts to ::public."Sexe" on the wire.
+    // Same shape as the UserRole / examens_statut migrations: idempotent
+    // CREATE TYPE IF NOT EXISTS, then ALTER COLUMN if still VARCHAR.
+    // GroupeSanguin uses @map in Prisma so the Postgres labels are the
+    // human forms ('A+', 'A-', …) — Prisma maps to/from 'Aplus' etc.
+    await client.query(`
+      DO $$
+      BEGIN
+        IF NOT EXISTS (SELECT 1 FROM pg_type WHERE typname = 'Sexe') THEN
+          CREATE TYPE "Sexe" AS ENUM ('M','F','autre');
+        END IF;
+        IF NOT EXISTS (SELECT 1 FROM pg_type WHERE typname = 'StatutMatrimonial') THEN
+          CREATE TYPE "StatutMatrimonial" AS ENUM ('celibataire','marie','divorce','veuf');
+        END IF;
+        IF NOT EXISTS (SELECT 1 FROM pg_type WHERE typname = 'GroupeSanguin') THEN
+          CREATE TYPE "GroupeSanguin" AS ENUM ('A+','A-','B+','B-','AB+','AB-','O+','O-');
+        END IF;
+      END $$;
+    `);
+    await client.query(`
+      DO $$
+      BEGIN
+        IF EXISTS (
+          SELECT 1 FROM information_schema.columns
+          WHERE table_name = 'patients' AND column_name = 'sexe' AND data_type = 'character varying'
+        ) THEN
+          ALTER TABLE patients DROP CONSTRAINT IF EXISTS patients_sexe_check;
+          ALTER TABLE patients ALTER COLUMN sexe TYPE "Sexe" USING sexe::"Sexe";
+        END IF;
+        IF EXISTS (
+          SELECT 1 FROM information_schema.columns
+          WHERE table_name = 'patients' AND column_name = 'statut_matrimonial' AND data_type = 'character varying'
+        ) THEN
+          ALTER TABLE patients DROP CONSTRAINT IF EXISTS patients_statut_matrimonial_check;
+          ALTER TABLE patients ALTER COLUMN statut_matrimonial TYPE "StatutMatrimonial" USING statut_matrimonial::"StatutMatrimonial";
+        END IF;
+        IF EXISTS (
+          SELECT 1 FROM information_schema.columns
+          WHERE table_name = 'patients' AND column_name = 'groupe_sanguin' AND data_type = 'character varying'
+        ) THEN
+          ALTER TABLE patients DROP CONSTRAINT IF EXISTS patients_groupe_sanguin_check;
+          ALTER TABLE patients ALTER COLUMN groupe_sanguin TYPE "GroupeSanguin" USING groupe_sanguin::"GroupeSanguin";
+        END IF;
+      END $$;
+    `);
+
     // Account suspension. Suspended users are refused at login; active
     // sessions are invalidated when an admin suspends them.
     await client.query(`
@@ -1197,6 +1249,51 @@ export const initDB = async (): Promise<void> => {
       CREATE INDEX IF NOT EXISTS idx_users_service         ON users(service_id);
     `);
 
+    // Attribution lifecycle. The patient_attributions table existed as
+    // {patient_id, medecin_user_id, actif}. The new workflow needs:
+    //   - statut enum (propose / actif / cloture),
+    //   - audit columns (created_by, validated_by, dates),
+    //   - the legacy `actif` flag is kept as a denorm of statut='actif'
+    //     so access-control's existing WHERE actif = TRUE keeps working.
+    await client.query(`
+      DO $$
+      BEGIN
+        IF NOT EXISTS (SELECT 1 FROM pg_type WHERE typname = 'AttributionStatut') THEN
+          CREATE TYPE "AttributionStatut" AS ENUM ('propose','actif','cloture');
+        END IF;
+      END $$;
+      ALTER TABLE patient_attributions ADD COLUMN IF NOT EXISTS statut "AttributionStatut" DEFAULT 'actif'::"AttributionStatut";
+      ALTER TABLE patient_attributions ALTER COLUMN statut SET DEFAULT 'actif'::"AttributionStatut";
+      ALTER TABLE patient_attributions ADD COLUMN IF NOT EXISTS created_by_user_id   INTEGER;
+      ALTER TABLE patient_attributions ADD COLUMN IF NOT EXISTS validated_by_user_id INTEGER;
+      ALTER TABLE patient_attributions ADD COLUMN IF NOT EXISTS date_validation     TIMESTAMP;
+      ALTER TABLE patient_attributions ADD COLUMN IF NOT EXISTS date_cloture        TIMESTAMP;
+      ALTER TABLE patient_attributions ADD COLUMN IF NOT EXISTS motif_cloture       VARCHAR(500);
+      DO $$
+      BEGIN
+        IF NOT EXISTS (SELECT 1 FROM pg_constraint WHERE conname = 'patient_attributions_created_by_fkey') THEN
+          ALTER TABLE patient_attributions
+            ADD CONSTRAINT patient_attributions_created_by_fkey
+            FOREIGN KEY (created_by_user_id) REFERENCES users(id) ON DELETE SET NULL;
+        END IF;
+        IF NOT EXISTS (SELECT 1 FROM pg_constraint WHERE conname = 'patient_attributions_validated_by_fkey') THEN
+          ALTER TABLE patient_attributions
+            ADD CONSTRAINT patient_attributions_validated_by_fkey
+            FOREIGN KEY (validated_by_user_id) REFERENCES users(id) ON DELETE SET NULL;
+        END IF;
+      END $$;
+      UPDATE patient_attributions
+        SET statut = 'actif'::"AttributionStatut"
+        WHERE statut IS NULL AND actif = TRUE;
+      UPDATE patient_attributions
+        SET statut = 'cloture'::"AttributionStatut"
+        WHERE statut IS NULL AND actif = FALSE;
+      CREATE INDEX IF NOT EXISTS idx_patient_attributions_medecin_statut
+        ON patient_attributions(medecin_user_id, statut);
+      CREATE INDEX IF NOT EXISTS idx_patient_attributions_statut
+        ON patient_attributions(statut);
+    `);
+
     // Examen payment tracking — adds a "à payer" step to the Kanban before
     // prélèvement when montant > 0. Paid exams skip straight to prélèvement.
     await client.query(`
@@ -1418,64 +1515,6 @@ export const initDB = async (): Promise<void> => {
       END $$;
     `);
 
-    // Align patients.sexe / statut_matrimonial / groupe_sanguin with their
-    // Prisma native enum types. Same root cause as the UserRole block above:
-    // the baseline migration created these columns as VARCHAR + CHECK, but
-    // the Prisma schema declares them as enums (Sexe, StatutMatrimonial,
-    // GroupeSanguin). prisma.patient.update() casts to ::public."Sexe" and
-    // crashes on prod with `type "public.Sexe" does not exist`. Create the
-    // types and migrate the columns.
-    //
-    // Note on GroupeSanguin: the schema uses @map("A+") etc., so the
-    // Postgres enum LABELS are the human-readable forms ('A+', 'A-', …).
-    // Prisma translates between the enum NAME ('Aplus') and the LABEL when
-    // it serializes/deserializes.
-    await client.query(`
-      DO $$
-      BEGIN
-        IF NOT EXISTS (SELECT 1 FROM pg_type WHERE typname = 'Sexe') THEN
-          CREATE TYPE "Sexe" AS ENUM ('M','F','autre');
-        END IF;
-        IF NOT EXISTS (SELECT 1 FROM pg_type WHERE typname = 'StatutMatrimonial') THEN
-          CREATE TYPE "StatutMatrimonial" AS ENUM ('celibataire','marie','divorce','veuf');
-        END IF;
-        IF NOT EXISTS (SELECT 1 FROM pg_type WHERE typname = 'GroupeSanguin') THEN
-          CREATE TYPE "GroupeSanguin" AS ENUM ('A+','A-','B+','B-','AB+','AB-','O+','O-');
-        END IF;
-      END $$;
-    `);
-
-    // Step 2: convert the columns if they are still VARCHAR. The CHECK
-    // constraints (auto-named patients_sexe_check, etc.) must be dropped
-    // first; the USING cast is straightforward because every legal
-    // VARCHAR value is also a valid enum label.
-    await client.query(`
-      DO $$
-      BEGIN
-        IF EXISTS (
-          SELECT 1 FROM information_schema.columns
-          WHERE table_name = 'patients' AND column_name = 'sexe' AND data_type = 'character varying'
-        ) THEN
-          ALTER TABLE patients DROP CONSTRAINT IF EXISTS patients_sexe_check;
-          ALTER TABLE patients ALTER COLUMN sexe TYPE "Sexe" USING sexe::"Sexe";
-        END IF;
-        IF EXISTS (
-          SELECT 1 FROM information_schema.columns
-          WHERE table_name = 'patients' AND column_name = 'statut_matrimonial' AND data_type = 'character varying'
-        ) THEN
-          ALTER TABLE patients DROP CONSTRAINT IF EXISTS patients_statut_matrimonial_check;
-          ALTER TABLE patients ALTER COLUMN statut_matrimonial TYPE "StatutMatrimonial" USING statut_matrimonial::"StatutMatrimonial";
-        END IF;
-        IF EXISTS (
-          SELECT 1 FROM information_schema.columns
-          WHERE table_name = 'patients' AND column_name = 'groupe_sanguin' AND data_type = 'character varying'
-        ) THEN
-          ALTER TABLE patients DROP CONSTRAINT IF EXISTS patients_groupe_sanguin_check;
-          ALTER TABLE patients ALTER COLUMN groupe_sanguin TYPE "GroupeSanguin" USING groupe_sanguin::"GroupeSanguin";
-        END IF;
-      END $$;
-    `);
-
     // In-app staff notifications (distinct from notifications_log which is
     // outbound SMS/email). Feeds the bell-icon dropdown.
     await client.query(`
@@ -1675,6 +1714,47 @@ export const initDB = async (): Promise<void> => {
       ['concept_classe', 'QUESTION', 'Question'],
       ['concept_classe', 'REPONSE', 'Réponse'],
       ['concept_classe', 'MISC', 'Divers'],
+      // Types d'acte (Finances → recettes). Each maps to a billable
+      // service category; admins can curate the list to match the
+      // hospital's actual price grid.
+      ['type_acte', 'CONSULTATION', 'Consultation', true],
+      ['type_acte', 'EXAMEN', 'Examen'],
+      ['type_acte', 'HOSPITALISATION', 'Hospitalisation'],
+      ['type_acte', 'SOINS', 'Soins'],
+      ['type_acte', 'MEDICAMENTS', 'Médicaments'],
+      ['type_acte', 'CHIRURGIE', 'Chirurgie'],
+      ['type_acte', 'ACCOUCHEMENT', 'Accouchement'],
+      ['type_acte', 'SOINS_DENTAIRES', 'Soins dentaires'],
+      // Types de dépense (Finances → depenses). Same idea, expense side.
+      ['type_depense', 'ACHAT_MED', 'Achat médicaments', true],
+      ['type_depense', 'CONSO_MED', 'Consommables médicaux'],
+      ['type_depense', 'SALAIRES', 'Salaires'],
+      ['type_depense', 'FACTURES', 'Factures (eau, électricité)'],
+      ['type_depense', 'LOYER', 'Loyer'],
+      ['type_depense', 'PRESTATAIRES', 'Prestataires'],
+      // Types d'imagerie (distinct from type_examen which is the lab
+      // catalogue). Used by ImagerieForm.
+      ['type_imagerie', 'RADIO', 'Radiographie', true],
+      ['type_imagerie', 'ECHO', 'Échographie'],
+      ['type_imagerie', 'SCAN', 'Scanner'],
+      ['type_imagerie', 'IRM', 'IRM'],
+      ['type_imagerie', 'MAMMO', 'Mammographie'],
+      ['type_imagerie', 'PANO', 'Panoramique dentaire'],
+      ['type_imagerie', 'AUTRE', 'Autre'],
+      // Formes pharmaceutiques (Pharmacie). The list drives the form
+      // chip when creating a medicament.
+      ['forme_pharmaceutique', 'COMP', 'Comprimé', true],
+      ['forme_pharmaceutique', 'GEL', 'Gélule'],
+      ['forme_pharmaceutique', 'SIR', 'Sirop'],
+      ['forme_pharmaceutique', 'INJ', 'Injectable'],
+      ['forme_pharmaceutique', 'POM', 'Pommade'],
+      ['forme_pharmaceutique', 'SUP', 'Suppositoire'],
+      ['forme_pharmaceutique', 'COL', 'Collyre'],
+      ['forme_pharmaceutique', 'SAC', 'Sachet'],
+      // Types de visite (Visites → nouvelle visite).
+      ['type_visite', 'AMBU', 'Ambulatoire', true],
+      ['type_visite', 'HOSP', 'Hospitalisation'],
+      ['type_visite', 'URG', 'Urgence'],
     ];
     for (const [categorie, code, libelle, parDefaut, parentCode] of refLists) {
       await client.query(

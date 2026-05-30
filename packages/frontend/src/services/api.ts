@@ -322,6 +322,38 @@ export interface TarifRow { id: number; code: string; libelle: string; categorie
 export const getTarifsByCategorie = (categorie: string) =>
   api.get<TarifRow[]>('/facturation/tarifs', { params: { categorie } });
 
+// Patient ↔ médecin attribution (workflow d'assignation)
+export interface AttributionRow {
+  id: number;
+  patient_id: number;
+  medecin_user_id: number;
+  statut: 'propose' | 'actif' | 'cloture';
+  actif: boolean;
+  created_by_user_id: number | null;
+  validated_by_user_id: number | null;
+  date_attribution: string;
+  date_validation: string | null;
+  date_cloture: string | null;
+  motif_cloture: string | null;
+  patient_nom: string | null;
+  patient_prenom: string | null;
+  patient_reference: string | null;
+  medecin_nom: string | null;
+  medecin_prenom: string | null;
+  medecin_specialite: string | null;
+  created_by_nom: string | null;
+  created_by_prenom: string | null;
+  created_by_role: string | null;
+}
+export const getAttributions = (params?: { patient_id?: number; medecin_user_id?: number; statut?: 'propose' | 'actif' | 'cloture' }) =>
+  api.get<AttributionRow[]>('/patient-attributions', { params });
+export const createAttribution = (data: { patient_id: number; medecin_user_id: number; propose?: boolean }) =>
+  api.post<AttributionRow>('/patient-attributions', data);
+export const validateAttribution = (id: number) =>
+  api.patch<AttributionRow>(`/patient-attributions/${id}/valider`);
+export const cloturerAttribution = (id: number, motif?: string) =>
+  api.patch<AttributionRow>(`/patient-attributions/${id}/cloturer`, { motif });
+
 // Profile + admin user actions
 export const updateMe = (data: { nom?: string; prenom?: string; telephone?: string }) => api.put('/auth/me', data);
 export const adminResetPassword = (userId: number, new_password: string) => api.post(`/auth/users/${userId}/reset-password`, { new_password });

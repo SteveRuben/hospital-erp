@@ -21,7 +21,8 @@ export type NotificationType =
   | 'admission'         // a patient was admitted to the user's service
   | 'stock_low'         // a critical medication is running low
   | 'chat_message'      // direct chat message (Phase 2)
-  | 'chat_mention';     // mentioned in a chat channel (Phase 2)
+  | 'chat_mention'      // mentioned in a chat channel (Phase 2)
+  | 'attribution_propose'; // patient assignment proposed, awaiting medecin OK
 
 export interface CreateNotificationInput {
   userId: number;

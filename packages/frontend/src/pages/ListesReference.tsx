@@ -13,7 +13,12 @@ const CATEGORIES = [
   { code: 'specialite', label: 'Spécialités médicales', icon: 'bi-heart-pulse' },
   { code: 'mode_paiement', label: 'Modes de paiement', icon: 'bi-cash' },
   { code: 'type_examen', label: 'Types d\'examen labo', icon: 'bi-flask' },
+  { code: 'type_imagerie', label: 'Types d\'imagerie', icon: 'bi-image' },
+  { code: 'type_visite', label: 'Types de visite', icon: 'bi-door-open' },
+  { code: 'type_acte', label: 'Types d\'acte (recettes)', icon: 'bi-receipt' },
+  { code: 'type_depense', label: 'Types de dépense', icon: 'bi-wallet2' },
   { code: 'type_programme', label: 'Types de programme', icon: 'bi-heart-pulse' },
+  { code: 'forme_pharmaceutique', label: 'Formes pharmaceutiques', icon: 'bi-capsule' },
   { code: 'concept_classe', label: 'Classes de concept', icon: 'bi-book-half' },
   { code: 'medicaments', label: 'Médicaments (import)', icon: 'bi-capsule' },
 ];

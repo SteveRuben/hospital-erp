@@ -1,7 +1,9 @@
 import { useState, useEffect } from 'react';
-import { getTarifs, createTarif, getFactures, getFacture, createFacture, createPaiement, printFacture, getExamens, markExamenPaid } from '../services/api';
+import api, { getTarifs, createTarif, getFactures, getFacture, createFacture, createPaiement, printFacture, getExamens, markExamenPaid } from '../services/api';
 import { useSnackbar } from '../components/Snackbar';
 import PatientTypeahead from '../components/PatientTypeahead';
+
+interface RefItem { code: string; libelle: string }
 
 interface PendingExamen {
   id: number;
@@ -21,6 +23,7 @@ export default function Facturation() {
   const [tarifs, setTarifs] = useState<any[]>([]);
   const [factures, setFactures] = useState<any[]>([]);
   const [detail, setDetail] = useState<any>(null);
+  const [modesPaiement, setModesPaiement] = useState<RefItem[]>([]);
   const [loading, setLoading] = useState(true);
   const [showModal, setShowModal] = useState<string | null>(null);
   const [tarifForm, setTarifForm] = useState({ code: '', libelle: '', categorie: '', montant: '' });
@@ -31,12 +34,14 @@ export default function Facturation() {
 
   const loadAll = async () => {
     try {
-      const [t, f, e] = await Promise.all([
+      const [t, f, e, mp] = await Promise.all([
         getTarifs(), getFactures(),
         getExamens({ statut: 'a_payer' }),
+        api.get('/reference-lists/mode_paiement').catch(() => ({ data: [] })),
       ]);
       setTarifs(t.data); setFactures(f.data);
       setPendingExamens(e.data as unknown as PendingExamen[]);
+      setModesPaiement(mp.data);
     } catch (err) { console.error(err); }
     finally { setLoading(false); }
   };
@@ -166,8 +171,13 @@ ${paiement.notes ? `<tr><td><strong>Notes</strong></td><td>${paiement.notes}</td
                       <button className="btn-primary btn-sm" title="Carte bancaire" onClick={() => quickPay(ex, 'carte')}><i className="bi bi-credit-card"></i> Carte</button>
                       <select className="form-select" style={{ padding: '0.25rem', fontSize: '0.75rem', width: 'auto' }} value="" onChange={e => { if (e.target.value) quickPay(ex, e.target.value); }} title="Autres modes">
                         <option value="">⋯</option>
-                        <option value="virement">Virement</option>
-                        <option value="assurance">Assurance</option>
+                        {modesPaiement
+                          .map(m => m.code.toLowerCase())
+                          .filter(c => !['especes', 'mobile_money', 'carte'].includes(c))
+                          .map(c => {
+                            const item = modesPaiement.find(m => m.code.toLowerCase() === c)!;
+                            return <option key={c} value={c}>{item.libelle}</option>;
+                          })}
                       </select>
                     </div>
                   </td>
@@ -291,7 +301,7 @@ ${paiement.notes ? `<tr><td><strong>Notes</strong></td><td>${paiement.notes}</td
           <form onSubmit={handlePaiement}><div className="modal-body">
             <div className="grid-2">
               <div className="form-group"><label className="form-label">Montant *</label><input type="number" className="form-input" value={paiementForm.montant} onChange={e => setPaiementForm({...paiementForm, montant: e.target.value})} required /></div>
-              <div className="form-group"><label className="form-label">Mode</label><select className="form-select" value={paiementForm.mode_paiement} onChange={e => setPaiementForm({...paiementForm, mode_paiement: e.target.value})}><option value="especes">Espèces</option><option value="mobile_money">Mobile Money</option><option value="carte">Carte</option><option value="virement">Virement</option><option value="assurance">Assurance</option></select></div>
+              <div className="form-group"><label className="form-label">Mode</label><select className="form-select" value={paiementForm.mode_paiement} onChange={e => setPaiementForm({...paiementForm, mode_paiement: e.target.value})}>{modesPaiement.map(m => <option key={m.code} value={m.code.toLowerCase()}>{m.libelle}</option>)}</select></div>
             </div>
             <div className="form-group"><label className="form-label">Référence</label><input type="text" className="form-input" value={paiementForm.reference} onChange={e => setPaiementForm({...paiementForm, reference: e.target.value})} placeholder="N° transaction, bon assurance..." /></div>
           </div><div className="modal-footer"><button type="button" className="btn-secondary" onClick={() => setShowModal(null)}>Annuler</button><button type="submit" className="btn-primary">Enregistrer le paiement</button></div></form>

@@ -22,12 +22,6 @@ interface PatientSuggestion {
   referenceId?: string | null;
 }
 
-const standardTypes = [
-  'Analyse de sang', "Analyse d'urine", 'Glycémie', 'Créatinine',
-  'Urée', 'Cholestérol', 'Groupe sanguin', 'Sérologie',
-  'Test de grossesse', 'NFS', 'CRP', 'TSH',
-];
-
 export default function ExamenForm() {
   const { id } = useParams();
   const navigate = useNavigate();
@@ -138,18 +132,20 @@ export default function ExamenForm() {
     } catch (err: any) { setError(err.response?.data?.error || 'Erreur'); }
   };
 
-  // Suggestions for the type combobox: history first (most relevant to this
-  // patient), then standard list. Filter by current input.
+  // Suggestions for the type combobox: history first (most relevant to
+  // this patient), then the configured catalogue (Tarifs with
+  // categorie='examen'). The catalogue is the single source of truth —
+  // no more hard-coded standard list. Filter by current input.
   const typeSuggestions = (() => {
     const seen = new Set<string>();
-    const ordered: Array<{ value: string; source: 'history' | 'standard' }> = [];
+    const ordered: Array<{ value: string; source: 'history' | 'catalogue' }> = [];
     for (const h of patientHistory) {
       const k = h.toLowerCase();
       if (!seen.has(k)) { seen.add(k); ordered.push({ value: h, source: 'history' }); }
     }
-    for (const s of standardTypes) {
-      const k = s.toLowerCase();
-      if (!seen.has(k)) { seen.add(k); ordered.push({ value: s, source: 'standard' }); }
+    for (const t of tarifs) {
+      const k = t.libelle.toLowerCase();
+      if (!seen.has(k)) { seen.add(k); ordered.push({ value: t.libelle, source: 'catalogue' }); }
     }
     const q = form.type_examen.trim().toLowerCase();
     return q ? ordered.filter(o => o.value.toLowerCase().includes(q)) : ordered;
@@ -206,19 +202,27 @@ export default function ExamenForm() {
               )}
             </div>
 
-            {/* Type d'examen combobox */}
+            {/* Type d'examen combobox — drawn from the configured
+                Tarif catalogue (categorie='examen'). Empty catalogue
+                renders a one-line hint pointing admins at the right page. */}
             <div className="form-group" style={{ position: 'relative' }}>
               <label className="form-label">Type d'examen *</label>
               <input
                 type="text"
                 className="form-input"
                 value={form.type_examen}
-                placeholder="Tapez ou choisissez dans la liste"
+                placeholder={tarifs.length === 0 ? "Tapez librement (catalogue vide)" : "Tapez ou choisissez dans le catalogue"}
                 onChange={e => { applyTypeAutofill(e.target.value); setTypeOpen(true); }}
                 onFocus={() => setTypeOpen(true)}
                 onBlur={() => setTimeout(() => setTypeOpen(false), 150)}
                 required
               />
+              {tarifs.length === 0 && (
+                <div className="text-muted" style={{ fontSize: '0.6875rem', marginTop: '0.25rem' }}>
+                  <i className="bi bi-info-circle"></i> Aucun examen configuré dans le catalogue —{' '}
+                  <a href="/app/catalogue-examens" style={{ textDecoration: 'underline' }}>configurer</a>
+                </div>
+              )}
               {typeOpen && typeSuggestions.length > 0 && (
                 <div style={{ position: 'absolute', left: 0, right: 0, top: '100%', marginTop: 2, background: 'var(--cds-ui-02)', border: '1px solid var(--cds-ui-03)', boxShadow: '0 4px 12px rgba(0,0,0,0.15)', zIndex: 1000, maxHeight: '260px', overflowY: 'auto' }}>
                   {typeSuggestions.slice(0, 12).map((sug, i) => {

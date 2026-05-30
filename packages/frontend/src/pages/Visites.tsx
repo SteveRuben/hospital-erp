@@ -1,28 +1,41 @@
 import { useState, useEffect } from 'react';
-import { getVisites, getVisitesStats, createVisite, terminerVisite, getServices } from '../services/api';
+import api, { getVisites, getVisitesStats, createVisite, terminerVisite, getServices } from '../services/api';
 import PatientTypeahead from '../components/PatientTypeahead';
 import type { Service } from '../types';
 
-const typeLabels: Record<string, { label: string; tag: string }> = {
-  ambulatoire: { label: 'Ambulatoire', tag: 'tag-blue' },
-  hospitalisation: { label: 'Hospitalisation', tag: 'tag-purple' },
-  urgence: { label: 'Urgence', tag: 'tag-red' },
+interface RefItem { code: string; libelle: string }
+
+// Per-statut tag colour — the labels themselves come from the reference
+// list at runtime, so a renamed entry is reflected on the chip too.
+const TYPE_TAG: Record<string, string> = {
+  ambulatoire: 'tag-blue',
+  hospitalisation: 'tag-purple',
+  urgence: 'tag-red',
 };
 
 export default function Visites() {
   const [visites, setVisites] = useState<any[]>([]);
   const [stats, setStats] = useState<any>(null);
   const [services, setServices] = useState<Service[]>([]);
+  const [typesVisite, setTypesVisite] = useState<RefItem[]>([]);
   const [loading, setLoading] = useState(true);
   const [showModal, setShowModal] = useState(false);
   const [form, setForm] = useState({ patient_id: '', service_id: '', type_visite: 'ambulatoire', notes: '' });
+
+  // Quick lookup from stored value ('ambulatoire') to displayed libellé.
+  const labelFor = (code: string) =>
+    typesVisite.find(t => t.code.toLowerCase() === code.toLowerCase())?.libelle ?? code;
 
   useEffect(() => { loadData(); }, []);
 
   const loadData = async () => {
     try {
-      const [v, s, sv] = await Promise.all([getVisites(), getVisitesStats(), getServices()]);
+      const [v, s, sv, tv] = await Promise.all([
+        getVisites(), getVisitesStats(), getServices(),
+        api.get('/reference-lists/type_visite').catch(() => ({ data: [] })),
+      ]);
       setVisites(v.data); setStats(s.data); setServices(sv.data);
+      setTypesVisite(tv.data);
     } catch (err) { console.error(err); }
     finally { setLoading(false); }
   };
@@ -64,7 +77,7 @@ export default function Visites() {
             <tr key={v.id}>
               <td className="fw-600">{v.patient_prenom} {v.patient_nom}</td>
               <td>{v.service_nom || '-'}</td>
-              <td><span className={`tag ${typeLabels[v.type_visite]?.tag || 'tag-gray'}`}>{typeLabels[v.type_visite]?.label || v.type_visite}</span></td>
+              <td><span className={`tag ${TYPE_TAG[v.type_visite] || 'tag-gray'}`}>{labelFor(v.type_visite)}</span></td>
               <td>{new Date(v.date_debut).toLocaleTimeString('fr-FR', { hour: '2-digit', minute: '2-digit' })}</td>
               <td>{elapsed(v.date_debut)}</td>
               <td><button className="btn-ghost btn-sm" onClick={() => handleTerminer(v.id)}>Terminer ✓</button></td>
@@ -85,7 +98,7 @@ export default function Visites() {
               </div>
               <div className="form-group"><label className="form-label">Service</label><select className="form-select" value={form.service_id} onChange={e => setForm({...form, service_id: e.target.value})}><option value="">Sélectionner...</option>{services.map(s => <option key={s.id} value={s.id}>{s.nom}</option>)}</select></div>
             </div>
-            <div className="form-group"><label className="form-label">Type de visite</label><select className="form-select" value={form.type_visite} onChange={e => setForm({...form, type_visite: e.target.value})}><option value="ambulatoire">Ambulatoire</option><option value="hospitalisation">Hospitalisation</option><option value="urgence">Urgence</option></select></div>
+            <div className="form-group"><label className="form-label">Type de visite</label><select className="form-select" value={form.type_visite} onChange={e => setForm({...form, type_visite: e.target.value})}>{typesVisite.length === 0 ? (<><option value="ambulatoire">Ambulatoire</option><option value="hospitalisation">Hospitalisation</option><option value="urgence">Urgence</option></>) : typesVisite.map(t => <option key={t.code} value={t.code.toLowerCase()}>{t.libelle}</option>)}</select></div>
             <div className="form-group"><label className="form-label">Notes</label><textarea className="form-textarea" rows={2} value={form.notes} onChange={e => setForm({...form, notes: e.target.value})} /></div>
           </div><div className="modal-footer"><button type="button" className="btn-secondary" onClick={() => setShowModal(false)}>Annuler</button><button type="submit" className="btn-primary">Démarrer la visite</button></div></form>
         </div></div>

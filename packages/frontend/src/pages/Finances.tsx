@@ -1,10 +1,9 @@
 import { useState, useEffect } from 'react';
-import { getRecettes, createRecette, deleteRecette, getDepenses, createDepense, deleteDepense, getCaisse, getBilan, getServices } from '../services/api';
+import api, { getRecettes, createRecette, deleteRecette, getDepenses, createDepense, deleteDepense, getCaisse, getBilan, getServices } from '../services/api';
 import PatientTypeahead from '../components/PatientTypeahead';
 import type { Recette, Depense, Service, Bilan } from '../types';
 
-const typeActes = ['Consultation', 'Examen', 'Hospitalisation', 'Soins', 'Médicaments', 'Chirurgie', 'Accouchement', 'Soins dentaires'];
-const typeDepenses = ['Achat médicaments', 'Consommables médicaux', 'Salaires', 'Factures (eau, électricité)', 'Loyer', 'Prestataires'];
+interface RefItem { code: string; libelle: string; par_defaut: boolean }
 
 export default function Finances() {
   const [tab, setTab] = useState<'recettes' | 'depenses' | 'bilan'>('recettes');
@@ -13,6 +12,10 @@ export default function Finances() {
   const [caisse, setCaisse] = useState<{ recettes: number; depenses: number; solde: number } | null>(null);
   const [bilan, setBilan] = useState<Bilan | null>(null);
   const [services, setServices] = useState<Service[]>([]);
+  // Configurable picklists (sourced from /reference-lists/<categorie>).
+  const [typeActes, setTypeActes] = useState<RefItem[]>([]);
+  const [typeDepenses, setTypeDepenses] = useState<RefItem[]>([]);
+  const [modesPaiement, setModesPaiement] = useState<RefItem[]>([]);
   const [loading, setLoading] = useState(true);
   const [showModal, setShowModal] = useState(false);
   const [recForm, setRecForm] = useState({ patient_id: '', service_id: '', type_acte: '', montant: '', mode_paiement: 'especes', description: '' });
@@ -22,8 +25,14 @@ export default function Finances() {
 
   const loadData = async () => {
     try {
-      const [r, d, c, s] = await Promise.all([getRecettes(), getDepenses(), getCaisse(), getServices()]);
+      const [r, d, c, s, ta, td, mp] = await Promise.all([
+        getRecettes(), getDepenses(), getCaisse(), getServices(),
+        api.get('/reference-lists/type_acte').catch(() => ({ data: [] })),
+        api.get('/reference-lists/type_depense').catch(() => ({ data: [] })),
+        api.get('/reference-lists/mode_paiement').catch(() => ({ data: [] })),
+      ]);
       setRecettes(r.data); setDepenses(d.data); setCaisse(c.data); setServices(s.data);
+      setTypeActes(ta.data); setTypeDepenses(td.data); setModesPaiement(mp.data);
     } catch (err) { console.error(err); }
     finally { setLoading(false); }
   };
@@ -104,10 +113,10 @@ export default function Finances() {
                     <div className="form-group"><label className="form-label">Service</label><select className="form-select" value={recForm.service_id} onChange={e => setRecForm({...recForm, service_id: e.target.value})}><option value="">Sélectionner...</option>{services.map(s => <option key={s.id} value={s.id}>{s.nom}</option>)}</select></div>
                   </div>
                   <div className="grid-2">
-                    <div className="form-group"><label className="form-label">Type d'acte *</label><select className="form-select" value={recForm.type_acte} onChange={e => setRecForm({...recForm, type_acte: e.target.value})} required><option value="">Sélectionner...</option>{typeActes.map(t => <option key={t} value={t}>{t}</option>)}</select></div>
+                    <div className="form-group"><label className="form-label">Type d'acte *</label><select className="form-select" value={recForm.type_acte} onChange={e => setRecForm({...recForm, type_acte: e.target.value})} required><option value="">Sélectionner...</option>{typeActes.map(t => <option key={t.code} value={t.libelle}>{t.libelle}</option>)}</select></div>
                     <div className="form-group"><label className="form-label">Montant *</label><input type="number" className="form-input" value={recForm.montant} onChange={e => setRecForm({...recForm, montant: e.target.value})} required /></div>
                   </div>
-                  <div className="form-group"><label className="form-label">Mode de paiement</label><select className="form-select" value={recForm.mode_paiement} onChange={e => setRecForm({...recForm, mode_paiement: e.target.value})}><option value="especes">Espèces</option><option value="mobile_money">Mobile Money</option><option value="carte">Carte</option></select></div>
+                  <div className="form-group"><label className="form-label">Mode de paiement</label><select className="form-select" value={recForm.mode_paiement} onChange={e => setRecForm({...recForm, mode_paiement: e.target.value})}>{modesPaiement.map(m => <option key={m.code} value={m.code.toLowerCase()}>{m.libelle}</option>)}</select></div>
                 </div>
                 <div className="modal-footer"><button type="button" className="btn-secondary" onClick={() => setShowModal(false)}>Annuler</button><button type="submit" className="btn-primary">Enregistrer</button></div>
               </form>
@@ -115,7 +124,7 @@ export default function Finances() {
               <form onSubmit={handleDepense}>
                 <div className="modal-body">
                   <div className="grid-2">
-                    <div className="form-group"><label className="form-label">Type *</label><select className="form-select" value={depForm.type_depense} onChange={e => setDepForm({...depForm, type_depense: e.target.value})} required><option value="">Sélectionner...</option>{typeDepenses.map(t => <option key={t} value={t}>{t}</option>)}</select></div>
+                    <div className="form-group"><label className="form-label">Type *</label><select className="form-select" value={depForm.type_depense} onChange={e => setDepForm({...depForm, type_depense: e.target.value})} required><option value="">Sélectionner...</option>{typeDepenses.map(t => <option key={t.code} value={t.libelle}>{t.libelle}</option>)}</select></div>
                     <div className="form-group"><label className="form-label">Montant *</label><input type="number" className="form-input" value={depForm.montant} onChange={e => setDepForm({...depForm, montant: e.target.value})} required /></div>
                   </div>
                   <div className="grid-2">

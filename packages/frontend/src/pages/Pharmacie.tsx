@@ -1,7 +1,7 @@
 import { useState, useEffect } from 'react';
-import { getMedicaments, createMedicament, getStock, createStock, getMouvements, createMouvement, getPharmacieAlertes } from '../services/api';
+import api, { getMedicaments, createMedicament, getStock, createStock, getMouvements, createMouvement, getPharmacieAlertes } from '../services/api';
 
-const formes = ['Comprimé', 'Gélule', 'Sirop', 'Injectable', 'Pommade', 'Suppositoire', 'Collyre', 'Sachet'];
+interface RefItem { code: string; libelle: string }
 
 export default function Pharmacie() {
   const [tab, setTab] = useState<'catalogue' | 'stock' | 'mouvements' | 'alertes'>('catalogue');
@@ -9,6 +9,7 @@ export default function Pharmacie() {
   const [stock, setStockData] = useState<any[]>([]);
   const [mouvements, setMouvements] = useState<any[]>([]);
   const [alertes, setAlertes] = useState<any>(null);
+  const [formes, setFormes] = useState<RefItem[]>([]);
   const [loading, setLoading] = useState(true);
   const [showModal, setShowModal] = useState<string | null>(null);
   const [medForm, setMedForm] = useState({ nom: '', dci: '', forme: '', dosage_standard: '', categorie: '', prix_unitaire: '' });
@@ -19,8 +20,12 @@ export default function Pharmacie() {
 
   const loadAll = async () => {
     try {
-      const [m, s, mv, a] = await Promise.all([getMedicaments(), getStock(), getMouvements(), getPharmacieAlertes()]);
+      const [m, s, mv, a, f] = await Promise.all([
+        getMedicaments(), getStock(), getMouvements(), getPharmacieAlertes(),
+        api.get('/reference-lists/forme_pharmaceutique').catch(() => ({ data: [] })),
+      ]);
       setMedicaments(m.data); setStockData(s.data); setMouvements(mv.data); setAlertes(a.data);
+      setFormes(f.data);
     } catch (err) { console.error(err); }
     finally { setLoading(false); }
   };
@@ -96,7 +101,7 @@ export default function Pharmacie() {
           <div className="modal-header"><h3>Nouveau médicament</h3><button className="btn-icon" onClick={() => setShowModal(null)}><i className="bi bi-x-lg"></i></button></div>
           <form onSubmit={handleMed}><div className="modal-body">
             <div className="grid-2"><div className="form-group"><label className="form-label">Nom *</label><input type="text" className="form-input" value={medForm.nom} onChange={e => setMedForm({...medForm, nom: e.target.value})} required /></div><div className="form-group"><label className="form-label">DCI</label><input type="text" className="form-input" value={medForm.dci} onChange={e => setMedForm({...medForm, dci: e.target.value})} /></div></div>
-            <div className="grid-3"><div className="form-group"><label className="form-label">Forme</label><select className="form-select" value={medForm.forme} onChange={e => setMedForm({...medForm, forme: e.target.value})}><option value="">—</option>{formes.map(f => <option key={f} value={f}>{f}</option>)}</select></div><div className="form-group"><label className="form-label">Dosage</label><input type="text" className="form-input" value={medForm.dosage_standard} onChange={e => setMedForm({...medForm, dosage_standard: e.target.value})} placeholder="ex: 500mg" /></div><div className="form-group"><label className="form-label">Prix unitaire</label><input type="number" className="form-input" value={medForm.prix_unitaire} onChange={e => setMedForm({...medForm, prix_unitaire: e.target.value})} /></div></div>
+            <div className="grid-3"><div className="form-group"><label className="form-label">Forme</label><select className="form-select" value={medForm.forme} onChange={e => setMedForm({...medForm, forme: e.target.value})}><option value="">—</option>{formes.map(f => <option key={f.code} value={f.libelle}>{f.libelle}</option>)}</select></div><div className="form-group"><label className="form-label">Dosage</label><input type="text" className="form-input" value={medForm.dosage_standard} onChange={e => setMedForm({...medForm, dosage_standard: e.target.value})} placeholder="ex: 500mg" /></div><div className="form-group"><label className="form-label">Prix unitaire</label><input type="number" className="form-input" value={medForm.prix_unitaire} onChange={e => setMedForm({...medForm, prix_unitaire: e.target.value})} /></div></div>
             <div className="form-group"><label className="form-label">Catégorie</label><input type="text" className="form-input" value={medForm.categorie} onChange={e => setMedForm({...medForm, categorie: e.target.value})} placeholder="ex: Antibiotique, Antalgique, Antipaludéen" /></div>
           </div><div className="modal-footer"><button type="button" className="btn-secondary" onClick={() => setShowModal(null)}>Annuler</button><button type="submit" className="btn-primary">Créer</button></div></form>
         </div></div>

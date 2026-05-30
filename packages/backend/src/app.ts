@@ -19,6 +19,7 @@ dotenv.config({ path: path.resolve(__dirname, '../.env') });
 
 import authRoutes from './routes/auth.js';
 import patientsRoutes from './routes/patients.js';
+import patientAttributionsRoutes from './routes/patient-attributions.js';
 import medecinsRoutes from './routes/medecins.js';
 import servicesRoutes from './routes/services.js';
 import consultationsRoutes from './routes/consultations.js';
@@ -136,6 +137,7 @@ app.use('/api/auth/login', authRateLimit);
 
 app.use('/api/auth', authRoutes);
 app.use('/api/patients', patientsRoutes);
+app.use('/api/patient-attributions', patientAttributionsRoutes);
 app.use('/api/medecins', medecinsRoutes);
 app.use('/api/services', servicesRoutes);
 app.use('/api/consultations', consultationsRoutes);

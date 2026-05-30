@@ -4,11 +4,12 @@ import PatientTypeahead from '../components/PatientTypeahead';
 import api from '../services/api';
 import type { Medecin } from '../types';
 
-const typeExamens = ['Radiographie', 'Échographie', 'Scanner', 'IRM', 'Mammographie', 'Panoramique dentaire', 'Autre'];
+interface RefItem { code: string; libelle: string }
 
 export default function Imagerie() {
   const [images, setImages] = useState<any[]>([]);
   const [medecins, setMedecins] = useState<Medecin[]>([]);
+  const [typeExamens, setTypeExamens] = useState<RefItem[]>([]);
   const [selectedPatient, setSelectedPatient] = useState('');
   const [loading, setLoading] = useState(false);
   const [showModal, setShowModal] = useState(false);
@@ -21,8 +22,12 @@ export default function Imagerie() {
 
   const loadRefs = async () => {
     try {
-      const m = await getMedecins();
+      const [m, t] = await Promise.all([
+        getMedecins(),
+        api.get('/reference-lists/type_imagerie').catch(() => ({ data: [] })),
+      ]);
       setMedecins(m.data);
+      setTypeExamens(t.data);
     } catch (err) { console.error(err); }
   };
 
@@ -121,7 +126,7 @@ export default function Imagerie() {
                 <label className="form-label">Patient * <span className="text-muted" style={{ fontSize: '0.6875rem', fontWeight: 400 }}>(nom ou référence)</span></label>
                 <PatientTypeahead value={form.patient_id} onChange={id => setForm({ ...form, patient_id: id })} required autoFocus />
               </div>
-              <div className="form-group"><label className="form-label">Type d'examen</label><select className="form-select" value={form.type_examen} onChange={e => setForm({...form, type_examen: e.target.value})}><option value="">Sélectionner...</option>{typeExamens.map(t => <option key={t} value={t}>{t}</option>)}</select></div>
+              <div className="form-group"><label className="form-label">Type d'examen</label><select className="form-select" value={form.type_examen} onChange={e => setForm({...form, type_examen: e.target.value})}><option value="">Sélectionner...</option>{typeExamens.map(t => <option key={t.code} value={t.libelle}>{t.libelle}</option>)}</select></div>
             </div>
             <div className="form-group"><label className="form-label">Fichier *</label><input type="file" ref={fileRef} accept=".dcm,.jpg,.jpeg,.png,.gif,.bmp,.tiff,.pdf" style={{ display: 'block', marginTop: '0.25rem' }} /></div>
             <div className="form-group"><label className="form-label">Description</label><input type="text" className="form-input" value={form.description} onChange={e => setForm({...form, description: e.target.value})} /></div>

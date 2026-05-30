@@ -1,17 +1,25 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useContext } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { createHospitalisation, getMedecins, getServices, getLits } from '../services/api';
+import { createHospitalisation, getMedecins, getServices, getLits, createAttribution } from '../services/api';
+import { AuthContext } from '../App';
 import PatientTypeahead from '../components/PatientTypeahead';
 import type { Medecin, Service } from '../types';
 
 export default function AdmissionForm() {
   const navigate = useNavigate();
+  const { user } = useContext(AuthContext);
   const [form, setForm] = useState({ patient_id: '', lit_id: '', medecin_id: '', service_id: '', motif: '', notes: '' });
+  // Default true — at admission we expect the attribution to start.
+  // 'propose' mode is only meaningful for infirmier/réception; admins
+  // and medecins set actif directly.
+  const [createAttrib, setCreateAttrib] = useState(true);
+  const [proposeAttrib, setProposeAttrib] = useState(false);
   const [medecins, setMedecins] = useState<Medecin[]>([]);
   const [services, setServices] = useState<Service[]>([]);
   const [lits, setLits] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
+  const canPropose = user?.role === 'infirmier' || user?.role === 'reception';
 
   useEffect(() => {
     Promise.all([getMedecins(), getServices(), getLits()])
@@ -27,6 +35,21 @@ export default function AdmissionForm() {
     setError('');
     try {
       await createHospitalisation(form);
+      // Best-effort attribution: only if a medecin was actually chosen
+      // AND the user kept the default checkbox. Failure here is logged
+      // but doesn't roll back the hospitalisation — the admission has
+      // already created clinical access via the FK chain.
+      if (createAttrib && form.medecin_id && form.patient_id) {
+        try {
+          await createAttribution({
+            patient_id: Number(form.patient_id),
+            medecin_user_id: Number(form.medecin_id),
+            propose: canPropose && proposeAttrib,
+          });
+        } catch (attribErr) {
+          console.error('[ADMISSION] attribution create failed:', attribErr);
+        }
+      }
       navigate('/app/lits');
     } catch (err: any) { setError(err.response?.data?.error || 'Erreur lors de l\'admission'); }
   };
@@ -57,6 +80,20 @@ export default function AdmissionForm() {
             <div className="form-group"><label className="form-label">Médecin responsable</label><select className="form-select" value={form.medecin_id} onChange={e => setForm({...form, medecin_id: e.target.value})}><option value="">Sélectionner...</option>{medecins.map(m => <option key={m.id} value={m.id}>Dr. {m.prenom} {m.nom} — {m.specialite}</option>)}</select></div>
             <div className="form-group"><label className="form-label">Service</label><select className="form-select" value={form.service_id} onChange={e => setForm({...form, service_id: e.target.value})}><option value="">Sélectionner...</option>{services.map(s => <option key={s.id} value={s.id}>{s.nom}</option>)}</select></div>
           </div>
+          {form.medecin_id && (
+            <div className="form-group" style={{ padding: '0.75rem', background: 'var(--cds-ui-01)', borderRadius: '4px' }}>
+              <label style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', cursor: 'pointer', fontSize: '0.8125rem' }}>
+                <input type="checkbox" checked={createAttrib} onChange={e => setCreateAttrib(e.target.checked)} />
+                <span>Faire de ce médecin le titulaire du patient</span>
+              </label>
+              {canPropose && createAttrib && (
+                <label style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', cursor: 'pointer', fontSize: '0.75rem', marginTop: '0.375rem', paddingLeft: '1.5rem' }}>
+                  <input type="checkbox" checked={proposeAttrib} onChange={e => setProposeAttrib(e.target.checked)} />
+                  <span className="text-muted">Demander la validation du médecin (mode proposé)</span>
+                </label>
+              )}
+            </div>
+          )}
           <div className="form-group"><label className="form-label">Motif d'hospitalisation</label><textarea className="form-input" rows={3} value={form.motif} onChange={e => setForm({...form, motif: e.target.value})} placeholder="Raison de l'hospitalisation..." /></div>
           <div className="form-group"><label className="form-label">Notes</label><textarea className="form-input" rows={2} value={form.notes} onChange={e => setForm({...form, notes: e.target.value})} placeholder="Notes additionnelles..." /></div>
           <div style={{ display: 'flex', justifyContent: 'flex-end', gap: '0.75rem', marginTop: '2rem', paddingTop: '1.5rem', borderTop: '1px solid var(--cds-ui-03)' }}>

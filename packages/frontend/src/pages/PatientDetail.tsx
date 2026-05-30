@@ -1,6 +1,7 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useContext } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
-import { getPatient, getPatientHistorique, getRendezVous, getVitaux, createVitaux, getAllergies, createAllergie, getPathologies, createPathologie, getPrescriptions, createPrescription, getVaccinations, createVaccination, getNotes, createNote, getAlertes, createAlerte, toggleAlerte, getOrdonnances, getMedecins } from '../services/api';
+import { getPatient, getPatientHistorique, getRendezVous, getVitaux, createVitaux, getAllergies, createAllergie, getPathologies, createPathologie, getPrescriptions, createPrescription, getVaccinations, createVaccination, getNotes, createNote, getAlertes, createAlerte, toggleAlerte, getOrdonnances, getMedecins, getAttributions, createAttribution, validateAttribution, cloturerAttribution, type AttributionRow } from '../services/api';
+import { AuthContext } from '../App';
 import type { Patient, RendezVous, Medecin } from '../types';
 import MentionTextarea from '../components/MentionTextarea';
 import MentionContent from '../components/MentionContent';
@@ -31,22 +32,25 @@ export default function PatientDetail() {
   const [alertes, setAlertesData] = useState<any[]>([]);
   const [ordonnances, setOrdonnancesData] = useState<any[]>([]);
   const [medecins, setMedecins] = useState<Medecin[]>([]);
+  const [attributions, setAttributions] = useState<AttributionRow[]>([]);
   const [showModal, setShowModal] = useState<string | null>(null);
+  const { user } = useContext(AuthContext);
 
   useEffect(() => { if (id) loadAll(); }, [id]);
 
   const loadAll = async () => {
     try {
       const pid = Number(id);
-      const [p, h, r, v, al, pa, pr, va, n, alt, ord, med] = await Promise.all([
+      const [p, h, r, v, al, pa, pr, va, n, alt, ord, med, attr] = await Promise.all([
         getPatient(pid), getPatientHistorique(pid), getRendezVous({ patient_id: id }),
         getVitaux(pid), getAllergies(pid), getPathologies(pid), getPrescriptions(pid),
-        getVaccinations(pid), getNotes(pid), getAlertes(pid), getOrdonnances(pid), getMedecins()
+        getVaccinations(pid), getNotes(pid), getAlertes(pid), getOrdonnances(pid), getMedecins(),
+        getAttributions({ patient_id: pid }).catch(() => ({ data: [] as AttributionRow[] })),
       ]);
       setPatient(p.data); setHist(h.data); setRdvs(r.data); setVitauxData(v.data);
       setAllergiesData(al.data); setPathologiesData(pa.data); setPrescriptionsData(pr.data);
       setVaccinationsData(va.data); setNotesData(n.data); setAlertesData(alt.data);
-      setOrdonnancesData(ord.data); setMedecins(med.data);
+      setOrdonnancesData(ord.data); setMedecins(med.data); setAttributions(attr.data);
     } catch (err) { console.error(err); }
     finally { setLoading(false); }
   };
@@ -92,7 +96,7 @@ export default function PatientDetail() {
       </div>
 
       <div className="mt-2">
-        {tab === 'resume' && <ResumeTab patient={patient} hist={hist} rdvs={rdvs} vitaux={vitaux} allergies={allergies} pathologies={pathologies} fmt={fmt} />}
+        {tab === 'resume' && <ResumeTab patient={patient} hist={hist} rdvs={rdvs} vitaux={vitaux} allergies={allergies} pathologies={pathologies} fmt={fmt} attributions={attributions} medecins={medecins} user={user} onRefresh={loadAll} />}
         {tab === 'vitaux' && <VitauxTab data={vitaux} patientId={patient.id} medecins={medecins} onRefresh={loadAll} showModal={showModal} setShowModal={setShowModal} />}
         {tab === 'allergies' && <AllergiesTab data={allergies} patientId={patient.id} onRefresh={loadAll} showModal={showModal} setShowModal={setShowModal} />}
         {tab === 'pathologies' && <PathologiesTab data={pathologies} patientId={patient.id} onRefresh={loadAll} showModal={showModal} setShowModal={setShowModal} />}
@@ -115,7 +119,7 @@ export default function PatientDetail() {
 
 // === SUB COMPONENTS ===
 
-function ResumeTab({ patient, hist, rdvs, vitaux, allergies, pathologies, fmt }: any) {
+function ResumeTab({ patient, hist, rdvs, vitaux, allergies, pathologies, fmt, attributions, medecins, user, onRefresh }: any) {
   const lastVitaux = vitaux[0];
   return (
     <div className="grid-2">
@@ -128,6 +132,7 @@ function ResumeTab({ patient, hist, rdvs, vitaux, allergies, pathologies, fmt }:
           <div><span className="form-label">Contact urgence</span><p>{patient.contact_urgence || '-'}</p></div>
         </div>
       </div>
+      <AttributionTile patientId={patient.id} attributions={attributions} medecins={medecins} user={user} onRefresh={onRefresh} />
       <div className="tile">
         <h4 style={{marginBottom:'1rem',fontSize:'0.875rem',fontWeight:600}}>Derniers signes vitaux</h4>
         {lastVitaux ? (
@@ -151,6 +156,117 @@ function ResumeTab({ patient, hist, rdvs, vitaux, allergies, pathologies, fmt }:
         {pathologies.filter((p:any)=>p.statut==='active').map((p:any) => <span key={p.id} className="tag tag-purple" style={{marginRight:'0.25rem'}}>{p.nom}</span>)}
         {!pathologies.filter((p:any)=>p.statut==='active').length && <p className="text-muted">Aucune</p>}
       </div>
+    </div>
+  );
+}
+
+function AttributionTile({ patientId, attributions, medecins, user, onRefresh }: { patientId: number; attributions: AttributionRow[]; medecins: Medecin[]; user: { id: number; role: string; username: string } | null; onRefresh: () => void }) {
+  const [adding, setAdding] = useState(false);
+  const [medecinId, setMedecinId] = useState('');
+  const [propose, setPropose] = useState(false);
+  const actifs = attributions.filter(a => a.statut === 'actif');
+  const proposes = attributions.filter(a => a.statut === 'propose');
+  const cloturees = attributions.filter(a => a.statut === 'cloture');
+  const canCreate = user && ['admin', 'medecin', 'infirmier', 'reception'].includes(user.role);
+  const canPropose = user && (user.role === 'infirmier' || user.role === 'reception');
+
+  const handleCreate = async () => {
+    if (!medecinId) return;
+    try {
+      await createAttribution({ patient_id: patientId, medecin_user_id: Number(medecinId), propose: canPropose ? propose : false });
+      setMedecinId(''); setPropose(false); setAdding(false);
+      onRefresh();
+    } catch (err: any) { alert(err.response?.data?.error || 'Erreur'); }
+  };
+
+  const handleValidate = async (id: number) => {
+    try { await validateAttribution(id); onRefresh(); }
+    catch (err: any) { alert(err.response?.data?.error || 'Erreur'); }
+  };
+  const handleCloture = async (id: number) => {
+    const motif = prompt('Motif de clôture (optionnel) :') ?? undefined;
+    try { await cloturerAttribution(id, motif); onRefresh(); }
+    catch (err: any) { alert(err.response?.data?.error || 'Erreur'); }
+  };
+
+  return (
+    <div className="tile">
+      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '0.5rem' }}>
+        <h4 style={{ fontSize: '0.875rem', fontWeight: 600 }}>Médecin titulaire</h4>
+        {canCreate && !adding && (
+          <button className="btn-ghost btn-sm" onClick={() => setAdding(true)}><i className="bi bi-plus"></i> Assigner</button>
+        )}
+      </div>
+      {actifs.length === 0 && proposes.length === 0 && !adding && (
+        <p className="text-muted" style={{ fontSize: '0.75rem' }}>Aucun médecin titulaire</p>
+      )}
+      {actifs.map(a => (
+        <div key={a.id} style={{ padding: '0.5rem', background: 'var(--cds-ui-01)', borderRadius: '4px', marginBottom: '0.375rem', fontSize: '0.8125rem' }}>
+          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+            <div>
+              <strong>Dr. {a.medecin_prenom} {a.medecin_nom}</strong>
+              {a.medecin_specialite && <span className="text-muted" style={{ marginLeft: '0.375rem', fontSize: '0.6875rem' }}>{a.medecin_specialite}</span>}
+              <span className="tag tag-green" style={{ marginLeft: '0.5rem', fontSize: '0.625rem' }}>actif</span>
+            </div>
+            {(user?.role === 'admin' || user?.role === 'reception' || (user?.role === 'medecin' && a.medecin_user_id === user.id)) && (
+              <button className="btn-ghost btn-sm" onClick={() => handleCloture(a.id)} title="Clôturer"><i className="bi bi-x-circle text-danger"></i></button>
+            )}
+          </div>
+          {a.created_by_nom && (
+            <div className="text-muted" style={{ fontSize: '0.6875rem', marginTop: '0.125rem' }}>
+              assigné par {a.created_by_prenom} {a.created_by_nom} ({a.created_by_role})
+            </div>
+          )}
+        </div>
+      ))}
+      {proposes.map(a => (
+        <div key={a.id} style={{ padding: '0.5rem', background: 'var(--cds-ui-01)', borderRadius: '4px', marginBottom: '0.375rem', fontSize: '0.8125rem', border: '1px dashed var(--cds-support-warning)' }}>
+          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+            <div>
+              <strong>Dr. {a.medecin_prenom} {a.medecin_nom}</strong>
+              <span className="tag tag-orange" style={{ marginLeft: '0.5rem', fontSize: '0.625rem' }}>proposé</span>
+            </div>
+            {user?.role === 'medecin' && a.medecin_user_id === user.id && (
+              <button className="btn-primary btn-sm" onClick={() => handleValidate(a.id)}>Valider</button>
+            )}
+          </div>
+          {a.created_by_nom && (
+            <div className="text-muted" style={{ fontSize: '0.6875rem', marginTop: '0.125rem' }}>
+              proposé par {a.created_by_prenom} {a.created_by_nom} ({a.created_by_role})
+            </div>
+          )}
+        </div>
+      ))}
+      {adding && canCreate && (
+        <div style={{ padding: '0.5rem', background: 'var(--cds-ui-01)', borderRadius: '4px', marginTop: '0.375rem' }}>
+          <select className="form-select" value={medecinId} onChange={e => setMedecinId(e.target.value)} style={{ marginBottom: '0.375rem' }}>
+            <option value="">Choisir un médecin…</option>
+            {medecins.map(m => <option key={m.id} value={m.id}>Dr. {m.prenom} {m.nom}{m.specialite ? ` — ${m.specialite}` : ''}</option>)}
+          </select>
+          {canPropose && (
+            <label style={{ display: 'flex', alignItems: 'center', gap: '0.375rem', fontSize: '0.6875rem', marginBottom: '0.375rem' }}>
+              <input type="checkbox" checked={propose} onChange={e => setPropose(e.target.checked)} />
+              <span className="text-muted">Demander la validation du médecin</span>
+            </label>
+          )}
+          <div className="d-flex gap-1">
+            <button className="btn-primary btn-sm" onClick={handleCreate} disabled={!medecinId}>{propose ? 'Proposer' : 'Assigner'}</button>
+            <button className="btn-ghost btn-sm" onClick={() => { setAdding(false); setMedecinId(''); setPropose(false); }}>Annuler</button>
+          </div>
+        </div>
+      )}
+      {cloturees.length > 0 && (
+        <details style={{ marginTop: '0.5rem' }}>
+          <summary className="text-muted" style={{ fontSize: '0.6875rem', cursor: 'pointer' }}>Historique ({cloturees.length})</summary>
+          {cloturees.map(a => (
+            <div key={a.id} style={{ padding: '0.375rem 0.5rem', fontSize: '0.75rem', color: 'var(--cds-text-secondary)' }}>
+              Dr. {a.medecin_prenom} {a.medecin_nom}
+              <span className="text-muted"> — clôturée {a.date_cloture ? new Date(a.date_cloture).toLocaleDateString('fr-FR') : ''}</span>
+              {a.motif_cloture && <div className="text-muted" style={{ fontSize: '0.6875rem' }}>{a.motif_cloture}</div>}
+            </div>
+          ))}
+        </details>
+      )}
     </div>
   );
 }
