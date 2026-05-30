@@ -446,12 +446,14 @@ export const initDB = async (): Promise<void> => {
         groupe VARCHAR(100) NOT NULL,
         groupe_ordre INTEGER DEFAULT 0,
         module VARCHAR(100) NOT NULL,
+        parent_module VARCHAR(100),
         label VARCHAR(100) NOT NULL,
         icon VARCHAR(50) NOT NULL,
         path VARCHAR(200) NOT NULL,
         ordre INTEGER DEFAULT 0,
         actif BOOLEAN DEFAULT TRUE
       );
+      ALTER TABLE menu_config ADD COLUMN IF NOT EXISTS parent_module VARCHAR(100);
 
       -- Pharmacie
       CREATE TABLE IF NOT EXISTS medicaments (
@@ -717,11 +719,11 @@ export const initDB = async (): Promise<void> => {
     }
 
     // Seed default habilitations
-    const modules = ['dashboard','patients','medecins','consultations','rendezvous','laboratoire','visites','file-attente','finances','services','listes-patients','documentation','utilisateurs','habilitations','import','lits','programmes','facturation','imagerie','orders','concepts','pharmacie','patient-merge','rapports','configuration','securite','formulaires'];
+    const modules = ['dashboard','patients','medecins','consultations','rendezvous','laboratoire','visites','file-attente','finances','services','listes-patients','documentation','utilisateurs','habilitations','import','lits','programmes','facturation','imagerie','orders','concepts','pharmacie','patient-merge','rapports','configuration','securite','formulaires','catalogue-examens'];
     const roleAccess: Record<string, string[]> = {
       admin: modules,
       medecin: ['dashboard','patients','medecins','consultations','rendezvous','visites','file-attente','listes-patients','documentation','lits','programmes','imagerie','orders','pharmacie','formulaires'],
-      comptable: ['dashboard','finances','documentation','facturation','rapports'],
+      comptable: ['dashboard','finances','documentation','facturation','rapports','catalogue-examens'],
       laborantin: ['dashboard','laboratoire','documentation','orders'],
       reception: ['dashboard','patients','rendezvous','visites','file-attente','documentation'],
       pharmacien: ['dashboard','pharmacie','patients','documentation','orders'],
@@ -761,9 +763,26 @@ export const initDB = async (): Promise<void> => {
       ['Administration', 2, 'configuration', 'Configuration', 'bi-gear', '/app/configuration', 13],
       ['Administration', 2, 'securite', 'Sécurité', 'bi-shield-check', '/app/securite', 14],
       ['Clinique', 1, 'formulaires', 'Formulaires', 'bi-ui-checks', '/app/formulaires', 12],
-    ];
-    for (const [groupe, groupe_ordre, module, label, icon, path, ordre] of menuItems) {
-      await client.query('INSERT INTO menu_config (groupe, groupe_ordre, module, label, icon, path, ordre) SELECT $1::varchar, $2::int, $3::varchar, $4::varchar, $5::varchar, $6::varchar, $7::int WHERE NOT EXISTS (SELECT 1 FROM menu_config WHERE module = $3::varchar)', [groupe, groupe_ordre, module, label, icon, path, ordre]);
+      // Tuple format gained an optional 8th slot: parent_module. When set,
+      // the sidebar nests this item under that parent with an indent.
+      ['Administration', 2, 'catalogue-examens', "Catalogue d'examens", 'bi-list-check', '/app/catalogue-examens', 12, 'configuration'],
+    ] as Array<readonly [string, number, string, string, string, string, number] | readonly [string, number, string, string, string, string, number, string]>;
+    for (const item of menuItems) {
+      const [groupe, groupe_ordre, module, label, icon, path, ordre] = item;
+      const parent = item.length === 8 ? item[7] : null;
+      await client.query(
+        'INSERT INTO menu_config (groupe, groupe_ordre, module, parent_module, label, icon, path, ordre) SELECT $1::varchar, $2::int, $3::varchar, $4::varchar, $5::varchar, $6::varchar, $7::varchar, $8::int WHERE NOT EXISTS (SELECT 1 FROM menu_config WHERE module = $3::varchar)',
+        [groupe, groupe_ordre, module, parent, label, icon, path, ordre],
+      );
+      // Existing rows seeded before parent_module existed: update if the
+      // canonical value (set above) differs from what's stored. Lets a fresh
+      // boot promote pre-existing items into the new hierarchy.
+      if (parent !== undefined) {
+        await client.query(
+          'UPDATE menu_config SET parent_module = $1::varchar WHERE module = $2::varchar AND (parent_module IS DISTINCT FROM $1::varchar)',
+          [parent, module],
+        );
+      }
     }
 
     // Seed default encounter types

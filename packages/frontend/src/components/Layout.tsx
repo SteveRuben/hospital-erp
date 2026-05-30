@@ -27,7 +27,14 @@ const menuItemStyle: React.CSSProperties = {
   fontSize: '0.8125rem', color: 'inherit',
 };
 
-interface MenuItemDB { id: number; groupe: string; groupe_ordre: number; module: string; label: string; icon: string; path: string; ordre: number }
+interface MenuItemDB {
+  id: number; groupe: string; groupe_ordre: number; module: string;
+  label: string; icon: string; path: string; ordre: number;
+  // Prisma camelCase passes straight through the API layer — accept both
+  // shapes so a future renaming/refactor doesn't silently break the menu.
+  parentModule?: string | null;
+  parent_module?: string | null;
+}
 
 export default function Layout({ children }: { children: React.ReactNode }) {
   const { user, logout, impersonating, stopImpersonate } = useContext(AuthContext);
@@ -176,17 +183,47 @@ export default function Layout({ children }: { children: React.ReactNode }) {
 
       <nav className="sidebar" style={impersonating ? { top: `calc(var(--cds-header-height) + 36px)` } : {}}>
         <div style={{ flex: 1, overflowY: 'auto' }}>
-          {menuGroups.map((group, gi) => (
-            <div className="sidebar-group" key={gi}>
-              <div className="sidebar-group-label">{GROUP_KEY[group.label] ? t(GROUP_KEY[group.label]) : group.label}</div>
-              {group.items.map(item => (
-                <NavLink key={item.path} to={item.path} className={({ isActive }) => `nav-link ${isActive ? 'active' : ''}`} end={item.path === '/app'}>
-                  <i className={`bi ${item.icon}`}></i>{item.label}
-                </NavLink>
-              ))}
-              {gi < menuGroups.length - 1 && <div className="sidebar-divider"></div>}
-            </div>
-          ))}
+          {menuGroups.map((group, gi) => {
+            // Build the parent → children index for this group. An item with
+            // parent_module (either camel or snake from the API) renders
+            // indented right under its parent instead of as a sibling.
+            const childrenByParent = new Map<string, MenuItemDB[]>();
+            for (const item of group.items) {
+              const parent = item.parentModule ?? item.parent_module ?? null;
+              if (parent) {
+                if (!childrenByParent.has(parent)) childrenByParent.set(parent, []);
+                childrenByParent.get(parent)!.push(item);
+              }
+            }
+            const topLevel = group.items.filter(i => !(i.parentModule ?? i.parent_module));
+
+            return (
+              <div className="sidebar-group" key={gi}>
+                <div className="sidebar-group-label">{GROUP_KEY[group.label] ? t(GROUP_KEY[group.label]) : group.label}</div>
+                {topLevel.map(item => {
+                  const children = childrenByParent.get(item.module) ?? [];
+                  return (
+                    <div key={item.path}>
+                      <NavLink to={item.path} className={({ isActive }) => `nav-link ${isActive ? 'active' : ''}`} end={item.path === '/app'}>
+                        <i className={`bi ${item.icon}`}></i>{item.label}
+                      </NavLink>
+                      {children.map(child => (
+                        <NavLink
+                          key={child.path}
+                          to={child.path}
+                          className={({ isActive }) => `nav-link ${isActive ? 'active' : ''}`}
+                          style={{ paddingLeft: '2.5rem', fontSize: '0.8125rem' }}
+                        >
+                          <i className={`bi ${child.icon}`} style={{ fontSize: '0.875rem' }}></i>{child.label}
+                        </NavLink>
+                      ))}
+                    </div>
+                  );
+                })}
+                {gi < menuGroups.length - 1 && <div className="sidebar-divider"></div>}
+              </div>
+            );
+          })}
         </div>
         <div className="sidebar-footer">
           <div className="user-info"><div>{user?.prenom} {user?.nom}</div><div><span className="tag tag-blue">{user?.role}</span></div></div>

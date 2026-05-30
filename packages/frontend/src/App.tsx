@@ -1,5 +1,5 @@
 import { BrowserRouter, Routes, Route, Navigate, useNavigate } from 'react-router-dom';
-import { useState, useEffect, createContext, useContext, useCallback, lazy, Suspense } from 'react';
+import { useState, useEffect, createContext, useContext, useCallback, Suspense } from 'react';
 import type { User } from './types';
 import { useSessionTimeout } from './hooks/useSessionTimeout';
 import Layout from './components/Layout';
@@ -7,8 +7,12 @@ import RoleGuard from './components/RoleGuard';
 import { ConfirmProvider } from './components/ConfirmDialog';
 import { SnackbarProvider } from './components/Snackbar';
 import { BrandingProvider } from './components/BrandingProvider';
+import { lazyWithReload as lazy } from './lib/lazyWithReload';
 
-// Lazy load all pages for code splitting
+// Lazy load all pages for code splitting. The `lazy` import above is the
+// reload-aware wrapper — a chunk-load failure after a Railway deploy triggers
+// one hard refresh so the user picks up the freshly hashed bundle instead of
+// landing on a white screen with "Failed to fetch dynamically imported module".
 const Landing = lazy(() => import('./pages/Landing'));
 const Login = lazy(() => import('./pages/Login'));
 const ChangePassword = lazy(() => import('./pages/ChangePassword'));
@@ -50,6 +54,7 @@ const Rapports = lazy(() => import('./pages/Rapports'));
 const Chat = lazy(() => import('./pages/Chat'));
 const Formulaires = lazy(() => import('./pages/Formulaires'));
 const Profil = lazy(() => import('./pages/Profil'));
+const CatalogueExamens = lazy(() => import('./pages/CatalogueExamens'));
 
 const PageLoader = () => <div className="loading"><div className="spinner"></div></div>;
 
@@ -195,6 +200,7 @@ function App() {
                         <Route path="/chat/:channelId" element={<Chat />} />
                         <Route path="/formulaires" element={<RoleGuard roles={['admin','medecin']}><Formulaires /></RoleGuard>} />
                         <Route path="/profil" element={<Profil />} />
+                        <Route path="/catalogue-examens" element={<RoleGuard roles={['admin','comptable']}><CatalogueExamens /></RoleGuard>} />
                       </Routes>
                     </Suspense>
                   </Layout>

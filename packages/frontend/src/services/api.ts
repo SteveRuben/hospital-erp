@@ -351,6 +351,10 @@ export const deleteChatMessage = (id: number) => api.delete(`/chat/messages/${id
 
 // Quick search
 export const quickSearchPatients = (q: string) => api.get('/patients/search/quick', { params: { q } });
+// Lookup variant for ordering/registering services (lab exam, imaging, RDV…)
+// — same row shape, bypasses the medecin-attribution filter so any
+// authorised staff can locate a patient to register a service for them.
+export const searchPatientsForOrdering = (q: string) => api.get('/patients/search/ordering', { params: { q } });
 export const advancedSearchPatients = (params: unknown) => api.get('/patients/search/advanced', { params });
 
 // Change password

@@ -65,6 +65,21 @@ router.put('/tarifs/:id', authenticate, authorize('admin', 'comptable'), async (
   } catch (err) { res.status(500).json({ error: 'Erreur serveur' }); }
 });
 
+// Remove a tarif from the catalogue. Existing invoices that referenced it
+// kept the libelle + prix_unitaire snapshot at create time, so deleting here
+// doesn't retroactively erase history — only the catalogue entry goes away.
+router.delete('/tarifs/:id', authenticate, authorize('admin', 'comptable'), async (req: AuthRequest, res: Response): Promise<void> => {
+  try {
+    const id = Number(req.params.id);
+    try {
+      await prisma.tarif.delete({ where: { id } });
+      res.json({ ok: true });
+    } catch {
+      res.status(404).json({ error: 'Non trouvé' });
+    }
+  } catch (err) { res.status(500).json({ error: 'Erreur serveur' }); }
+});
+
 // === FACTURES ===
 router.get('/factures', authenticate, async (req: AuthRequest, res: Response): Promise<void> => {
   try {

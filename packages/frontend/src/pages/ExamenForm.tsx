@@ -1,7 +1,7 @@
 import { useState, useEffect, useRef } from 'react';
 import { useNavigate, useParams } from 'react-router-dom';
 import {
-  createExamen, updateExamen, getExamen, quickSearchPatients,
+  createExamen, updateExamen, getExamen, searchPatientsForOrdering,
   getExamenTypesForPatient, getTarifsByCategorie, type TarifRow,
 } from '../services/api';
 
@@ -94,7 +94,7 @@ export default function ExamenForm() {
     if (patientTimer.current) clearTimeout(patientTimer.current);
     if (!patientQuery || patientQuery.length < 2) { setPatientResults([]); return; }
     patientTimer.current = setTimeout(() => {
-      quickSearchPatients(patientQuery)
+      searchPatientsForOrdering(patientQuery)
         .then(({ data }) => setPatientResults(data))
         .catch(() => setPatientResults([]));
     }, 200);

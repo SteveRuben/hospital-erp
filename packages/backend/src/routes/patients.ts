@@ -93,6 +93,36 @@ router.get('/search/quick', authenticate, async (req: AuthRequest, res: Response
   } catch (err) { res.status(500).json({ error: 'Erreur serveur' }); }
 });
 
+// Patient lookup for ordering/registering a service (lab exam, imaging, RDV,
+// etc.). Same matchers as /search/quick but bypasses the medecin-attribution
+// filter — a laborantin who isn't a "doctor of record" for the patient still
+// needs to locate them to register the exam. The PHI exposure is the same
+// minimal subset (name, ref, phone, ville); not the full record.
+router.get('/search/ordering', authenticate, async (req: AuthRequest, res: Response): Promise<void> => {
+  try {
+    const { q } = req.query;
+    if (!q || String(q).length < 2) { res.json([]); return; }
+    const s = String(q);
+    const idNum = Number(s);
+    const or: Prisma.PatientWhereInput[] = [
+      { nom: { contains: s, mode: 'insensitive' } },
+      { prenom: { contains: s, mode: 'insensitive' } },
+      { telephone: { contains: s, mode: 'insensitive' } },
+      { email: { contains: s, mode: 'insensitive' } },
+      { numeroIdentite: { contains: s, mode: 'insensitive' } },
+      { referenceId: { contains: s, mode: 'insensitive' } },
+    ];
+    if (Number.isInteger(idNum) && idNum > 0) or.push({ id: idNum });
+    const rows = await prisma.patient.findMany({
+      where: { archived: false, OR: or },
+      select: { id: true, nom: true, prenom: true, sexe: true, telephone: true, ville: true, dateNaissance: true, referenceId: true },
+      orderBy: { nom: 'asc' },
+      take: 10,
+    });
+    res.json(rows);
+  } catch (err) { res.status(500).json({ error: 'Erreur serveur' }); }
+});
+
 // Advanced search
 router.get('/search/advanced', authenticate, async (req: AuthRequest, res: Response): Promise<void> => {
   try {

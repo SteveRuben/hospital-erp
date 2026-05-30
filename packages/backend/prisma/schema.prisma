@@ -742,15 +742,16 @@ model Habilitation {
 }
 
 model MenuConfig {
-  id          Int     @id @default(autoincrement())
-  groupe      String  @db.VarChar(100)
-  groupeOrdre Int     @default(0) @map("groupe_ordre")
-  module      String  @db.VarChar(100)
-  label       String  @db.VarChar(100)
-  icon        String  @db.VarChar(50)
-  path        String  @db.VarChar(200)
-  ordre       Int     @default(0)
-  actif       Boolean @default(true)
+  id           Int     @id @default(autoincrement())
+  groupe       String  @db.VarChar(100)
+  groupeOrdre  Int     @default(0) @map("groupe_ordre")
+  module       String  @db.VarChar(100)
+  parentModule String? @map("parent_module") @db.VarChar(100)
+  label        String  @db.VarChar(100)
+  icon         String  @db.VarChar(50)
+  path         String  @db.VarChar(200)
+  ordre        Int     @default(0)
+  actif        Boolean @default(true)
   @@map("menu_config")
 }
 

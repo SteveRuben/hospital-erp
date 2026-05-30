@@ -1,6 +1,11 @@
-import { useState, useEffect } from 'react';
-import { getRendezVous, createRendezVous, updateRendezVousStatut, deleteRendezVous, getPatients, getMedecins, getServices } from '../services/api';
-import type { RendezVous as RDV, Patient, Medecin, Service } from '../types';
+import { useState, useEffect, useRef } from 'react';
+import { getRendezVous, createRendezVous, updateRendezVousStatut, deleteRendezVous, getMedecins, getServices, searchPatientsForOrdering } from '../services/api';
+import type { RendezVous as RDV, Medecin, Service } from '../types';
+
+interface PatientSuggestion {
+  id: number; nom: string; prenom: string; telephone?: string | null;
+  referenceId?: string | null;
+}
 
 const statutConfig: Record<string, { label: string; tag: string }> = {
   planifie: { label: 'Planifié', tag: 'tag-gray' },
@@ -13,26 +18,58 @@ const statutConfig: Record<string, { label: string; tag: string }> = {
 
 export default function RendezVous() {
   const [rdvs, setRdvs] = useState<RDV[]>([]);
-  const [patients, setPatients] = useState<Patient[]>([]);
   const [medecins, setMedecins] = useState<Medecin[]>([]);
   const [services, setServices] = useState<Service[]>([]);
   const [loading, setLoading] = useState(true);
   const [showModal, setShowModal] = useState(false);
   const [form, setForm] = useState({ patient_id: '', medecin_id: '', service_id: '', date_rdv: '', motif: '', notes: '' });
 
+  // Patient typeahead state — replaces the old dropdown that loaded every
+  // patient at once. Lets the receptionist find anyone by name or reference,
+  // including patients they don't manage day to day.
+  const [patientQuery, setPatientQuery] = useState('');
+  const [patientResults, setPatientResults] = useState<PatientSuggestion[]>([]);
+  const [patientOpen, setPatientOpen] = useState(false);
+  const patientTimer = useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
+
   useEffect(() => { loadData(); }, []);
+
+  // Debounced server-side search — 200ms so each keystroke doesn't fire.
+  useEffect(() => {
+    if (patientTimer.current) clearTimeout(patientTimer.current);
+    if (!patientQuery || patientQuery.length < 2) { setPatientResults([]); return; }
+    patientTimer.current = setTimeout(() => {
+      searchPatientsForOrdering(patientQuery)
+        .then(({ data }) => setPatientResults(data as PatientSuggestion[]))
+        .catch(() => setPatientResults([]));
+    }, 200);
+    return () => { if (patientTimer.current) clearTimeout(patientTimer.current); };
+  }, [patientQuery]);
 
   const loadData = async () => {
     try {
-      const [r, p, m, s] = await Promise.all([getRendezVous(), getPatients({ archived: 'false' }), getMedecins(), getServices()]);
-      setRdvs(r.data); setPatients(p.data.data); setMedecins(m.data); setServices(s.data);
+      const [r, m, s] = await Promise.all([getRendezVous(), getMedecins(), getServices()]);
+      setRdvs(r.data); setMedecins(m.data); setServices(s.data);
     } catch (err) { console.error(err); }
     finally { setLoading(false); }
   };
 
+  const resetForm = () => {
+    setForm({ patient_id: '', medecin_id: '', service_id: '', date_rdv: '', motif: '', notes: '' });
+    setPatientQuery('');
+    setPatientResults([]);
+  };
+
+  const pickPatient = (p: PatientSuggestion) => {
+    setForm(prev => ({ ...prev, patient_id: String(p.id) }));
+    setPatientQuery(`${p.prenom} ${p.nom}`.trim());
+    setPatientOpen(false);
+  };
+
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    try { await createRendezVous(form); setShowModal(false); setForm({ patient_id: '', medecin_id: '', service_id: '', date_rdv: '', motif: '', notes: '' }); loadData(); } catch { alert('Erreur'); }
+    if (!form.patient_id) { alert('Sélectionnez un patient dans la liste'); return; }
+    try { await createRendezVous(form); setShowModal(false); resetForm(); loadData(); } catch { alert('Erreur'); }
   };
 
   const changeStatut = async (id: number, statut: string) => {
@@ -88,13 +125,46 @@ export default function RendezVous() {
       </table>
 
       {showModal && (
-        <div className="modal-overlay" onClick={() => setShowModal(false)}>
+        <div className="modal-overlay" onClick={() => { setShowModal(false); resetForm(); }}>
           <div className="modal-container" onClick={e => e.stopPropagation()}>
-            <div className="modal-header"><h3>Nouveau rendez-vous</h3><button className="btn-icon" onClick={() => setShowModal(false)}><i className="bi bi-x-lg"></i></button></div>
+            <div className="modal-header"><h3>Nouveau rendez-vous</h3><button className="btn-icon" onClick={() => { setShowModal(false); resetForm(); }}><i className="bi bi-x-lg"></i></button></div>
             <form onSubmit={handleSubmit}>
               <div className="modal-body">
                 <div className="grid-2">
-                  <div className="form-group"><label className="form-label">Patient *</label><select className="form-select" value={form.patient_id} onChange={e => setForm({...form, patient_id: e.target.value})} required><option value="">Sélectionner...</option>{patients.map(p => <option key={p.id} value={p.id}>{p.prenom} {p.nom}</option>)}</select></div>
+                  <div className="form-group" style={{ position: 'relative' }}>
+                    <label className="form-label">Patient * <span className="text-muted" style={{ fontSize: '0.6875rem', fontWeight: 400 }}>(nom ou référence)</span></label>
+                    <input
+                      type="text"
+                      className="form-input"
+                      value={patientQuery}
+                      placeholder="Tapez 2 lettres du nom, prénom ou référence (PAT-…)"
+                      onChange={e => { setPatientQuery(e.target.value); setPatientOpen(true); if (form.patient_id) setForm(f => ({ ...f, patient_id: '' })); }}
+                      onFocus={() => setPatientOpen(true)}
+                      onBlur={() => setTimeout(() => setPatientOpen(false), 150)}
+                      required={!form.patient_id}
+                      autoFocus
+                    />
+                    {form.patient_id && (
+                      <div className="text-muted" style={{ fontSize: '0.6875rem', marginTop: '0.25rem' }}>
+                        <i className="bi bi-check-circle"></i> patient sélectionné (#{form.patient_id})
+                      </div>
+                    )}
+                    {patientOpen && patientResults.length > 0 && (
+                      <div style={{ position: 'absolute', left: 0, right: 0, top: '100%', marginTop: 2, background: 'var(--cds-ui-02)', border: '1px solid var(--cds-ui-03)', boxShadow: '0 4px 12px rgba(0,0,0,0.15)', zIndex: 1000, maxHeight: '260px', overflowY: 'auto' }}>
+                        {patientResults.map(p => (
+                          <div
+                            key={p.id}
+                            onMouseDown={(e) => { e.preventDefault(); pickPatient(p); }}
+                            style={{ padding: '0.5rem 0.75rem', cursor: 'pointer', fontSize: '0.8125rem', borderBottom: '1px solid var(--cds-ui-03)' }}
+                          >
+                            <strong>{p.prenom} {p.nom}</strong>
+                            {p.referenceId && <span className="text-muted" style={{ marginLeft: '0.5rem' }}>{p.referenceId}</span>}
+                            {p.telephone && <span className="text-muted" style={{ marginLeft: '0.5rem' }}>{p.telephone}</span>}
+                          </div>
+                        ))}
+                      </div>
+                    )}
+                  </div>
                   <div className="form-group"><label className="form-label">Médecin</label><select className="form-select" value={form.medecin_id} onChange={e => setForm({...form, medecin_id: e.target.value})}><option value="">Sélectionner...</option>{medecins.map(m => <option key={m.id} value={m.id}>Dr. {m.prenom} {m.nom}</option>)}</select></div>
                 </div>
                 <div className="grid-2">
@@ -103,7 +173,7 @@ export default function RendezVous() {
                 </div>
                 <div className="form-group"><label className="form-label">Motif</label><input type="text" className="form-input" value={form.motif} onChange={e => setForm({...form, motif: e.target.value})} /></div>
               </div>
-              <div className="modal-footer"><button type="button" className="btn-secondary" onClick={() => setShowModal(false)}>Annuler</button><button type="submit" className="btn-primary">Planifier</button></div>
+              <div className="modal-footer"><button type="button" className="btn-secondary" onClick={() => { setShowModal(false); resetForm(); }}>Annuler</button><button type="submit" className="btn-primary">Planifier</button></div>
             </form>
           </div>
         </div>
