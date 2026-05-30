@@ -172,19 +172,25 @@ model Service {
 
 // ===== CONSULTATIONS =====
 
+enum ConsultationStatut {
+  en_cours
+  terminee
+  annulee
+}
+
 model Consultation {
-  id               Int       @id @default(autoincrement())
-  reference        String?   @unique @db.VarChar(20)
-  patientId        Int       @map("patient_id")
-  medecinId        Int?      @map("medecin_id")
-  serviceId        Int?      @map("service_id")
-  dateConsultation DateTime  @default(now()) @map("date_consultation")
+  id               Int                 @id @default(autoincrement())
+  reference        String?             @unique @db.VarChar(20)
+  patientId        Int                 @map("patient_id")
+  medecinId        Int?                @map("medecin_id")
+  serviceId        Int?                @map("service_id")
+  dateConsultation DateTime            @default(now()) @map("date_consultation")
   diagnostic       String?
   traitement       String?
   notes            String?
-  statut           String?   @default("en_cours") @db.VarChar(50)
+  statut           ConsultationStatut? @default(en_cours)
   motif            String?
-  gravite          String?   @db.VarChar(20)
+  gravite          String?             @db.VarChar(20)
 
   patient  Patient  @relation(fields: [patientId], references: [id])
   medecin  Medecin? @relation(fields: [medecinId], references: [id])
@@ -300,19 +306,27 @@ model Observation {
 
 // ===== ORDERS =====
 
+enum OrderStatut {
+  nouveau
+  actif
+  complete
+  annule
+  expire
+}
+
 model Order {
-  id           Int       @id @default(autoincrement())
-  reference    String?   @unique @db.VarChar(20)
-  patientId    Int       @map("patient_id")
-  encounterId  Int?      @map("encounter_id")
-  conceptId    Int?      @map("concept_id")
-  typeOrder    String    @map("type_order") @db.VarChar(30)
-  ordererId    Int?      @map("orderer_id")
-  urgence      String    @default("routine") @db.VarChar(20)
+  id           Int         @id @default(autoincrement())
+  reference    String?     @unique @db.VarChar(20)
+  patientId    Int         @map("patient_id")
+  encounterId  Int?        @map("encounter_id")
+  conceptId    Int?        @map("concept_id")
+  typeOrder    String      @map("type_order") @db.VarChar(30)
+  ordererId    Int?        @map("orderer_id")
+  urgence      String      @default("routine") @db.VarChar(20)
   instructions String?
-  dateDebut    DateTime  @default(now()) @map("date_debut")
-  dateFin      DateTime? @map("date_fin")
-  statut       String    @default("actif") @db.VarChar(30)
+  dateDebut    DateTime    @default(now()) @map("date_debut")
+  dateFin      DateTime?   @map("date_fin")
+  statut       OrderStatut @default(actif)
   dosage       String?   @db.VarChar(100)
   frequence    String?   @db.VarChar(100)
   duree        String?   @db.VarChar(100)
@@ -445,51 +459,69 @@ model Allergie {
   @@map("allergies")
 }
 
+enum PathologieStatut {
+  active
+  inactive
+  resolue
+}
+
 model Pathologie {
-  id        Int       @id @default(autoincrement())
-  patientId Int       @map("patient_id")
-  nom       String    @db.VarChar(200)
-  codeCim   String?   @map("code_cim") @db.VarChar(20)
-  statut    String    @default("active") @db.VarChar(50)
-  dateDebut DateTime? @map("date_debut") @db.Date
-  dateFin   DateTime? @map("date_fin") @db.Date
+  id        Int              @id @default(autoincrement())
+  patientId Int              @map("patient_id")
+  nom       String           @db.VarChar(200)
+  codeCim   String?          @map("code_cim") @db.VarChar(20)
+  statut    PathologieStatut @default(active)
+  dateDebut DateTime?        @map("date_debut") @db.Date
+  dateFin   DateTime?        @map("date_fin") @db.Date
   notes     String?
-  createdAt DateTime  @default(now()) @map("created_at")
-  patient   Patient   @relation(fields: [patientId], references: [id])
+  createdAt DateTime         @default(now()) @map("created_at")
+  patient   Patient          @relation(fields: [patientId], references: [id])
   @@map("pathologies")
 }
 
+enum PrescriptionStatut {
+  active
+  terminee
+  annulee
+}
+
 model Prescription {
-  id             Int       @id @default(autoincrement())
-  patientId      Int       @map("patient_id")
-  medecinId      Int?      @map("medecin_id")
-  consultationId Int?      @map("consultation_id")
-  medicament     String    @db.VarChar(200)
-  dosage         String?   @db.VarChar(100)
-  frequence      String?   @db.VarChar(100)
-  duree          String?   @db.VarChar(100)
-  voie           String?   @db.VarChar(50)
+  id             Int                @id @default(autoincrement())
+  patientId      Int                @map("patient_id")
+  medecinId      Int?               @map("medecin_id")
+  consultationId Int?               @map("consultation_id")
+  medicament     String             @db.VarChar(200)
+  dosage         String?            @db.VarChar(100)
+  frequence      String?            @db.VarChar(100)
+  duree          String?            @db.VarChar(100)
+  voie           String?            @db.VarChar(50)
   instructions   String?
-  statut         String    @default("active") @db.VarChar(50)
-  dateDebut      DateTime  @default(now()) @map("date_debut") @db.Date
-  dateFin        DateTime? @map("date_fin") @db.Date
-  createdAt      DateTime  @default(now()) @map("created_at")
-  patient        Patient   @relation(fields: [patientId], references: [id])
-  medecin        Medecin?  @relation(fields: [medecinId], references: [id])
+  statut         PrescriptionStatut @default(active)
+  dateDebut      DateTime           @default(now()) @map("date_debut") @db.Date
+  dateFin        DateTime?          @map("date_fin") @db.Date
+  createdAt      DateTime           @default(now()) @map("created_at")
+  patient        Patient            @relation(fields: [patientId], references: [id])
+  medecin        Medecin?           @relation(fields: [medecinId], references: [id])
   @@map("prescriptions")
 }
 
+enum OrdonnanceStatut {
+  emise
+  delivree
+  annulee
+}
+
 model Ordonnance {
-  id             Int      @id @default(autoincrement())
-  patientId      Int      @map("patient_id")
-  medecinId      Int?     @map("medecin_id")
-  consultationId Int?     @map("consultation_id")
-  dateOrdonnance DateTime @default(now()) @map("date_ordonnance") @db.Date
+  id             Int              @id @default(autoincrement())
+  patientId      Int              @map("patient_id")
+  medecinId      Int?             @map("medecin_id")
+  consultationId Int?             @map("consultation_id")
+  dateOrdonnance DateTime         @default(now()) @map("date_ordonnance") @db.Date
   notes          String?
-  statut         String   @default("emise") @db.VarChar(50)
-  createdAt      DateTime @default(now()) @map("created_at")
-  patient        Patient  @relation(fields: [patientId], references: [id])
-  medecin        Medecin? @relation(fields: [medecinId], references: [id])
+  statut         OrdonnanceStatut @default(emise)
+  createdAt      DateTime         @default(now()) @map("created_at")
+  patient        Patient          @relation(fields: [patientId], references: [id])
+  medecin        Medecin?         @relation(fields: [medecinId], references: [id])
   @@map("ordonnances")
 }
 
@@ -537,37 +569,49 @@ model Alerte {
   @@map("alertes")
 }
 
+enum VisiteStatut {
+  active
+  terminee
+}
+
 model Visite {
-  id         Int       @id @default(autoincrement())
-  patientId  Int       @map("patient_id")
-  serviceId  Int?      @map("service_id")
-  typeVisite String    @default("ambulatoire") @map("type_visite") @db.VarChar(50)
-  dateDebut  DateTime  @default(now()) @map("date_debut")
-  dateFin    DateTime? @map("date_fin")
-  statut     String    @default("active") @db.VarChar(50)
+  id         Int          @id @default(autoincrement())
+  patientId  Int          @map("patient_id")
+  serviceId  Int?         @map("service_id")
+  typeVisite String       @default("ambulatoire") @map("type_visite") @db.VarChar(50)
+  dateDebut  DateTime     @default(now()) @map("date_debut")
+  dateFin    DateTime?    @map("date_fin")
+  statut     VisiteStatut @default(active)
   notes      String?
-  createdAt  DateTime  @default(now()) @map("created_at")
-  patient    Patient   @relation(fields: [patientId], references: [id])
-  service    Service?  @relation(fields: [serviceId], references: [id])
+  createdAt  DateTime     @default(now()) @map("created_at")
+  patient    Patient      @relation(fields: [patientId], references: [id])
+  service    Service?     @relation(fields: [serviceId], references: [id])
   encounters Encounter[]
   @@map("visites")
 }
 
+enum HospitalisationStatut {
+  active
+  sortie
+  transfere
+  deces
+}
+
 model Hospitalisation {
-  id            Int       @id @default(autoincrement())
-  patientId     Int       @map("patient_id")
-  litId         Int?      @map("lit_id")
-  medecinId     Int?      @map("medecin_id")
-  serviceId     Int?      @map("service_id")
-  dateAdmission DateTime  @default(now()) @map("date_admission")
-  dateSortie    DateTime? @map("date_sortie")
+  id            Int                   @id @default(autoincrement())
+  patientId     Int                   @map("patient_id")
+  litId         Int?                  @map("lit_id")
+  medecinId     Int?                  @map("medecin_id")
+  serviceId     Int?                  @map("service_id")
+  dateAdmission DateTime              @default(now()) @map("date_admission")
+  dateSortie    DateTime?             @map("date_sortie")
   motif         String?
-  statut        String    @default("active") @db.VarChar(50)
+  statut        HospitalisationStatut @default(active)
   notes         String?
-  createdAt     DateTime  @default(now()) @map("created_at")
-  patient       Patient   @relation(fields: [patientId], references: [id])
-  medecin       Medecin?  @relation(fields: [medecinId], references: [id])
-  service       Service?  @relation(fields: [serviceId], references: [id])
+  createdAt     DateTime              @default(now()) @map("created_at")
+  patient       Patient               @relation(fields: [patientId], references: [id])
+  medecin       Medecin?              @relation(fields: [medecinId], references: [id])
+  service       Service?              @relation(fields: [serviceId], references: [id])
   @@map("hospitalisations")
 }
 
@@ -631,15 +675,22 @@ model FormulaireReponse {
   @@map("formulaire_reponses")
 }
 
+enum FileAttenteStatut {
+  en_attente
+  en_cours
+  termine
+  absent
+}
+
 model FileAttente {
-  id                 Int       @id @default(autoincrement())
-  patientId          Int?      @map("patient_id")
-  serviceId          Int?      @map("service_id")
-  priorite           String    @default("normal") @db.VarChar(20)
-  statut             String    @default("en_attente") @db.VarChar(50)
-  numeroOrdre        Int?      @map("numero_ordre")
-  dateArrivee        DateTime  @default(now()) @map("date_arrivee")
-  datePriseEnCharge  DateTime? @map("date_prise_en_charge")
+  id                 Int               @id @default(autoincrement())
+  patientId          Int?              @map("patient_id")
+  serviceId          Int?              @map("service_id")
+  priorite           String            @default("normal") @db.VarChar(20)
+  statut             FileAttenteStatut @default(en_attente)
+  numeroOrdre        Int?              @map("numero_ordre")
+  dateArrivee        DateTime          @default(now()) @map("date_arrivee")
+  datePriseEnCharge  DateTime?         @map("date_prise_en_charge")
   notes              String?
   @@map("file_attente")
 }
@@ -673,13 +724,20 @@ model Pavillon {
   @@map("pavillons")
 }
 
+enum LitStatut {
+  disponible
+  occupe
+  maintenance
+  reserve
+}
+
 model Lit {
-  id         Int      @id @default(autoincrement())
-  pavillonId Int?     @map("pavillon_id")
-  numero     String   @db.VarChar(20)
-  typeLit    String   @default("standard") @map("type_lit") @db.VarChar(50)
-  statut     String   @default("disponible") @db.VarChar(50)
-  createdAt  DateTime @default(now()) @map("created_at")
+  id         Int       @id @default(autoincrement())
+  pavillonId Int?      @map("pavillon_id")
+  numero     String    @db.VarChar(20)
+  typeLit    String    @default("standard") @map("type_lit") @db.VarChar(50)
+  statut     LitStatut @default(disponible)
+  createdAt  DateTime  @default(now()) @map("created_at")
   @@map("lits")
 }
 
@@ -693,15 +751,21 @@ model Programme {
   @@map("programmes")
 }
 
+enum ProgrammePatientStatut {
+  actif
+  termine
+  abandonne
+}
+
 model ProgrammePatient {
-  id              Int       @id @default(autoincrement())
-  programmeId     Int?      @map("programme_id")
-  patientId       Int?      @map("patient_id")
-  dateInscription DateTime  @default(now()) @map("date_inscription") @db.Date
-  dateSortie      DateTime? @map("date_sortie") @db.Date
-  statut          String    @default("actif") @db.VarChar(50)
+  id              Int                    @id @default(autoincrement())
+  programmeId     Int?                   @map("programme_id")
+  patientId       Int?                   @map("patient_id")
+  dateInscription DateTime               @default(now()) @map("date_inscription") @db.Date
+  dateSortie      DateTime?              @map("date_sortie") @db.Date
+  statut          ProgrammePatientStatut @default(actif)
   notes           String?
-  createdAt       DateTime  @default(now()) @map("created_at")
+  createdAt       DateTime               @default(now()) @map("created_at")
   @@map("programme_patients")
 }
 
@@ -717,17 +781,24 @@ model Tarif {
   @@map("tarifs")
 }
 
+enum FactureStatut {
+  en_attente
+  partielle
+  payee
+  annulee
+}
+
 model Facture {
-  id           Int      @id @default(autoincrement())
-  numero       String   @unique @db.VarChar(50)
-  patientId    Int?     @map("patient_id")
-  dateFacture  DateTime @default(now()) @map("date_facture") @db.Date
-  montantTotal Decimal  @default(0) @map("montant_total") @db.Decimal(12, 2)
-  montantPaye  Decimal  @default(0) @map("montant_paye") @db.Decimal(12, 2)
-  statut       String   @default("en_attente") @db.VarChar(50)
+  id           Int           @id @default(autoincrement())
+  numero       String        @unique @db.VarChar(50)
+  patientId    Int?          @map("patient_id")
+  dateFacture  DateTime      @default(now()) @map("date_facture") @db.Date
+  montantTotal Decimal       @default(0) @map("montant_total") @db.Decimal(12, 2)
+  montantPaye  Decimal       @default(0) @map("montant_paye") @db.Decimal(12, 2)
+  statut       FactureStatut @default(en_attente)
   notes        String?
-  createdBy    Int?     @map("created_by")
-  createdAt    DateTime @default(now()) @map("created_at")
+  createdBy    Int?          @map("created_by")
+  createdAt    DateTime      @default(now()) @map("created_at")
   @@map("factures")
 }
 

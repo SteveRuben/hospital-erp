@@ -2,9 +2,16 @@ import { Router, Response } from 'express';
 import { prisma } from '../config/db.js';
 import { authenticate, authorize, AuthRequest } from '../middleware/auth.js';
 import { validate, createFileAttenteSchema } from '../middleware/validation.js';
-import { Prisma } from '@prisma/client';
+import { Prisma, FileAttenteStatut } from '@prisma/client';
 
 const router = Router();
+
+const VALID_FA_STATUTS: ReadonlySet<FileAttenteStatut> = new Set(
+  Object.values(FileAttenteStatut) as FileAttenteStatut[],
+);
+function isValidFAStatut(v: unknown): v is FileAttenteStatut {
+  return typeof v === 'string' && VALID_FA_STATUTS.has(v as FileAttenteStatut);
+}
 
 // Get queue for a service (or all) — today only
 router.get('/', authenticate, async (req: AuthRequest, res: Response): Promise<void> => {
@@ -58,11 +65,10 @@ router.post('/', authenticate, authorize('admin', 'medecin', 'reception'), valid
 router.put('/:id/statut', authenticate, async (req: AuthRequest, res: Response): Promise<void> => {
   try {
     const { statut } = req.body;
-    const validStatuts = ['en_attente', 'en_cours', 'termine', 'absent'];
-    if (!validStatuts.includes(statut)) { res.status(400).json({ error: 'Statut invalide' }); return; }
+    if (!isValidFAStatut(statut)) { res.status(400).json({ error: 'Statut invalide' }); return; }
     const id = Number(req.params.id);
-    const data: { statut: string; datePriseEnCharge?: Date } = { statut };
-    if (statut === 'en_cours') data.datePriseEnCharge = new Date();
+    const data: { statut: FileAttenteStatut; datePriseEnCharge?: Date } = { statut };
+    if (statut === FileAttenteStatut.en_cours) data.datePriseEnCharge = new Date();
     try {
       const updated = await prisma.fileAttente.update({ where: { id }, data });
       res.json(updated);

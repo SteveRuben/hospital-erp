@@ -990,6 +990,126 @@ export const initDB = async (): Promise<void> => {
       END $$;
     `);
 
+    // Workflow enum promotions — 11 columns across consultations,
+    // orders, pathologies, prescriptions, ordonnances, visites,
+    // hospitalisations, file_attente, lits, programme_patients,
+    // factures. Same pattern as ExamenStatut / RendezVousStatut.
+    // Idempotent (each step gated on the column still being VARCHAR).
+    // See migration 20260530070000 for the full doc block.
+    await client.query(`
+      DO $$
+      BEGIN
+        IF NOT EXISTS (SELECT 1 FROM pg_type WHERE typname = 'ConsultationStatut') THEN
+          CREATE TYPE "ConsultationStatut" AS ENUM ('en_cours','terminee','annulee');
+        END IF;
+        IF NOT EXISTS (SELECT 1 FROM pg_type WHERE typname = 'OrderStatut') THEN
+          CREATE TYPE "OrderStatut" AS ENUM ('nouveau','actif','complete','annule','expire');
+        END IF;
+        IF NOT EXISTS (SELECT 1 FROM pg_type WHERE typname = 'PathologieStatut') THEN
+          CREATE TYPE "PathologieStatut" AS ENUM ('active','inactive','resolue');
+        END IF;
+        IF NOT EXISTS (SELECT 1 FROM pg_type WHERE typname = 'PrescriptionStatut') THEN
+          CREATE TYPE "PrescriptionStatut" AS ENUM ('active','terminee','annulee');
+        END IF;
+        IF NOT EXISTS (SELECT 1 FROM pg_type WHERE typname = 'OrdonnanceStatut') THEN
+          CREATE TYPE "OrdonnanceStatut" AS ENUM ('emise','delivree','annulee');
+        END IF;
+        IF NOT EXISTS (SELECT 1 FROM pg_type WHERE typname = 'VisiteStatut') THEN
+          CREATE TYPE "VisiteStatut" AS ENUM ('active','terminee');
+        END IF;
+        IF NOT EXISTS (SELECT 1 FROM pg_type WHERE typname = 'HospitalisationStatut') THEN
+          CREATE TYPE "HospitalisationStatut" AS ENUM ('active','sortie','transfere','deces');
+        END IF;
+        IF NOT EXISTS (SELECT 1 FROM pg_type WHERE typname = 'FileAttenteStatut') THEN
+          CREATE TYPE "FileAttenteStatut" AS ENUM ('en_attente','en_cours','termine','absent');
+        END IF;
+        IF NOT EXISTS (SELECT 1 FROM pg_type WHERE typname = 'LitStatut') THEN
+          CREATE TYPE "LitStatut" AS ENUM ('disponible','occupe','maintenance','reserve');
+        END IF;
+        IF NOT EXISTS (SELECT 1 FROM pg_type WHERE typname = 'ProgrammePatientStatut') THEN
+          CREATE TYPE "ProgrammePatientStatut" AS ENUM ('actif','termine','abandonne');
+        END IF;
+        IF NOT EXISTS (SELECT 1 FROM pg_type WHERE typname = 'FactureStatut') THEN
+          CREATE TYPE "FactureStatut" AS ENUM ('en_attente','partielle','payee','annulee');
+        END IF;
+      END $$;
+      DO $$
+      BEGIN
+        IF EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name = 'consultations' AND column_name = 'statut' AND data_type = 'character varying') THEN
+          ALTER TABLE consultations DROP CONSTRAINT IF EXISTS consultations_statut_check;
+          ALTER TABLE consultations ALTER COLUMN statut DROP DEFAULT;
+          ALTER TABLE consultations ALTER COLUMN statut TYPE "ConsultationStatut" USING statut::"ConsultationStatut";
+          ALTER TABLE consultations ALTER COLUMN statut SET DEFAULT 'en_cours'::"ConsultationStatut";
+        END IF;
+        IF EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name = 'orders' AND column_name = 'statut' AND data_type = 'character varying') THEN
+          ALTER TABLE orders DROP CONSTRAINT IF EXISTS orders_statut_check;
+          DROP INDEX IF EXISTS idx_orders_statut;
+          ALTER TABLE orders ALTER COLUMN statut DROP DEFAULT;
+          ALTER TABLE orders ALTER COLUMN statut TYPE "OrderStatut" USING statut::"OrderStatut";
+          ALTER TABLE orders ALTER COLUMN statut SET DEFAULT 'actif'::"OrderStatut";
+          CREATE INDEX idx_orders_statut ON orders(statut) WHERE statut = 'actif';
+        END IF;
+        IF EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name = 'pathologies' AND column_name = 'statut' AND data_type = 'character varying') THEN
+          ALTER TABLE pathologies DROP CONSTRAINT IF EXISTS pathologies_statut_check;
+          ALTER TABLE pathologies ALTER COLUMN statut DROP DEFAULT;
+          ALTER TABLE pathologies ALTER COLUMN statut TYPE "PathologieStatut" USING statut::"PathologieStatut";
+          ALTER TABLE pathologies ALTER COLUMN statut SET DEFAULT 'active'::"PathologieStatut";
+        END IF;
+        IF EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name = 'prescriptions' AND column_name = 'statut' AND data_type = 'character varying') THEN
+          ALTER TABLE prescriptions DROP CONSTRAINT IF EXISTS prescriptions_statut_check;
+          ALTER TABLE prescriptions ALTER COLUMN statut DROP DEFAULT;
+          ALTER TABLE prescriptions ALTER COLUMN statut TYPE "PrescriptionStatut" USING statut::"PrescriptionStatut";
+          ALTER TABLE prescriptions ALTER COLUMN statut SET DEFAULT 'active'::"PrescriptionStatut";
+        END IF;
+        IF EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name = 'ordonnances' AND column_name = 'statut' AND data_type = 'character varying') THEN
+          ALTER TABLE ordonnances DROP CONSTRAINT IF EXISTS ordonnances_statut_check;
+          ALTER TABLE ordonnances ALTER COLUMN statut DROP DEFAULT;
+          ALTER TABLE ordonnances ALTER COLUMN statut TYPE "OrdonnanceStatut" USING statut::"OrdonnanceStatut";
+          ALTER TABLE ordonnances ALTER COLUMN statut SET DEFAULT 'emise'::"OrdonnanceStatut";
+        END IF;
+        IF EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name = 'visites' AND column_name = 'statut' AND data_type = 'character varying') THEN
+          ALTER TABLE visites DROP CONSTRAINT IF EXISTS visites_statut_check;
+          DROP INDEX IF EXISTS idx_visites_service_statut;
+          ALTER TABLE visites ALTER COLUMN statut DROP DEFAULT;
+          ALTER TABLE visites ALTER COLUMN statut TYPE "VisiteStatut" USING statut::"VisiteStatut";
+          ALTER TABLE visites ALTER COLUMN statut SET DEFAULT 'active'::"VisiteStatut";
+          CREATE INDEX idx_visites_service_statut ON visites(service_id, statut) WHERE statut = 'active';
+        END IF;
+        IF EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name = 'hospitalisations' AND column_name = 'statut' AND data_type = 'character varying') THEN
+          ALTER TABLE hospitalisations DROP CONSTRAINT IF EXISTS hospitalisations_statut_check;
+          ALTER TABLE hospitalisations ALTER COLUMN statut DROP DEFAULT;
+          ALTER TABLE hospitalisations ALTER COLUMN statut TYPE "HospitalisationStatut" USING statut::"HospitalisationStatut";
+          ALTER TABLE hospitalisations ALTER COLUMN statut SET DEFAULT 'active'::"HospitalisationStatut";
+        END IF;
+        IF EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name = 'file_attente' AND column_name = 'statut' AND data_type = 'character varying') THEN
+          ALTER TABLE file_attente DROP CONSTRAINT IF EXISTS file_attente_statut_check;
+          ALTER TABLE file_attente ALTER COLUMN statut DROP DEFAULT;
+          ALTER TABLE file_attente ALTER COLUMN statut TYPE "FileAttenteStatut" USING statut::"FileAttenteStatut";
+          ALTER TABLE file_attente ALTER COLUMN statut SET DEFAULT 'en_attente'::"FileAttenteStatut";
+        END IF;
+        IF EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name = 'lits' AND column_name = 'statut' AND data_type = 'character varying') THEN
+          ALTER TABLE lits DROP CONSTRAINT IF EXISTS lits_statut_check;
+          ALTER TABLE lits ALTER COLUMN statut DROP DEFAULT;
+          ALTER TABLE lits ALTER COLUMN statut TYPE "LitStatut" USING statut::"LitStatut";
+          ALTER TABLE lits ALTER COLUMN statut SET DEFAULT 'disponible'::"LitStatut";
+        END IF;
+        IF EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name = 'programme_patients' AND column_name = 'statut' AND data_type = 'character varying') THEN
+          ALTER TABLE programme_patients DROP CONSTRAINT IF EXISTS programme_patients_statut_check;
+          ALTER TABLE programme_patients ALTER COLUMN statut DROP DEFAULT;
+          ALTER TABLE programme_patients ALTER COLUMN statut TYPE "ProgrammePatientStatut" USING statut::"ProgrammePatientStatut";
+          ALTER TABLE programme_patients ALTER COLUMN statut SET DEFAULT 'actif'::"ProgrammePatientStatut";
+        END IF;
+        IF EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name = 'factures' AND column_name = 'statut' AND data_type = 'character varying') THEN
+          ALTER TABLE factures DROP CONSTRAINT IF EXISTS factures_statut_check;
+          DROP INDEX IF EXISTS idx_factures_statut;
+          ALTER TABLE factures ALTER COLUMN statut DROP DEFAULT;
+          ALTER TABLE factures ALTER COLUMN statut TYPE "FactureStatut" USING statut::"FactureStatut";
+          ALTER TABLE factures ALTER COLUMN statut SET DEFAULT 'en_attente'::"FactureStatut";
+          CREATE INDEX idx_factures_statut ON factures(statut);
+        END IF;
+      END $$;
+    `);
+
     // Align users.role with the Prisma schema's native "UserRole" enum.
     //
     // The prod DB was bootstrapped here with role as VARCHAR + CHECK, but the

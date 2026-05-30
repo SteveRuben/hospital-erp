@@ -1,5 +1,5 @@
 import { Router, Response } from 'express';
-import { Prisma } from '@prisma/client';
+import { Prisma, OrderStatut } from '@prisma/client';
 import { prisma } from '../config/db.js';
 import { authenticate, authorize, AuthRequest } from '../middleware/auth.js';
 import { generateReference } from '../services/reference.js';
@@ -7,13 +7,20 @@ import { validate, createOrderSchema } from '../middleware/validation.js';
 
 const router = Router();
 
+const VALID_ORDER_STATUTS: ReadonlySet<OrderStatut> = new Set(
+  Object.values(OrderStatut) as OrderStatut[],
+);
+function isValidOrderStatut(v: unknown): v is OrderStatut {
+  return typeof v === 'string' && VALID_ORDER_STATUTS.has(v as OrderStatut);
+}
+
 // Get orders for a patient
 router.get('/patient/:patientId', authenticate, async (req: AuthRequest, res: Response): Promise<void> => {
   try {
     const { type_order, statut } = req.query;
     const where: Prisma.OrderWhereInput = { patientId: Number(req.params.patientId) };
     if (type_order) where.typeOrder = String(type_order);
-    if (statut) where.statut = String(statut);
+    if (statut && isValidOrderStatut(String(statut))) where.statut = String(statut) as OrderStatut;
     const rows = await prisma.order.findMany({
       where,
       include: {
@@ -37,7 +44,8 @@ router.get('/patient/:patientId', authenticate, async (req: AuthRequest, res: Re
 router.get('/', authenticate, async (req: AuthRequest, res: Response): Promise<void> => {
   try {
     const { type_order, statut = 'actif', page = '1', limit = '20' } = req.query;
-    const where: Prisma.OrderWhereInput = { statut: String(statut) };
+    const statutVal: OrderStatut = isValidOrderStatut(String(statut)) ? (String(statut) as OrderStatut) : OrderStatut.actif;
+    const where: Prisma.OrderWhereInput = { statut: statutVal };
     if (type_order) where.typeOrder = String(type_order);
 
     const pg = Math.max(1, Number(page));
@@ -104,8 +112,7 @@ router.post('/', authenticate, authorize('admin', 'medecin'), validate(createOrd
 router.put('/:id/statut', authenticate, async (req: AuthRequest, res: Response): Promise<void> => {
   try {
     const { statut, resultat } = req.body;
-    const validStatuts = ['nouveau', 'actif', 'complete', 'annule', 'expire'];
-    if (!validStatuts.includes(statut)) { res.status(400).json({ error: 'Statut invalide' }); return; }
+    if (!isValidOrderStatut(statut)) { res.status(400).json({ error: 'Statut invalide' }); return; }
     const data: Parameters<typeof prisma.order.update>[0]['data'] = { statut };
     if (resultat) {
       data.resultat = resultat;

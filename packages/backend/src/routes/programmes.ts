@@ -1,9 +1,17 @@
 import { Router, Response } from 'express';
+import { ProgrammePatientStatut } from '@prisma/client';
 import { prisma } from '../config/db.js';
 import { authenticate, authorize, AuthRequest } from '../middleware/auth.js';
 import { validate, createProgrammeSchema } from '../middleware/validation.js';
 
 const router = Router();
+
+const VALID_PP_STATUTS: ReadonlySet<ProgrammePatientStatut> = new Set(
+  Object.values(ProgrammePatientStatut) as ProgrammePatientStatut[],
+);
+function isValidPPStatut(v: unknown): v is ProgrammePatientStatut {
+  return typeof v === 'string' && VALID_PP_STATUTS.has(v as ProgrammePatientStatut);
+}
 
 router.get('/', authenticate, async (_req: AuthRequest, res: Response): Promise<void> => {
   try {
@@ -56,9 +64,10 @@ router.post('/:id/patients', authenticate, authorize('admin', 'medecin'), async 
 router.put('/:progId/patients/:id/statut', authenticate, async (req: AuthRequest, res: Response): Promise<void> => {
   try {
     const { statut } = req.body;
+    if (!isValidPPStatut(statut)) { res.status(400).json({ error: 'Statut invalide' }); return; }
     const id = Number(req.params.id);
-    const data: { statut: string; dateSortie?: Date } = { statut };
-    if (statut !== 'actif') data.dateSortie = new Date();
+    const data: { statut: ProgrammePatientStatut; dateSortie?: Date } = { statut };
+    if (statut !== ProgrammePatientStatut.actif) data.dateSortie = new Date();
     try {
       const updated = await prisma.programmePatient.update({ where: { id }, data });
       res.json(updated);
