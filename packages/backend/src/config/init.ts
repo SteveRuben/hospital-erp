@@ -937,14 +937,57 @@ export const initDB = async (): Promise<void> => {
       ALTER TABLE examens ADD COLUMN IF NOT EXISTS mode_paiement VARCHAR(50);
     `);
 
-    // The original CHECK constraint on examens.statut predates the 'a_payer'
-    // workflow step. On existing DBs creating a new exam with statut='a_payer'
-    // fails with examens_statut_check. Drop and recreate idempotently so prod
-    // and freshly-bootstrapped DBs converge on the same vocabulary.
+    // Promote examens.statut from VARCHAR + CHECK to a Prisma native enum.
+    // Same shape as the Sexe / StatutMatrimonial migration above. The
+    // intermediate CHECK fix from earlier today is intentionally still
+    // applied first (in case this block ran in a prior boot) and then
+    // superseded by the enum migration in step 2. Idempotent.
     await client.query(`
       ALTER TABLE examens DROP CONSTRAINT IF EXISTS examens_statut_check;
-      ALTER TABLE examens ADD CONSTRAINT examens_statut_check
-        CHECK (statut IN ('demande', 'a_payer', 'prelevement', 'analyse', 'resultat', 'valide', 'transmis'));
+      DO $$
+      BEGIN
+        IF NOT EXISTS (SELECT 1 FROM pg_type WHERE typname = 'ExamenStatut') THEN
+          CREATE TYPE "ExamenStatut" AS ENUM (
+            'demande','a_payer','prelevement','analyse','resultat','valide','transmis'
+          );
+        END IF;
+      END $$;
+      DO $$
+      BEGIN
+        IF EXISTS (
+          SELECT 1 FROM information_schema.columns
+          WHERE table_name = 'examens' AND column_name = 'statut' AND data_type = 'character varying'
+        ) THEN
+          ALTER TABLE examens ALTER COLUMN statut DROP DEFAULT;
+          ALTER TABLE examens ALTER COLUMN statut TYPE "ExamenStatut" USING statut::"ExamenStatut";
+          ALTER TABLE examens ALTER COLUMN statut SET DEFAULT 'demande'::"ExamenStatut";
+        END IF;
+      END $$;
+    `);
+
+    // Same enum promotion for rendez_vous.statut. See above for the
+    // rationale (single source of truth in the Prisma schema).
+    await client.query(`
+      DO $$
+      BEGIN
+        IF NOT EXISTS (SELECT 1 FROM pg_type WHERE typname = 'RendezVousStatut') THEN
+          CREATE TYPE "RendezVousStatut" AS ENUM (
+            'planifie','confirme','en_cours','termine','annule','absent'
+          );
+        END IF;
+      END $$;
+      DO $$
+      BEGIN
+        IF EXISTS (
+          SELECT 1 FROM information_schema.columns
+          WHERE table_name = 'rendez_vous' AND column_name = 'statut' AND data_type = 'character varying'
+        ) THEN
+          ALTER TABLE rendez_vous DROP CONSTRAINT IF EXISTS rendez_vous_statut_check;
+          ALTER TABLE rendez_vous ALTER COLUMN statut DROP DEFAULT;
+          ALTER TABLE rendez_vous ALTER COLUMN statut TYPE "RendezVousStatut" USING statut::"RendezVousStatut";
+          ALTER TABLE rendez_vous ALTER COLUMN statut SET DEFAULT 'planifie'::"RendezVousStatut";
+        END IF;
+      END $$;
     `);
 
     // Align users.role with the Prisma schema's native "UserRole" enum.

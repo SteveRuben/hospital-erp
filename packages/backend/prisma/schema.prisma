@@ -350,37 +350,63 @@ model Recette {
   @@map("recettes")
 }
 
+// Kanban-driven lab workflow. Order matters for the UI columns but is
+// not enforced by the DB — transition guards live in laboratoire.ts.
+// The 'a_payer' step gates non-zero-amount exams on cashier action; a
+// free exam (montant = 0/null) starts at 'demande' and skips it.
+enum ExamenStatut {
+  demande
+  a_payer
+  prelevement
+  analyse
+  resultat
+  valide
+  transmis
+}
+
 model Examen {
-  id            Int       @id @default(autoincrement())
-  reference     String?   @unique @db.VarChar(20)
-  patientId     Int       @map("patient_id")
-  typeExamen    String    @map("type_examen") @db.VarChar(100)
+  id            Int          @id @default(autoincrement())
+  reference     String?      @unique @db.VarChar(20)
+  patientId     Int          @map("patient_id")
+  typeExamen    String       @map("type_examen") @db.VarChar(100)
   resultat      String?
-  dateExamen    DateTime  @default(now()) @map("date_examen") @db.Date
-  montant       Decimal?  @db.Decimal(10, 2)
-  statut        String?   @default("demande") @db.VarChar(50)
-  demandeurId   Int?      @map("demandeur_id")
-  paye          Boolean   @default(false)
-  datePaiement  DateTime? @map("date_paiement")
-  modePaiement  String?   @map("mode_paiement") @db.VarChar(50)
-  createdAt     DateTime  @default(now()) @map("created_at")
-  patient       Patient   @relation(fields: [patientId], references: [id])
+  dateExamen    DateTime     @default(now()) @map("date_examen") @db.Date
+  montant       Decimal?     @db.Decimal(10, 2)
+  statut        ExamenStatut @default(demande)
+  demandeurId   Int?         @map("demandeur_id")
+  paye          Boolean      @default(false)
+  datePaiement  DateTime?    @map("date_paiement")
+  modePaiement  String?      @map("mode_paiement") @db.VarChar(50)
+  createdAt     DateTime     @default(now()) @map("created_at")
+  patient       Patient      @relation(fields: [patientId], references: [id])
   @@map("examens")
 }
 
+// RDV lifecycle. Order: planifie → confirme → en_cours → termine.
+// Cancellation (annule) and no-show (absent) are exits from any pre-end
+// state. Transition guards live in rendezvous.ts.
+enum RendezVousStatut {
+  planifie
+  confirme
+  en_cours
+  termine
+  annule
+  absent
+}
+
 model RendezVous {
-  id        Int      @id @default(autoincrement())
-  patientId Int      @map("patient_id")
-  medecinId Int?     @map("medecin_id")
-  serviceId Int?     @map("service_id")
-  dateRdv   DateTime @map("date_rdv")
+  id        Int              @id @default(autoincrement())
+  patientId Int              @map("patient_id")
+  medecinId Int?             @map("medecin_id")
+  serviceId Int?             @map("service_id")
+  dateRdv   DateTime         @map("date_rdv")
   motif     String?
-  statut    String   @default("planifie") @db.VarChar(50)
+  statut    RendezVousStatut @default(planifie)
   notes     String?
-  createdAt DateTime @default(now()) @map("created_at")
-  patient   Patient  @relation(fields: [patientId], references: [id])
-  medecin   Medecin? @relation(fields: [medecinId], references: [id])
-  service   Service? @relation(fields: [serviceId], references: [id])
+  createdAt DateTime         @default(now()) @map("created_at")
+  patient   Patient          @relation(fields: [patientId], references: [id])
+  medecin   Medecin?         @relation(fields: [medecinId], references: [id])
+  service   Service?         @relation(fields: [serviceId], references: [id])
   @@map("rendez_vous")
 }
 

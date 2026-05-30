@@ -2,9 +2,18 @@ import { Router, Response } from 'express';
 import { prisma } from '../config/db.js';
 import { authenticate, authorize, AuthRequest } from '../middleware/auth.js';
 import { validate, createRendezVousSchema } from '../middleware/validation.js';
-import { Prisma } from '@prisma/client';
+import { Prisma, RendezVousStatut } from '@prisma/client';
 
 const router = Router();
+
+// Single source of truth for RDV statuts, derived from the Prisma enum
+// so any new label is a one-place schema change.
+const VALID_RDV_STATUTS: ReadonlySet<RendezVousStatut> = new Set(
+  Object.values(RendezVousStatut) as RendezVousStatut[],
+);
+function isValidRdvStatut(v: unknown): v is RendezVousStatut {
+  return typeof v === 'string' && VALID_RDV_STATUTS.has(v as RendezVousStatut);
+}
 
 const baseSelect = Prisma.sql`
   SELECT r.*,
@@ -25,7 +34,9 @@ router.get('/', authenticate, async (req: AuthRequest, res: Response): Promise<v
     if (date) filters.push(Prisma.sql`DATE(r.date_rdv) = ${String(date)}::date`);
     if (medecin_id) filters.push(Prisma.sql`r.medecin_id = ${Number(medecin_id)}`);
     if (service_id) filters.push(Prisma.sql`r.service_id = ${Number(service_id)}`);
-    if (statut) filters.push(Prisma.sql`r.statut = ${String(statut)}`);
+    if (statut && isValidRdvStatut(String(statut))) {
+      filters.push(Prisma.sql`r.statut = ${String(statut)}::"RendezVousStatut"`);
+    }
     const whereClause = filters.length ? Prisma.sql`WHERE ${Prisma.join(filters, ' AND ')}` : Prisma.empty;
     const rows = await prisma.$queryRaw<Array<Record<string, unknown>>>`
       ${baseSelect}
@@ -111,7 +122,13 @@ router.put('/:id', authenticate, authorize('admin', 'medecin', 'reception'), asy
       motif: motif ?? null,
       notes: notes ?? null,
     };
-    if (statut !== undefined && statut !== null) data.statut = statut;
+    if (statut !== undefined && statut !== null) {
+      if (!isValidRdvStatut(statut)) {
+        res.status(400).json({ error: 'Statut invalide' });
+        return;
+      }
+      data.statut = statut;
+    }
 
     try {
       const updated = await prisma.rendezVous.update({ where: { id }, data });
@@ -134,8 +151,7 @@ router.put('/:id/statut', authenticate, authorize('admin', 'medecin', 'reception
       return;
     }
 
-    const validStatuts = ['planifie', 'confirme', 'en_cours', 'termine', 'annule', 'absent'];
-    if (!validStatuts.includes(statut)) {
+    if (!isValidRdvStatut(statut)) {
       res.status(400).json({ error: 'Statut invalide' });
       return;
     }
