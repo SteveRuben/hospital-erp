@@ -25,6 +25,9 @@ model User {
   nom                 String?   @db.VarChar(100)
   prenom              String?   @db.VarChar(100)
   telephone           String?   @db.VarChar(20)
+  // Clinical specialty — only meaningful for role='medecin'. Migrated
+  // from the (now-dropped) medecins table in P0-6 Phase 2.
+  specialite          String?   @db.VarChar(100)
   must_change_password Boolean  @default(true)
   mfaEnabled          Boolean   @default(false) @map("mfa_enabled")
   mfaSecret           String?   @map("mfa_secret") @db.VarChar(255)
@@ -43,10 +46,17 @@ model User {
   notifications       Notification[]
   channelMembers      ChannelMember[]
   chatMessages        ChatMessage[] @relation("chat_author")
-  // Optional 1:1 link to the Medecin profile. Only populated for users
-  // with role='medecin'; admins/reception/etc. stay null. Backfilled by
-  // (nom, prenom) match on boot — see init.ts and the bootstrap docs.
-  medecinProfile      Medecin?
+  // Clinical "as a medecin" relations — these used to point at the
+  // separate Medecin model. After P0-6 Phase 2 they point straight at
+  // User. The relation field names stay 'medecin*' on the child models
+  // so callers (`c.medecin.nom`) don't need to rename anything.
+  consultationsAsMedecin    Consultation[]    @relation("ConsultationMedecin")
+  rendezVousAsMedecin       RendezVous[]      @relation("RendezVousMedecin")
+  vitauxAsMedecin           Vital[]           @relation("VitalMedecin")
+  prescriptionsAsMedecin    Prescription[]    @relation("PrescriptionMedecin")
+  ordonnancesAsMedecin      Ordonnance[]      @relation("OrdonnanceMedecin")
+  vaccinationsAsMedecin     Vaccination[]     @relation("VaccinationMedecin")
+  hospitalisationsAsMedecin Hospitalisation[] @relation("HospitalisationMedecin")
 
   @@map("users")
 }
@@ -130,30 +140,9 @@ model Patient {
 
 // ===== MEDECINS =====
 
-model Medecin {
-  id          Int       @id @default(autoincrement())
-  nom         String    @db.VarChar(100)
-  prenom      String    @db.VarChar(100)
-  specialite  String?   @db.VarChar(100)
-  telephone   String?   @db.VarChar(20)
-  // 1:1 link to the User row that signs in as this medecin. Nullable
-  // during the rollout — backfill matches by (nom, prenom) where a
-  // User with role='medecin' exists. Once every medecin row has a
-  // userId, the access-control name-match fallback can be removed.
-  userId      Int?      @unique @map("user_id")
-  createdAt   DateTime  @default(now()) @map("created_at")
-
-  user             User?            @relation(fields: [userId], references: [id], onDelete: SetNull)
-  consultations    Consultation[]
-  rendezVous       RendezVous[]
-  vitaux           Vital[]
-  prescriptions    Prescription[]
-  ordonnances      Ordonnance[]
-  vaccinations     Vaccination[]
-  hospitalisations Hospitalisation[]
-
-  @@map("medecins")
-}
+// P0-6 Phase 2: model Medecin was dropped — the medecins table is gone
+// and every medecin_id column now references users(id) directly. See
+// init.ts for the migration logic and prisma/migrations/20260530090000.
 
 // ===== SERVICES =====
 
@@ -203,7 +192,7 @@ model Consultation {
   gravite          String?             @db.VarChar(20)
 
   patient  Patient  @relation(fields: [patientId], references: [id])
-  medecin  Medecin? @relation(fields: [medecinId], references: [id])
+  medecin  User?    @relation("ConsultationMedecin", fields: [medecinId], references: [id])
   service  Service? @relation(fields: [serviceId], references: [id])
 
   @@map("consultations")
@@ -429,7 +418,7 @@ model RendezVous {
   notes     String?
   createdAt DateTime         @default(now()) @map("created_at")
   patient   Patient          @relation(fields: [patientId], references: [id])
-  medecin   Medecin?         @relation(fields: [medecinId], references: [id])
+  medecin   User?            @relation("RendezVousMedecin", fields: [medecinId], references: [id])
   service   Service?         @relation(fields: [serviceId], references: [id])
   @@map("rendez_vous")
 }
@@ -451,7 +440,7 @@ model Vital {
   dateMesure           DateTime @default(now()) @map("date_mesure")
   createdAt            DateTime @default(now()) @map("created_at")
   patient              Patient  @relation(fields: [patientId], references: [id])
-  medecin              Medecin? @relation(fields: [medecinId], references: [id])
+  medecin              User?    @relation("VitalMedecin", fields: [medecinId], references: [id])
   @@map("vitaux")
 }
 
@@ -511,7 +500,7 @@ model Prescription {
   dateFin        DateTime?          @map("date_fin") @db.Date
   createdAt      DateTime           @default(now()) @map("created_at")
   patient        Patient            @relation(fields: [patientId], references: [id])
-  medecin        Medecin?           @relation(fields: [medecinId], references: [id])
+  medecin        User?              @relation("PrescriptionMedecin", fields: [medecinId], references: [id])
   @@map("prescriptions")
 }
 
@@ -531,7 +520,7 @@ model Ordonnance {
   statut         OrdonnanceStatut @default(emise)
   createdAt      DateTime         @default(now()) @map("created_at")
   patient        Patient          @relation(fields: [patientId], references: [id])
-  medecin        Medecin?         @relation(fields: [medecinId], references: [id])
+  medecin        User?            @relation("OrdonnanceMedecin", fields: [medecinId], references: [id])
   @@map("ordonnances")
 }
 
@@ -548,7 +537,7 @@ model Vaccination {
   notes           String?
   createdAt       DateTime  @default(now()) @map("created_at")
   patient         Patient   @relation(fields: [patientId], references: [id])
-  medecin         Medecin?  @relation(fields: [medecinId], references: [id])
+  medecin         User?     @relation("VaccinationMedecin", fields: [medecinId], references: [id])
   @@map("vaccinations")
 }
 
@@ -620,7 +609,7 @@ model Hospitalisation {
   notes         String?
   createdAt     DateTime              @default(now()) @map("created_at")
   patient       Patient               @relation(fields: [patientId], references: [id])
-  medecin       Medecin?              @relation(fields: [medecinId], references: [id])
+  medecin       User?                 @relation("HospitalisationMedecin", fields: [medecinId], references: [id])
   service       Service?              @relation(fields: [serviceId], references: [id])
   @@map("hospitalisations")
 }

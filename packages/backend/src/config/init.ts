@@ -1,5 +1,6 @@
 import { pool, query } from './db.js';
 import argon2 from 'argon2';
+import crypto from 'node:crypto';
 
 export const initDB = async (): Promise<void> => {
   const client = await pool.connect();
@@ -964,6 +965,187 @@ export const initDB = async (): Promise<void> => {
         AND m.nom = u.nom
         AND m.prenom = u.prenom;
     `);
+
+    // P0-6 Phase 2: complete the Medecin → User fusion.
+    //
+    // The Phase 1 step above linked the unambiguous (nom, prenom) matches.
+    // Phase 2 covers the rest:
+    //   2A. Auto-create a User for every still-orphan Medecin so we can
+    //       drop the table without losing the clinical link.
+    //   2B. Move `specialite` from medecins to users.
+    //   2C. Repoint every medecin_id FK in the 10 child tables from
+    //       medecins(id) to users(id).
+    //   2D. Drop the medecins table.
+    //
+    // Idempotent: each step gates on the current state. Re-runs after
+    // the cutover are no-ops. The migration runs from inside the Node
+    // process (after the Phase 2 Prisma migration which is a no-op on
+    // existing prod DBs via the migrate-bootstrap shim).
+    //
+    // Only runs if the medecins table still exists — once it's dropped
+    // on a given DB, this whole block is skipped.
+    {
+      const medecinsExists = await client.query(`
+        SELECT 1 FROM information_schema.tables
+        WHERE table_schema = 'public' AND table_name = 'medecins'
+      `);
+      if (medecinsExists.rows.length > 0) {
+        // 2A. Auto-create User for any orphan medecin. Share one argon2
+        // hash across the inserts — none of these accounts has a known
+        // password anyway (must_change_password=true forces a reset on
+        // first login). Computing argon2 once avoids 50–5000 hashes on
+        // boot for hospitals with many practitioners.
+        const orphans = await client.query<{ id: number; nom: string; prenom: string }>(`
+          SELECT id, nom, prenom FROM medecins WHERE user_id IS NULL ORDER BY id
+        `);
+        if (orphans.rows.length > 0) {
+          const placeholderPwd = await argon2.hash(
+            // Long random secret — no one will ever sign in with this.
+            // The must_change_password gate forces a reset before the
+            // session reaches any protected route.
+            crypto.randomUUID() + crypto.randomUUID(),
+            { type: argon2.argon2id },
+          );
+          console.log(`[INIT] Auto-creating ${orphans.rows.length} user account(s) for unlinked medecins`);
+          for (const row of orphans.rows) {
+            // Slugify nom+prenom to seed the username, fall back to id
+            // when the slug is empty. Suffix with id to guarantee
+            // uniqueness without an extra round-trip.
+            const slugBase = `${row.prenom ?? ''}.${row.nom ?? ''}`
+              .toLowerCase()
+              .normalize('NFD').replace(/[̀-ͯ]/g, '')
+              .replace(/[^a-z0-9]+/g, '.')
+              .replace(/^\.+|\.+$/g, '');
+            const username = `dr.${slugBase || 'medecin'}.${row.id}`;
+            const userInsert = await client.query<{ id: number }>(
+              `INSERT INTO users (username, password, role, nom, prenom, must_change_password)
+               VALUES ($1, $2, 'medecin', $3, $4, TRUE)
+               ON CONFLICT (username) DO NOTHING
+               RETURNING id`,
+              [username, placeholderPwd, row.nom, row.prenom],
+            );
+            if (userInsert.rows.length > 0) {
+              await client.query(
+                `UPDATE medecins SET user_id = $1 WHERE id = $2`,
+                [userInsert.rows[0].id, row.id],
+              );
+            } else {
+              // Username collision (unlikely thanks to the .id suffix
+              // but a possible re-run scenario): try to find the user
+              // by username and link.
+              const existing = await client.query<{ id: number }>(
+                'SELECT id FROM users WHERE username = $1',
+                [username],
+              );
+              if (existing.rows.length > 0) {
+                await client.query(
+                  'UPDATE medecins SET user_id = $1 WHERE id = $2 AND user_id IS NULL',
+                  [existing.rows[0].id, row.id],
+                );
+              }
+            }
+          }
+        }
+
+        // Guard rail: at this point every medecin should have a userId.
+        // If not, abort the migration so we don't lose clinical FKs.
+        const stillOrphan = await client.query(
+          'SELECT id, nom, prenom FROM medecins WHERE user_id IS NULL LIMIT 5',
+        );
+        if (stillOrphan.rows.length > 0) {
+          throw new Error(
+            `[INIT] Phase 2 abort: ${stillOrphan.rows.length}+ medecins still without user_id ` +
+            `after auto-create — clinical FKs would lose data. ` +
+            `Investigate: ${JSON.stringify(stillOrphan.rows)}`,
+          );
+        }
+
+        // 2B. Move specialite to users. Idempotent.
+        await client.query(`
+          ALTER TABLE users ADD COLUMN IF NOT EXISTS specialite VARCHAR(100);
+          UPDATE users u
+          SET specialite = m.specialite
+          FROM medecins m
+          WHERE m.user_id = u.id
+            AND m.specialite IS NOT NULL
+            AND u.specialite IS NULL;
+        `);
+
+        // 2C. Repoint every medecin_id FK. Pattern per child table:
+        //   - drop the FK constraint targeting medecins
+        //   - rewrite values via the medecins.user_id translation
+        //   - add the new FK targeting users
+        // The translation step is a no-op if every row already points
+        // at users.id (re-run safety).
+        const childTables = [
+          'consultations',
+          'rendez_vous',
+          'vitaux',
+          'prescriptions',
+          'ordonnances',
+          'vaccinations',
+          'hospitalisations',
+          'planning_medecins',
+          'planning_blocages',
+          'imagerie',
+        ];
+        for (const table of childTables) {
+          await client.query(`
+            DO $$
+            BEGIN
+              -- Find and drop any FK currently pointing at medecins.
+              IF EXISTS (
+                SELECT 1 FROM information_schema.referential_constraints rc
+                JOIN information_schema.key_column_usage k ON k.constraint_name = rc.constraint_name
+                WHERE rc.unique_constraint_schema = 'public'
+                  AND k.table_name = '${table}'
+                  AND k.column_name = 'medecin_id'
+                  AND rc.unique_constraint_name = 'medecins_pkey'
+              ) THEN
+                EXECUTE (
+                  SELECT 'ALTER TABLE ${table} DROP CONSTRAINT ' || quote_ident(tc.constraint_name)
+                  FROM information_schema.table_constraints tc
+                  JOIN information_schema.key_column_usage k ON k.constraint_name = tc.constraint_name
+                  WHERE tc.table_name = '${table}'
+                    AND k.column_name = 'medecin_id'
+                    AND tc.constraint_type = 'FOREIGN KEY'
+                  LIMIT 1
+                );
+              END IF;
+            END $$;
+          `);
+          // Translate values medecin_id → users.id via medecins.user_id.
+          await client.query(`
+            UPDATE ${table} t
+            SET medecin_id = m.user_id
+            FROM medecins m
+            WHERE t.medecin_id = m.id
+              AND m.user_id IS NOT NULL
+              AND m.user_id <> t.medecin_id;
+          `);
+          // Add the new FK if it isn't already there.
+          await client.query(`
+            DO $$
+            BEGIN
+              IF NOT EXISTS (
+                SELECT 1 FROM pg_constraint
+                WHERE conname = '${table}_medecin_id_users_fkey'
+              ) THEN
+                ALTER TABLE ${table}
+                  ADD CONSTRAINT ${table}_medecin_id_users_fkey
+                  FOREIGN KEY (medecin_id) REFERENCES users(id) ON DELETE SET NULL;
+              END IF;
+            END $$;
+          `);
+        }
+
+        // 2D. Drop the medecins table. CASCADE the unique-on-user_id
+        // constraint, but the FKs from child tables have already been
+        // re-pointed in 2C so no cascade is actually needed for them.
+        await client.query(`DROP TABLE IF EXISTS medecins CASCADE;`);
+        console.log('[INIT] Phase 2 complete — medecins table dropped, FKs repointed to users');
+      }
+    }
 
     // Examen payment tracking — adds a "à payer" step to the Kanban before
     // prélèvement when montant > 0. Paid exams skip straight to prélèvement.

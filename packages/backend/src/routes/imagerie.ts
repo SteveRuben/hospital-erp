@@ -36,7 +36,7 @@ router.get('/:patientId', authenticate, requirePatientAccess, async (req: AuthRe
     // Pull medecin info separately to mirror the LEFT JOIN
     const medecinIds = Array.from(new Set(rows.map(r => r.medecinId).filter((v): v is number => v != null)));
     const medecins = medecinIds.length > 0
-      ? await prisma.medecin.findMany({ where: { id: { in: medecinIds } }, select: { id: true, nom: true, prenom: true } })
+      ? await prisma.user.findMany({ where: { id: { in: medecinIds }, role: 'medecin' }, select: { id: true, nom: true, prenom: true } })
       : [];
     const medMap = new Map(medecins.map(m => [m.id, m]));
     const mapped = rows.map(r => ({

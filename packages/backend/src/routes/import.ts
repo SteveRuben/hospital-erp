@@ -75,8 +75,28 @@ router.post('/medecins', authenticate, authorize('admin'), upload.single('file')
       try {
         const m = mapMedecinFields(rows[i]);
         if (!m.nom || !m.prenom) { errors.push(`Ligne ${i + 2}: nom et prénom requis`); continue; }
-        await prisma.medecin.create({
-          data: { nom: m.nom, prenom: m.prenom, specialite: m.specialite, telephone: m.telephone },
+        // P0-6 Phase 2: import provisions a User account (role='medecin').
+        // The temp password is unrecoverable — must_change_password=true
+        // forces a reset on first login. Username is derived from the
+        // legacy field shape; admins can rename via Utilisateurs after.
+        const slugBase = `${m.prenom}.${m.nom}`
+          .toLowerCase()
+          .normalize('NFD').replace(/[̀-ͯ]/g, '')
+          .replace(/[^a-z0-9]+/g, '.')
+          .replace(/^\.+|\.+$/g, '') || 'medecin';
+        const username = `dr.${slugBase}.${Date.now().toString(36)}${i}`;
+        const pwd = await argon2.hash(crypto.randomUUID() + crypto.randomUUID(), { type: argon2.argon2id });
+        await prisma.user.create({
+          data: {
+            username,
+            password: pwd,
+            role: 'medecin',
+            nom: m.nom,
+            prenom: m.prenom,
+            specialite: m.specialite ?? null,
+            telephone: m.telephone ?? null,
+            must_change_password: true,
+          },
         });
         imported++;
       } catch (err) { errors.push(`Ligne ${i + 2}: ${(err as Error).message}`); }

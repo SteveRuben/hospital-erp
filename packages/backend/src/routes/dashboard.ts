@@ -35,10 +35,12 @@ router.get('/', authenticate, asyncHandler(async (_req, res) => {
         ORDER BY nb_consultations DESC
         LIMIT 5
       `,
-      prisma.$queryRaw<Array<{ nom: string; prenom: string; specialite: string | null; nb_consultations: bigint }>>`
+      // P0-6 Phase 2: medecins live in users now.
+      prisma.$queryRaw<Array<{ nom: string | null; prenom: string | null; specialite: string | null; nb_consultations: bigint }>>`
         SELECT m.nom, m.prenom, m.specialite, COUNT(c.id)::bigint AS nb_consultations
-        FROM medecins m
+        FROM users m
         LEFT JOIN consultations c ON c.medecin_id = m.id AND DATE(c.date_consultation) = ${today}::date
+        WHERE m.role = 'medecin'
         GROUP BY m.id, m.nom, m.prenom, m.specialite
         ORDER BY nb_consultations DESC
         LIMIT 5

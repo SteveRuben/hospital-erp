@@ -164,8 +164,9 @@ router.get('/services', async (_req: Request, res: Response): Promise<void> => {
 // Get medecins list (public)
 router.get('/medecins', async (_req: Request, res: Response): Promise<void> => {
   try {
-    // No direct service link on medecins table, return all
-    const rows = await prisma.medecin.findMany({
+    // P0-6 Phase 2: medecins live in the users table now.
+    const rows = await prisma.user.findMany({
+      where: { role: 'medecin', suspended: false },
       select: { id: true, nom: true, prenom: true, specialite: true },
       orderBy: { nom: 'asc' },
     });

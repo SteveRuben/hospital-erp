@@ -45,7 +45,7 @@ router.get('/ordonnance/:patientId', authenticate, asyncHandler(async (req, res)
   if (!patient) { res.status(404).json({ error: 'Patient non trouvé' }); return; }
   const [medecin, prescriptions, est] = await Promise.all([
     medecin_id
-      ? prisma.medecin.findUnique({ where: { id: Number(medecin_id) }, select: { nom: true, prenom: true } })
+      ? prisma.user.findFirst({ where: { id: Number(medecin_id), role: 'medecin' }, select: { nom: true, prenom: true } })
       : Promise.resolve(null),
     prisma.prescription.findMany({
       where: { patientId: Number(req.params.patientId), statut: 'active' },

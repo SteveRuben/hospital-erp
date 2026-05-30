@@ -118,9 +118,9 @@ router.get('/hospitalisations', authenticate, async (req: AuthRequest, res: Resp
       LEFT JOIN patients p ON h.patient_id = p.id
       LEFT JOIN lits l ON h.lit_id = l.id
       LEFT JOIN pavillons pav ON l.pavillon_id = pav.id
-      LEFT JOIN medecins m ON h.medecin_id = m.id
+      LEFT JOIN users m ON h.medecin_id = m.id AND m.role = 'medecin'
       LEFT JOIN services s ON h.service_id = s.id
-      WHERE h.statut = ${String(statut)}
+      WHERE h.statut = ${String(statut)}::"HospitalisationStatut"
       ORDER BY h.date_admission DESC
     `;
     res.json(rows);
@@ -154,13 +154,11 @@ router.post('/hospitalisations', authenticate, authorize('admin', 'medecin'), as
         prisma.user.findMany({ where: { role: 'admin' }, select: { id: true } }),
         prisma.patient.findUnique({ where: { id: Number(patient_id) }, select: { nom: true, prenom: true } }),
         service_id ? prisma.service.findUnique({ where: { id: Number(service_id) }, select: { nom: true } }) : Promise.resolve(null),
+        // P0-6 Phase 2: medecin_id now IS the user id (no more
+        // Medecin table). Verify the user exists and has role='medecin'
+        // before treating it as a notification recipient.
         medecin_id
-          ? (async () => {
-              const m = await prisma.medecin.findUnique({ where: { id: Number(medecin_id) }, select: { nom: true, prenom: true } });
-              if (!m) return null;
-              const u = await prisma.user.findFirst({ where: { role: 'medecin', nom: m.nom, prenom: m.prenom }, select: { id: true } });
-              return u?.id ?? null;
-            })()
+          ? prisma.user.findFirst({ where: { id: Number(medecin_id), role: 'medecin' }, select: { id: true } }).then(u => u?.id ?? null)
           : Promise.resolve(null),
       ]);
       const recipients = [

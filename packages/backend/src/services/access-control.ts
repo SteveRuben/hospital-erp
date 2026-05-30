@@ -35,24 +35,17 @@ export type PatientAccessScope =
 export async function canAccessPatient(user: AccessUser, patientId: number): Promise<boolean> {
   if (user.role !== 'medecin') return true;
 
-  // Three signals, in priority order:
-  //   1. patient_attributions table (explicit attribution).
-  //   2. consultations linked via medecins.user_id FK (P0-6 phase 1).
-  //   3. consultations linked via the legacy nom+prenom string match —
-  //      kept only as a transition fallback for Medecin rows where the
-  //      FK has not been backfilled (manual rename / no matching user).
+  // P0-6 Phase 2: the medecins table is gone. consultations.medecin_id
+  // now references users(id) directly, so the access check becomes a
+  // single equality check — no JOIN needed. Two signals:
+  //   1. patient_attributions (explicit attribution).
+  //   2. consultations.medecin_id = the requesting user's id.
   const rows = await prisma.$queryRaw<Array<{ ok: number }>>`
     SELECT 1 AS ok FROM patient_attributions
       WHERE medecin_user_id = ${user.id} AND patient_id = ${patientId} AND actif = TRUE
     UNION ALL
-    SELECT 1 AS ok FROM consultations c
-      JOIN medecins m ON c.medecin_id = m.id
-      WHERE m.user_id = ${user.id} AND c.patient_id = ${patientId}
-    UNION ALL
-    SELECT 1 AS ok FROM consultations c
-      JOIN medecins m ON c.medecin_id = m.id
-      JOIN users u ON u.nom = m.nom AND u.prenom = m.prenom AND u.id = ${user.id}
-      WHERE m.user_id IS NULL AND c.patient_id = ${patientId}
+    SELECT 1 AS ok FROM consultations
+      WHERE medecin_id = ${user.id} AND patient_id = ${patientId}
     LIMIT 1
   `;
 
@@ -76,22 +69,14 @@ export async function canAccessPatient(user: AccessUser, patientId: number): Pro
 export async function patientAccessScope(user: AccessUser): Promise<PatientAccessScope> {
   if (user.role !== 'medecin') return { kind: 'all' };
 
-  // Three signals (same priority order as canAccessPatient — the FK
-  // join is now the primary path; the name-match fallback only fires
-  // for unmigrated Medecin rows).
+  // P0-6 Phase 2: direct equality, no JOIN through medecins.
   const rows = await prisma.$queryRaw<Array<{ patient_id: number }>>`
     SELECT DISTINCT patient_id FROM (
       SELECT patient_id FROM patient_attributions
         WHERE medecin_user_id = ${user.id} AND actif = TRUE AND patient_id IS NOT NULL
       UNION
-      SELECT c.patient_id FROM consultations c
-        JOIN medecins m ON c.medecin_id = m.id
-        WHERE m.user_id = ${user.id}
-      UNION
-      SELECT c.patient_id FROM consultations c
-        JOIN medecins m ON c.medecin_id = m.id
-        JOIN users u ON u.nom = m.nom AND u.prenom = m.prenom AND u.id = ${user.id}
-        WHERE m.user_id IS NULL
+      SELECT patient_id FROM consultations
+        WHERE medecin_id = ${user.id}
     ) t
   `;
 

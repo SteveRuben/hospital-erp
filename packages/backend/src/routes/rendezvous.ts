@@ -24,7 +24,7 @@ const baseSelect = Prisma.sql`
          s.nom as service_nom
   FROM rendez_vous r
   LEFT JOIN patients p ON r.patient_id = p.id
-  LEFT JOIN medecins m ON r.medecin_id = m.id
+  LEFT JOIN users m ON r.medecin_id = m.id AND m.role = 'medecin'
   LEFT JOIN services s ON r.service_id = s.id
 `;
 
