@@ -1,7 +1,7 @@
 import { useState, useEffect } from 'react';
-import { getTarifs, createTarif, getFactures, getFacture, createFacture, createPaiement, getPatients, printFacture, getExamens, markExamenPaid } from '../services/api';
+import { getTarifs, createTarif, getFactures, getFacture, createFacture, createPaiement, printFacture, getExamens, markExamenPaid } from '../services/api';
 import { useSnackbar } from '../components/Snackbar';
-import type { Patient } from '../types';
+import PatientTypeahead from '../components/PatientTypeahead';
 
 interface PendingExamen {
   id: number;
@@ -21,7 +21,6 @@ export default function Facturation() {
   const [tarifs, setTarifs] = useState<any[]>([]);
   const [factures, setFactures] = useState<any[]>([]);
   const [detail, setDetail] = useState<any>(null);
-  const [patients, setPatients] = useState<Patient[]>([]);
   const [loading, setLoading] = useState(true);
   const [showModal, setShowModal] = useState<string | null>(null);
   const [tarifForm, setTarifForm] = useState({ code: '', libelle: '', categorie: '', montant: '' });
@@ -32,11 +31,11 @@ export default function Facturation() {
 
   const loadAll = async () => {
     try {
-      const [t, f, p, e] = await Promise.all([
-        getTarifs(), getFactures(), getPatients({ archived: 'false' }),
+      const [t, f, e] = await Promise.all([
+        getTarifs(), getFactures(),
         getExamens({ statut: 'a_payer' }),
       ]);
-      setTarifs(t.data); setFactures(f.data); setPatients(p.data.data);
+      setTarifs(t.data); setFactures(f.data);
       setPendingExamens(e.data as unknown as PendingExamen[]);
     } catch (err) { console.error(err); }
     finally { setLoading(false); }
@@ -264,7 +263,10 @@ ${paiement.notes ? `<tr><td><strong>Notes</strong></td><td>${paiement.notes}</td
         <div className="modal-overlay" onClick={() => setShowModal(null)}><div className="modal-container modal-lg" onClick={e => e.stopPropagation()}>
           <div className="modal-header"><h3>Nouvelle facture</h3><button className="btn-icon" onClick={() => setShowModal(null)}><i className="bi bi-x-lg"></i></button></div>
           <form onSubmit={handleFacture}><div className="modal-body">
-            <div className="form-group"><label className="form-label">Patient *</label><select className="form-select" value={factureForm.patient_id} onChange={e => setFactureForm({...factureForm, patient_id: e.target.value})} required><option value="">Sélectionner...</option>{patients.map(p => <option key={p.id} value={p.id}>{p.prenom} {p.nom}</option>)}</select></div>
+            <div className="form-group">
+              <label className="form-label">Patient * <span className="text-muted" style={{ fontSize: '0.6875rem', fontWeight: 400 }}>(nom ou référence)</span></label>
+              <PatientTypeahead value={factureForm.patient_id} onChange={id => setFactureForm({ ...factureForm, patient_id: id })} required autoFocus />
+            </div>
             <h4 style={{ fontSize: '0.875rem', fontWeight: 600, margin: '1rem 0 0.5rem' }}>Lignes de facturation</h4>
             {factureForm.lignes.map((l, i) => (
               <div key={i} className="d-flex gap-1 align-center mb-1">

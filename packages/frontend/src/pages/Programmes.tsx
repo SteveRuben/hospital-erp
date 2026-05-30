@@ -1,12 +1,11 @@
 import { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { getProgrammes, getProgramme, createProgramme, addPatientToProgramme, deleteProgramme, getPatients } from '../services/api';
-import type { Patient } from '../types';
+import { getProgrammes, getProgramme, createProgramme, addPatientToProgramme, deleteProgramme } from '../services/api';
+import PatientTypeahead from '../components/PatientTypeahead';
 
 export default function Programmes() {
   const [programmes, setProgrammes] = useState<any[]>([]);
   const [selected, setSelected] = useState<any>(null);
-  const [patients, setPatients] = useState<Patient[]>([]);
   const [loading, setLoading] = useState(true);
   const [showCreate, setShowCreate] = useState(false);
   const [showAdd, setShowAdd] = useState(false);
@@ -18,8 +17,8 @@ export default function Programmes() {
 
   const loadData = async () => {
     try {
-      const [p, pat] = await Promise.all([getProgrammes(), getPatients({ archived: 'false' })]);
-      setProgrammes(p.data); setPatients(pat.data.data);
+      const p = await getProgrammes();
+      setProgrammes(p.data);
     } catch (err) { console.error(err); }
     finally { setLoading(false); }
   };
@@ -103,7 +102,10 @@ export default function Programmes() {
         <div className="modal-overlay" onClick={() => setShowAdd(false)}><div className="modal-container" onClick={e => e.stopPropagation()}>
           <div className="modal-header"><h3>Inscrire un patient</h3><button className="btn-icon" onClick={() => setShowAdd(false)}><i className="bi bi-x-lg"></i></button></div>
           <form onSubmit={handleAddPatient}><div className="modal-body">
-            <div className="form-group"><label className="form-label">Patient *</label><select className="form-select" value={addPatientId} onChange={e => setAddPatientId(e.target.value)} required><option value="">Sélectionner...</option>{patients.map(p => <option key={p.id} value={p.id}>{p.prenom} {p.nom}</option>)}</select></div>
+            <div className="form-group">
+              <label className="form-label">Patient * <span className="text-muted" style={{ fontSize: '0.6875rem', fontWeight: 400 }}>(nom ou référence)</span></label>
+              <PatientTypeahead value={addPatientId} onChange={setAddPatientId} required autoFocus />
+            </div>
           </div><div className="modal-footer"><button type="button" className="btn-secondary" onClick={() => setShowAdd(false)}>Annuler</button><button type="submit" className="btn-primary">Inscrire</button></div></form>
         </div></div>
       )}

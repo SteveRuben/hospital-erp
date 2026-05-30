@@ -1,14 +1,15 @@
 import { useState, useEffect } from 'react';
 import { useNavigate, useParams } from 'react-router-dom';
-import { createConsultation, updateConsultation, getConsultation, getPatients, getMedecins, getServices } from '../services/api';
-import type { Patient, Medecin, Service } from '../types';
+import { createConsultation, updateConsultation, getConsultation, getMedecins, getServices } from '../services/api';
+import PatientTypeahead from '../components/PatientTypeahead';
+import type { Medecin, Service } from '../types';
 
 export default function ConsultationForm() {
   const { id } = useParams();
   const navigate = useNavigate();
   const isEdit = !!id;
   const [form, setForm] = useState({ patient_id: '', medecin_id: '', service_id: '', diagnostic: '', traitement: '', notes: '', motif: '' });
-  const [patients, setPatients] = useState<Patient[]>([]);
+  const [patientInitialLabel, setPatientInitialLabel] = useState('');
   const [medecins, setMedecins] = useState<Medecin[]>([]);
   const [services, setServices] = useState<Service[]>([]);
   const [loading, setLoading] = useState(true);
@@ -16,17 +17,18 @@ export default function ConsultationForm() {
 
   useEffect(() => {
     Promise.all([
-      getPatients({ archived: 'false' }),
       getMedecins(),
       getServices(),
       isEdit ? getConsultation(Number(id)) : Promise.resolve(null),
-    ]).then(([p, m, s, c]) => {
-      setPatients(p.data.data || p.data);
+    ]).then(([m, s, c]) => {
       setMedecins(m.data);
       setServices(s.data);
       if (c?.data) {
         const d = c.data as any;
         setForm({ patient_id: String(d.patient_id || ''), medecin_id: String(d.medecin_id || ''), service_id: String(d.service_id || ''), diagnostic: d.diagnostic || '', traitement: d.traitement || '', notes: d.notes || '', motif: d.motif || '' });
+        // Pre-fill the typeahead with the existing patient name so the user
+        // sees who's already attached to the consultation they're editing.
+        setPatientInitialLabel(`${d.patient_prenom ?? ''} ${d.patient_nom ?? ''}`.trim());
       }
     }).catch(() => setError('Erreur de chargement')).finally(() => setLoading(false));
   }, [id]);
@@ -61,7 +63,10 @@ export default function ConsultationForm() {
       <div className="tile" style={{ padding: '2rem' }}>
         <form onSubmit={handleSubmit}>
           <div className="grid-3">
-            <div className="form-group"><label className="form-label">Patient *</label><select className="form-select" value={form.patient_id} onChange={e => setForm({...form, patient_id: e.target.value})} required><option value="">Sélectionner...</option>{patients.map(p => <option key={p.id} value={p.id}>{p.prenom} {p.nom}</option>)}</select></div>
+            <div className="form-group">
+              <label className="form-label">Patient * <span className="text-muted" style={{ fontSize: '0.6875rem', fontWeight: 400 }}>(nom ou référence)</span></label>
+              <PatientTypeahead value={form.patient_id} onChange={id => setForm({ ...form, patient_id: id })} initialLabel={patientInitialLabel} required autoFocus={!isEdit} />
+            </div>
             <div className="form-group"><label className="form-label">Médecin *</label><select className="form-select" value={form.medecin_id} onChange={e => setForm({...form, medecin_id: e.target.value})} required><option value="">Sélectionner...</option>{medecins.map(m => <option key={m.id} value={m.id}>Dr. {m.prenom} {m.nom}</option>)}</select></div>
             <div className="form-group"><label className="form-label">Service</label><select className="form-select" value={form.service_id} onChange={e => setForm({...form, service_id: e.target.value})}><option value="">Sélectionner...</option>{services.map(s => <option key={s.id} value={s.id}>{s.nom}</option>)}</select></div>
           </div>

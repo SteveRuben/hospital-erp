@@ -1,13 +1,13 @@
 import { useState, useEffect, useRef } from 'react';
-import { getPatients, getMedecins } from '../services/api';
+import { getMedecins } from '../services/api';
+import PatientTypeahead from '../components/PatientTypeahead';
 import api from '../services/api';
-import type { Patient, Medecin } from '../types';
+import type { Medecin } from '../types';
 
 const typeExamens = ['Radiographie', 'Échographie', 'Scanner', 'IRM', 'Mammographie', 'Panoramique dentaire', 'Autre'];
 
 export default function Imagerie() {
   const [images, setImages] = useState<any[]>([]);
-  const [patients, setPatients] = useState<Patient[]>([]);
   const [medecins, setMedecins] = useState<Medecin[]>([]);
   const [selectedPatient, setSelectedPatient] = useState('');
   const [loading, setLoading] = useState(false);
@@ -21,8 +21,8 @@ export default function Imagerie() {
 
   const loadRefs = async () => {
     try {
-      const [p, m] = await Promise.all([getPatients({ archived: 'false' }), getMedecins()]);
-      setPatients(p.data.data || p.data); setMedecins(m.data);
+      const m = await getMedecins();
+      setMedecins(m.data);
     } catch (err) { console.error(err); }
   };
 
@@ -55,12 +55,9 @@ export default function Imagerie() {
       <div className="page-header"><h1 className="page-title">Imagerie médicale</h1><button className="btn-primary" onClick={() => setShowModal(true)}><i className="bi bi-upload"></i> Upload</button></div>
 
       <div className="tile mb-2" style={{ padding: '1rem' }}>
-        <div className="form-group" style={{ marginBottom: 0 }}>
-          <label className="form-label">Sélectionner un patient</label>
-          <select className="form-select" value={selectedPatient} onChange={e => setSelectedPatient(e.target.value)} style={{ maxWidth: '400px' }}>
-            <option value="">Choisir un patient...</option>
-            {patients.map(p => <option key={p.id} value={p.id}>{p.prenom} {p.nom}</option>)}
-          </select>
+        <div className="form-group" style={{ marginBottom: 0, maxWidth: '400px' }}>
+          <label className="form-label">Sélectionner un patient <span className="text-muted" style={{ fontSize: '0.6875rem', fontWeight: 400 }}>(nom ou référence)</span></label>
+          <PatientTypeahead value={selectedPatient} onChange={setSelectedPatient} />
         </div>
       </div>
 
@@ -120,7 +117,10 @@ export default function Imagerie() {
           <div className="modal-header"><h3>Upload imagerie</h3><button className="btn-icon" onClick={() => setShowModal(false)}><i className="bi bi-x-lg"></i></button></div>
           <form onSubmit={handleUpload}><div className="modal-body">
             <div className="grid-2">
-              <div className="form-group"><label className="form-label">Patient *</label><select className="form-select" value={form.patient_id} onChange={e => setForm({...form, patient_id: e.target.value})} required><option value="">Sélectionner...</option>{patients.map(p => <option key={p.id} value={p.id}>{p.prenom} {p.nom}</option>)}</select></div>
+              <div className="form-group">
+                <label className="form-label">Patient * <span className="text-muted" style={{ fontSize: '0.6875rem', fontWeight: 400 }}>(nom ou référence)</span></label>
+                <PatientTypeahead value={form.patient_id} onChange={id => setForm({ ...form, patient_id: id })} required autoFocus />
+              </div>
               <div className="form-group"><label className="form-label">Type d'examen</label><select className="form-select" value={form.type_examen} onChange={e => setForm({...form, type_examen: e.target.value})}><option value="">Sélectionner...</option>{typeExamens.map(t => <option key={t} value={t}>{t}</option>)}</select></div>
             </div>
             <div className="form-group"><label className="form-label">Fichier *</label><input type="file" ref={fileRef} accept=".dcm,.jpg,.jpeg,.png,.gif,.bmp,.tiff,.pdf" style={{ display: 'block', marginTop: '0.25rem' }} /></div>

@@ -1,6 +1,6 @@
 import { useState, useEffect } from 'react';
-import { getOrders, createOrder, updateOrderStatut, getPatients, getConcepts } from '../services/api';
-import type { Patient } from '../types';
+import { getOrders, createOrder, updateOrderStatut, getConcepts } from '../services/api';
+import PatientTypeahead from '../components/PatientTypeahead';
 
 const typeLabels: Record<string, { label: string; tag: string }> = { prescription: { label: 'Prescription', tag: 'tag-blue' }, test_labo: { label: 'Test Labo', tag: 'tag-purple' }, imagerie: { label: 'Imagerie', tag: 'tag-teal' }, procedure: { label: 'Procédure', tag: 'tag-green' }, referral: { label: 'Référence', tag: 'tag-orange' } };
 const statutLabels: Record<string, { label: string; tag: string }> = { nouveau: { label: 'Nouveau', tag: 'tag-gray' }, actif: { label: 'Actif', tag: 'tag-blue' }, complete: { label: 'Complété', tag: 'tag-green' }, annule: { label: 'Annulé', tag: 'tag-red' }, expire: { label: 'Expiré', tag: 'tag-yellow' } };
@@ -9,7 +9,6 @@ const urgenceLabels: Record<string, { label: string; tag: string }> = { routine:
 export default function Orders() {
   const [orders, setOrders] = useState<any[]>([]);
   const [total, setTotal] = useState(0);
-  const [patients, setPatients] = useState<Patient[]>([]);
   const [concepts, setConcepts] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
   const [showModal, setShowModal] = useState(false);
@@ -21,8 +20,8 @@ export default function Orders() {
 
   const loadData = async () => {
     try {
-      const [o, p, c] = await Promise.all([getOrders({ type_order: filterType || undefined, statut: filterStatut || undefined }), getPatients({ archived: 'false' }), getConcepts()]);
-      setOrders(o.data.data || o.data); setTotal(o.data.total || 0); setPatients(p.data.data || p.data); setConcepts(c.data);
+      const [o, c] = await Promise.all([getOrders({ type_order: filterType || undefined, statut: filterStatut || undefined }), getConcepts()]);
+      setOrders(o.data.data || o.data); setTotal(o.data.total || 0); setConcepts(c.data);
     } catch (err) { console.error(err); }
     finally { setLoading(false); }
   };
@@ -82,7 +81,10 @@ export default function Orders() {
           <div className="modal-header"><h3>Nouvel ordre médical</h3><button className="btn-icon" onClick={() => setShowModal(false)}><i className="bi bi-x-lg"></i></button></div>
           <form onSubmit={handleCreate}><div className="modal-body">
             <div className="grid-3">
-              <div className="form-group"><label className="form-label">Patient *</label><select className="form-select" value={form.patient_id} onChange={e => setForm({...form, patient_id: e.target.value})} required><option value="">Sélectionner...</option>{patients.map(p => <option key={p.id} value={p.id}>{p.prenom} {p.nom}</option>)}</select></div>
+              <div className="form-group">
+                <label className="form-label">Patient * <span className="text-muted" style={{ fontSize: '0.6875rem', fontWeight: 400 }}>(nom ou référence)</span></label>
+                <PatientTypeahead value={form.patient_id} onChange={id => setForm({ ...form, patient_id: id })} required autoFocus />
+              </div>
               <div className="form-group"><label className="form-label">Type *</label><select className="form-select" value={form.type_order} onChange={e => setForm({...form, type_order: e.target.value})}>{Object.entries(typeLabels).map(([k, v]) => <option key={k} value={k}>{v.label}</option>)}</select></div>
               <div className="form-group"><label className="form-label">Urgence</label><select className="form-select" value={form.urgence} onChange={e => setForm({...form, urgence: e.target.value})}><option value="routine">Routine</option><option value="urgent">Urgent</option><option value="stat">STAT</option></select></div>
             </div>

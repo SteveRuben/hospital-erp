@@ -1,12 +1,12 @@
 import { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { createHospitalisation, getPatients, getMedecins, getServices, getLits } from '../services/api';
-import type { Patient, Medecin, Service } from '../types';
+import { createHospitalisation, getMedecins, getServices, getLits } from '../services/api';
+import PatientTypeahead from '../components/PatientTypeahead';
+import type { Medecin, Service } from '../types';
 
 export default function AdmissionForm() {
   const navigate = useNavigate();
   const [form, setForm] = useState({ patient_id: '', lit_id: '', medecin_id: '', service_id: '', motif: '', notes: '' });
-  const [patients, setPatients] = useState<Patient[]>([]);
   const [medecins, setMedecins] = useState<Medecin[]>([]);
   const [services, setServices] = useState<Service[]>([]);
   const [lits, setLits] = useState<any[]>([]);
@@ -14,9 +14,8 @@ export default function AdmissionForm() {
   const [error, setError] = useState('');
 
   useEffect(() => {
-    Promise.all([getPatients({ archived: 'false' }), getMedecins(), getServices(), getLits()])
-      .then(([p, m, s, l]) => {
-        setPatients(p.data.data || p.data);
+    Promise.all([getMedecins(), getServices(), getLits()])
+      .then(([m, s, l]) => {
         setMedecins(m.data);
         setServices(s.data);
         setLits((l.data as any[]).filter((lit: any) => lit.statut === 'disponible'));
@@ -48,7 +47,10 @@ export default function AdmissionForm() {
       <div className="tile" style={{ padding: '2rem' }}>
         <form onSubmit={handleSubmit}>
           <div className="grid-2">
-            <div className="form-group"><label className="form-label">Patient *</label><select className="form-select" value={form.patient_id} onChange={e => setForm({...form, patient_id: e.target.value})} required><option value="">Sélectionner...</option>{patients.map(p => <option key={p.id} value={p.id}>{p.prenom} {p.nom}</option>)}</select></div>
+            <div className="form-group">
+              <label className="form-label">Patient * <span className="text-muted" style={{ fontSize: '0.6875rem', fontWeight: 400 }}>(nom ou référence)</span></label>
+              <PatientTypeahead value={form.patient_id} onChange={id => setForm({ ...form, patient_id: id })} required autoFocus />
+            </div>
             <div className="form-group"><label className="form-label">Lit disponible</label><select className="form-select" value={form.lit_id} onChange={e => setForm({...form, lit_id: e.target.value})}><option value="">Sélectionner...</option>{lits.map((l: any) => <option key={l.id} value={l.id}>{l.numero} — {l.pavillon_nom} ({l.type_lit})</option>)}</select></div>
           </div>
           <div className="grid-2">

@@ -1,6 +1,7 @@
 import { useState, useEffect } from 'react';
-import { getVisites, getVisitesStats, createVisite, terminerVisite, getPatients, getServices } from '../services/api';
-import type { Patient, Service } from '../types';
+import { getVisites, getVisitesStats, createVisite, terminerVisite, getServices } from '../services/api';
+import PatientTypeahead from '../components/PatientTypeahead';
+import type { Service } from '../types';
 
 const typeLabels: Record<string, { label: string; tag: string }> = {
   ambulatoire: { label: 'Ambulatoire', tag: 'tag-blue' },
@@ -11,7 +12,6 @@ const typeLabels: Record<string, { label: string; tag: string }> = {
 export default function Visites() {
   const [visites, setVisites] = useState<any[]>([]);
   const [stats, setStats] = useState<any>(null);
-  const [patients, setPatients] = useState<Patient[]>([]);
   const [services, setServices] = useState<Service[]>([]);
   const [loading, setLoading] = useState(true);
   const [showModal, setShowModal] = useState(false);
@@ -21,8 +21,8 @@ export default function Visites() {
 
   const loadData = async () => {
     try {
-      const [v, s, p, sv] = await Promise.all([getVisites(), getVisitesStats(), getPatients({ archived: 'false' }), getServices()]);
-      setVisites(v.data); setStats(s.data); setPatients(p.data.data); setServices(sv.data);
+      const [v, s, sv] = await Promise.all([getVisites(), getVisitesStats(), getServices()]);
+      setVisites(v.data); setStats(s.data); setServices(sv.data);
     } catch (err) { console.error(err); }
     finally { setLoading(false); }
   };
@@ -79,7 +79,10 @@ export default function Visites() {
           <div className="modal-header"><h3>Nouvelle visite</h3><button className="btn-icon" onClick={() => setShowModal(false)}><i className="bi bi-x-lg"></i></button></div>
           <form onSubmit={handleSubmit}><div className="modal-body">
             <div className="grid-2">
-              <div className="form-group"><label className="form-label">Patient *</label><select className="form-select" value={form.patient_id} onChange={e => setForm({...form, patient_id: e.target.value})} required><option value="">Sélectionner...</option>{patients.map(p => <option key={p.id} value={p.id}>{p.prenom} {p.nom}</option>)}</select></div>
+              <div className="form-group">
+                <label className="form-label">Patient * <span className="text-muted" style={{ fontSize: '0.6875rem', fontWeight: 400 }}>(nom ou référence)</span></label>
+                <PatientTypeahead value={form.patient_id} onChange={id => setForm({ ...form, patient_id: id })} required autoFocus />
+              </div>
               <div className="form-group"><label className="form-label">Service</label><select className="form-select" value={form.service_id} onChange={e => setForm({...form, service_id: e.target.value})}><option value="">Sélectionner...</option>{services.map(s => <option key={s.id} value={s.id}>{s.nom}</option>)}</select></div>
             </div>
             <div className="form-group"><label className="form-label">Type de visite</label><select className="form-select" value={form.type_visite} onChange={e => setForm({...form, type_visite: e.target.value})}><option value="ambulatoire">Ambulatoire</option><option value="hospitalisation">Hospitalisation</option><option value="urgence">Urgence</option></select></div>

@@ -1,6 +1,7 @@
 import { useState, useEffect } from 'react';
-import { getRecettes, createRecette, deleteRecette, getDepenses, createDepense, deleteDepense, getCaisse, getBilan, getPatients, getServices } from '../services/api';
-import type { Recette, Depense, Patient, Service, Bilan } from '../types';
+import { getRecettes, createRecette, deleteRecette, getDepenses, createDepense, deleteDepense, getCaisse, getBilan, getServices } from '../services/api';
+import PatientTypeahead from '../components/PatientTypeahead';
+import type { Recette, Depense, Service, Bilan } from '../types';
 
 const typeActes = ['Consultation', 'Examen', 'Hospitalisation', 'Soins', 'Médicaments', 'Chirurgie', 'Accouchement', 'Soins dentaires'];
 const typeDepenses = ['Achat médicaments', 'Consommables médicaux', 'Salaires', 'Factures (eau, électricité)', 'Loyer', 'Prestataires'];
@@ -11,7 +12,6 @@ export default function Finances() {
   const [depenses, setDepenses] = useState<Depense[]>([]);
   const [caisse, setCaisse] = useState<{ recettes: number; depenses: number; solde: number } | null>(null);
   const [bilan, setBilan] = useState<Bilan | null>(null);
-  const [patients, setPatients] = useState<Patient[]>([]);
   const [services, setServices] = useState<Service[]>([]);
   const [loading, setLoading] = useState(true);
   const [showModal, setShowModal] = useState(false);
@@ -22,8 +22,8 @@ export default function Finances() {
 
   const loadData = async () => {
     try {
-      const [r, d, c, p, s] = await Promise.all([getRecettes(), getDepenses(), getCaisse(), getPatients({ archived: 'false' }), getServices()]);
-      setRecettes(r.data); setDepenses(d.data); setCaisse(c.data); setPatients(p.data.data); setServices(s.data);
+      const [r, d, c, s] = await Promise.all([getRecettes(), getDepenses(), getCaisse(), getServices()]);
+      setRecettes(r.data); setDepenses(d.data); setCaisse(c.data); setServices(s.data);
     } catch (err) { console.error(err); }
     finally { setLoading(false); }
   };
@@ -97,7 +97,10 @@ export default function Finances() {
               <form onSubmit={handleRecette}>
                 <div className="modal-body">
                   <div className="grid-2">
-                    <div className="form-group"><label className="form-label">Patient</label><select className="form-select" value={recForm.patient_id} onChange={e => setRecForm({...recForm, patient_id: e.target.value})}><option value="">Sélectionner...</option>{patients.map(p => <option key={p.id} value={p.id}>{p.prenom} {p.nom}</option>)}</select></div>
+                    <div className="form-group">
+                      <label className="form-label">Patient <span className="text-muted" style={{ fontSize: '0.6875rem', fontWeight: 400 }}>(optionnel)</span></label>
+                      <PatientTypeahead value={recForm.patient_id} onChange={id => setRecForm({ ...recForm, patient_id: id })} />
+                    </div>
                     <div className="form-group"><label className="form-label">Service</label><select className="form-select" value={recForm.service_id} onChange={e => setRecForm({...recForm, service_id: e.target.value})}><option value="">Sélectionner...</option>{services.map(s => <option key={s.id} value={s.id}>{s.nom}</option>)}</select></div>
                   </div>
                   <div className="grid-2">
