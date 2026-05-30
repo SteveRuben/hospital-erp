@@ -118,15 +118,27 @@ router.post('/', authenticate, authorize('admin', 'laborantin'), async (req: Aut
   } catch (err) { res.status(500).json({ error: 'Erreur serveur' }); }
 });
 
+const ALLOWED_STATUTS = new Set(['demande', 'prelevement', 'analyse', 'resultat', 'valide', 'transmis']);
+
 router.put('/:id', authenticate, authorize('admin', 'laborantin'), async (req: AuthRequest, res: Response): Promise<void> => {
   try {
-    const { type_examen, resultat, date_examen, montant } = req.body;
-    const data: Parameters<typeof prisma.examen.update>[0]['data'] = {
-      typeExamen: type_examen,
-      resultat,
-      montant,
-    };
+    const { type_examen, resultat, date_examen, montant, statut } = req.body;
+    const data: Parameters<typeof prisma.examen.update>[0]['data'] = {};
+    // Only set the fields the client actually sent so partial updates
+    // (Kanban statut transition, result entry, edit form) don't accidentally
+    // null out columns. The previous shape silently dropped `statut` on the
+    // floor, which is why "Prélever" in the Kanban did nothing.
+    if (type_examen !== undefined) data.typeExamen = type_examen;
+    if (resultat !== undefined) data.resultat = resultat;
+    if (montant !== undefined) data.montant = montant;
     if (date_examen) data.dateExamen = new Date(date_examen);
+    if (statut !== undefined) {
+      if (!ALLOWED_STATUTS.has(String(statut))) {
+        res.status(400).json({ error: 'Statut invalide' });
+        return;
+      }
+      data.statut = String(statut);
+    }
 
     // Need the previous state to detect "result newly added" — null/empty → set.
     const before = await prisma.examen.findUnique({
