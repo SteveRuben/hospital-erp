@@ -720,10 +720,10 @@ export const initDB = async (): Promise<void> => {
     }
 
     // Seed default habilitations
-    const modules = ['dashboard','patients','medecins','consultations','rendezvous','laboratoire','visites','file-attente','finances','services','listes-patients','documentation','utilisateurs','habilitations','import','lits','programmes','facturation','imagerie','orders','concepts','pharmacie','patient-merge','rapports','configuration','securite','formulaires','catalogue-examens','impressions','parametres-generaux','listes-reference'];
+    const modules = ['dashboard','patients','medecins','consultations','rendezvous','laboratoire','visites','file-attente','finances','services','listes-patients','documentation','utilisateurs','habilitations','import','lits','programmes','facturation','imagerie','orders','concepts','pharmacie','patient-merge','rapports','configuration','securite','formulaires','catalogue-examens','impressions','parametres-generaux','listes-reference','garde'];
     const roleAccess: Record<string, string[]> = {
       admin: modules,
-      medecin: ['dashboard','patients','medecins','consultations','rendezvous','visites','file-attente','listes-patients','documentation','lits','programmes','imagerie','orders','pharmacie','formulaires'],
+      medecin: ['dashboard','garde','patients','medecins','consultations','rendezvous','visites','file-attente','listes-patients','documentation','lits','programmes','imagerie','orders','pharmacie','formulaires'],
       comptable: ['dashboard','finances','documentation','facturation','rapports','catalogue-examens'],
       laborantin: ['dashboard','laboratoire','documentation','orders'],
       reception: ['dashboard','patients','rendezvous','visites','file-attente','documentation'],
@@ -742,6 +742,7 @@ export const initDB = async (): Promise<void> => {
     // Seed default menu config
     const menuItems = [
       ['Accueil', 0, 'dashboard', 'Dashboard', 'bi-speedometer2', '/app', 0],
+      ['Accueil', 0, 'garde', 'Prise de garde', 'bi-clipboard-pulse', '/app/garde', 1],
       ['Clinique', 1, 'patients', 'Patients', 'bi-people', '/app/patients', 0],
       ['Clinique', 1, 'medecins', 'Médecins', 'bi-person-badge', '/app/medecins', 1],
       ['Clinique', 1, 'consultations', 'Consultations', 'bi-clipboard-pulse', '/app/consultations', 2],
@@ -1292,6 +1293,24 @@ export const initDB = async (): Promise<void> => {
         ON patient_attributions(medecin_user_id, statut);
       CREATE INDEX IF NOT EXISTS idx_patient_attributions_statut
         ON patient_attributions(statut);
+    `);
+
+    // Priorité partagée Examen / RendezVous — Kanban + liste RDV
+    // tri par priorite ASC (urgent en premier). FileAttente garde
+    // son priorite VARCHAR existant pour compat avec la queue view.
+    await client.query(`
+      DO $$
+      BEGIN
+        IF NOT EXISTS (SELECT 1 FROM pg_type WHERE typname = 'Priorite') THEN
+          CREATE TYPE "Priorite" AS ENUM ('urgent', 'prioritaire', 'normal');
+        END IF;
+      END $$;
+      ALTER TABLE examens     ADD COLUMN IF NOT EXISTS priorite "Priorite" DEFAULT 'normal'::"Priorite";
+      ALTER TABLE rendez_vous ADD COLUMN IF NOT EXISTS priorite "Priorite" DEFAULT 'normal'::"Priorite";
+      ALTER TABLE examens     ALTER COLUMN priorite SET DEFAULT 'normal'::"Priorite";
+      ALTER TABLE rendez_vous ALTER COLUMN priorite SET DEFAULT 'normal'::"Priorite";
+      CREATE INDEX IF NOT EXISTS idx_examens_statut_priorite
+        ON examens(statut, priorite);
     `);
 
     // Examen payment tracking — adds a "à payer" step to the Kanban before

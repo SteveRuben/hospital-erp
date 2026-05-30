@@ -1,5 +1,5 @@
 import { Router, Response } from 'express';
-import { Prisma, ExamenStatut } from '@prisma/client';
+import { Prisma, ExamenStatut, Priorite } from '@prisma/client';
 import { prisma } from '../config/db.js';
 import { authenticate, authorize, AuthRequest } from '../middleware/auth.js';
 import { notifyMany } from '../services/notify.js';
@@ -17,6 +17,12 @@ const ALLOWED_STATUTS: ReadonlySet<ExamenStatut> = new Set(
 );
 function isValidStatut(v: unknown): v is ExamenStatut {
   return typeof v === 'string' && ALLOWED_STATUTS.has(v as ExamenStatut);
+}
+const ALLOWED_PRIORITES: ReadonlySet<Priorite> = new Set(
+  Object.values(Priorite) as Priorite[],
+);
+function isValidPriorite(v: unknown): v is Priorite {
+  return typeof v === 'string' && ALLOWED_PRIORITES.has(v as Priorite);
 }
 
 /**
@@ -61,12 +67,10 @@ router.get('/', authenticate, async (req: AuthRequest, res: Response): Promise<v
     const rows = await prisma.examen.findMany({
       where,
       include: { patient: { select: { nom: true, prenom: true, telephone: true } } },
-      orderBy: [{ dateExamen: 'desc' }, { id: 'desc' }],
+      // Priorité d'abord — Prisma's enum sort is by declaration order
+      // so urgent (0) < prioritaire (1) < normal (2) lands naturally.
+      orderBy: [{ priorite: 'asc' }, { dateExamen: 'desc' }, { id: 'desc' }],
     });
-    // Prisma returns camelCase (dateExamen, typeExamen, patientId, demandeurId).
-    // The frontend Examen TS type + the Kanban / form read snake_case fields.
-    // Without explicit mapping the dates render as "Invalid Date" and the edit
-    // form initializes empty. Always emit snake_case from this surface.
     const mapped = rows.map(e => ({
       ...e,
       date_examen: e.dateExamen,
@@ -74,6 +78,7 @@ router.get('/', authenticate, async (req: AuthRequest, res: Response): Promise<v
       patient_id: e.patientId,
       demandeur_id: e.demandeurId,
       statut: e.statut,
+      priorite: e.priorite,
       paye: e.paye,
       date_paiement: e.datePaiement,
       mode_paiement: e.modePaiement,
@@ -171,18 +176,17 @@ router.get('/patient/:patientId/types', authenticate, async (req: AuthRequest, r
 
 router.post('/', authenticate, authorize('admin', 'laborantin'), async (req: AuthRequest, res: Response): Promise<void> => {
   try {
-    const { patient_id, type_examen, resultat, date_examen, montant } = req.body;
+    const { patient_id, type_examen, resultat, date_examen, montant, priorite } = req.body;
     const montantNum = montant !== undefined && montant !== null && montant !== '' ? Number(montant) : null;
-    // Workflow gate: a non-zero-amount exam starts at 'a_payer' so it surfaces
-    // in the cashier's lane before reaching prélèvement. Zero / free exams
-    // skip straight to 'demande' (the prélèvement gate has no payment block).
     const initialStatut: ExamenStatut = montantNum && montantNum > 0 ? ExamenStatut.a_payer : ExamenStatut.demande;
+    const initialPriorite: Priorite = isValidPriorite(priorite) ? priorite : Priorite.normal;
     const data: Parameters<typeof prisma.examen.create>[0]['data'] = {
       patientId: Number(patient_id),
       typeExamen: type_examen,
       resultat: resultat ?? null,
       montant: montantNum,
       statut: initialStatut,
+      priorite: initialPriorite,
     };
     if (date_examen) data.dateExamen = new Date(date_examen);
     const created = await prisma.examen.create({ data });
@@ -223,12 +227,8 @@ router.post('/:id/marquer-paye', authenticate, authorize('admin', 'comptable', '
 
 router.put('/:id', authenticate, authorize('admin', 'laborantin'), async (req: AuthRequest, res: Response): Promise<void> => {
   try {
-    const { type_examen, resultat, date_examen, montant, statut } = req.body;
+    const { type_examen, resultat, date_examen, montant, statut, priorite } = req.body;
     const data: Parameters<typeof prisma.examen.update>[0]['data'] = {};
-    // Only set the fields the client actually sent so partial updates
-    // (Kanban statut transition, result entry, edit form) don't accidentally
-    // null out columns. The previous shape silently dropped `statut` on the
-    // floor, which is why "Prélever" in the Kanban did nothing.
     if (type_examen !== undefined) data.typeExamen = type_examen;
     if (resultat !== undefined) data.resultat = resultat;
     if (montant !== undefined) data.montant = montant;
@@ -239,6 +239,13 @@ router.put('/:id', authenticate, authorize('admin', 'laborantin'), async (req: A
         return;
       }
       data.statut = statut;
+    }
+    if (priorite !== undefined) {
+      if (!isValidPriorite(priorite)) {
+        res.status(400).json({ error: 'Priorité invalide' });
+        return;
+      }
+      data.priorite = priorite;
     }
 
     // Need the previous state to detect "result newly added" — null/empty → set —

@@ -404,6 +404,15 @@ enum ExamenStatut {
   transmis
 }
 
+// Priorité clinique partagée entre les flux urgents/normaux. Le tri
+// dans le Kanban / la file d'attente / la liste RDV remonte les
+// 'urgent' au-dessus des autres.
+enum Priorite {
+  urgent
+  prioritaire
+  normal
+}
+
 model Examen {
   id            Int          @id @default(autoincrement())
   reference     String?      @unique @db.VarChar(20)
@@ -413,12 +422,14 @@ model Examen {
   dateExamen    DateTime     @default(now()) @map("date_examen") @db.Date
   montant       Decimal?     @db.Decimal(10, 2)
   statut        ExamenStatut @default(demande)
+  priorite      Priorite     @default(normal)
   demandeurId   Int?         @map("demandeur_id")
   paye          Boolean      @default(false)
   datePaiement  DateTime?    @map("date_paiement")
   modePaiement  String?      @map("mode_paiement") @db.VarChar(50)
   createdAt     DateTime     @default(now()) @map("created_at")
   patient       Patient      @relation(fields: [patientId], references: [id])
+  @@index([statut, priorite])
   @@map("examens")
 }
 
@@ -437,6 +448,7 @@ enum RendezVousStatut {
 model RendezVous {
   id        Int              @id @default(autoincrement())
   patientId Int              @map("patient_id")
+  priorite  Priorite         @default(normal)
   medecinId Int?             @map("medecin_id")
   serviceId Int?             @map("service_id")
   dateRdv   DateTime         @map("date_rdv")

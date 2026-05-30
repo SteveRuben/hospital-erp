@@ -2,7 +2,7 @@ import { Router, Response } from 'express';
 import { prisma } from '../config/db.js';
 import { authenticate, authorize, AuthRequest } from '../middleware/auth.js';
 import { validate, createRendezVousSchema } from '../middleware/validation.js';
-import { Prisma, RendezVousStatut } from '@prisma/client';
+import { Prisma, RendezVousStatut, Priorite } from '@prisma/client';
 import { patientAccessScope, canAccessPatient } from '../services/access-control.js';
 import { assertTransition, WorkflowError } from '../services/workflow.js';
 
@@ -15,6 +15,10 @@ const VALID_RDV_STATUTS: ReadonlySet<RendezVousStatut> = new Set(
 );
 function isValidRdvStatut(v: unknown): v is RendezVousStatut {
   return typeof v === 'string' && VALID_RDV_STATUTS.has(v as RendezVousStatut);
+}
+const VALID_PRIORITES: ReadonlySet<Priorite> = new Set(Object.values(Priorite) as Priorite[]);
+function isValidPriorite(v: unknown): v is Priorite {
+  return typeof v === 'string' && VALID_PRIORITES.has(v as Priorite);
 }
 
 const baseSelect = Prisma.sql`
@@ -51,7 +55,7 @@ router.get('/', authenticate, async (req: AuthRequest, res: Response): Promise<v
     const rows = await prisma.$queryRaw<Array<Record<string, unknown>>>`
       ${baseSelect}
       ${whereClause}
-      ORDER BY r.date_rdv ASC
+      ORDER BY r.priorite ASC, r.date_rdv ASC
     `;
     res.json(rows);
   } catch (err) {
@@ -70,7 +74,7 @@ router.get('/today', authenticate, async (req: AuthRequest, res: Response): Prom
       ${baseSelect}
       WHERE DATE(r.date_rdv) = CURRENT_DATE
       ${patientFilter}
-      ORDER BY r.date_rdv ASC
+      ORDER BY r.priorite ASC, r.date_rdv ASC
     `;
     res.json(rows);
   } catch (err) {
@@ -104,7 +108,7 @@ router.get('/:id', authenticate, async (req: AuthRequest, res: Response): Promis
 // Create rendez-vous
 router.post('/', authenticate, authorize('admin', 'medecin', 'reception'), validate(createRendezVousSchema), async (req: AuthRequest, res: Response): Promise<void> => {
   try {
-    const { patient_id, medecin_id, service_id, date_rdv, motif, notes } = req.body;
+    const { patient_id, medecin_id, service_id, date_rdv, motif, notes, priorite } = req.body;
 
     if (!patient_id || !medecin_id || !date_rdv) {
       res.status(400).json({ error: 'Patient, médecin et date requis' });
@@ -119,6 +123,7 @@ router.post('/', authenticate, authorize('admin', 'medecin', 'reception'), valid
         dateRdv: new Date(date_rdv),
         motif: motif ?? null,
         notes: notes ?? null,
+        priorite: isValidPriorite(priorite) ? priorite : Priorite.normal,
       },
     });
 
@@ -132,7 +137,7 @@ router.post('/', authenticate, authorize('admin', 'medecin', 'reception'), valid
 router.put('/:id', authenticate, authorize('admin', 'medecin', 'reception'), async (req: AuthRequest, res: Response): Promise<void> => {
   try {
     const id = Number(req.params.id);
-    const { patient_id, medecin_id, service_id, date_rdv, motif, notes, statut } = req.body;
+    const { patient_id, medecin_id, service_id, date_rdv, motif, notes, statut, priorite } = req.body;
 
     const data: Prisma.RendezVousUpdateInput = {
       patient: { connect: { id: Number(patient_id) } },
@@ -142,6 +147,7 @@ router.put('/:id', authenticate, authorize('admin', 'medecin', 'reception'), asy
       motif: motif ?? null,
       notes: notes ?? null,
     };
+    if (priorite !== undefined && isValidPriorite(priorite)) data.priorite = priorite;
     if (statut !== undefined && statut !== null) {
       if (!isValidRdvStatut(statut)) {
         res.status(400).json({ error: 'Statut invalide' });

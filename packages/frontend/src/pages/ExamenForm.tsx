@@ -33,6 +33,7 @@ export default function ExamenForm() {
     resultat: '',
     date_examen: new Date().toISOString().substring(0, 10),
     montant: '',
+    priorite: 'normal' as 'urgent' | 'prioritaire' | 'normal',
   });
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
@@ -69,6 +70,7 @@ export default function ExamenForm() {
           resultat: d.resultat ?? '',
           date_examen: d.date_examen ? String(d.date_examen).split('T')[0] : '',
           montant: d.montant != null ? String(d.montant) : '',
+          priorite: (d.priorite as 'urgent' | 'prioritaire' | 'normal') ?? 'normal',
         });
         setPatientQuery(label);
       }
@@ -124,6 +126,7 @@ export default function ExamenForm() {
       resultat: form.resultat,
       date_examen: form.date_examen,
       montant: form.montant === '' ? null : Number(form.montant),
+      priorite: form.priorite,
     };
     try {
       if (isEdit) await updateExamen(Number(id), payload);
@@ -259,6 +262,34 @@ export default function ExamenForm() {
             <div className="form-group">
               <label className="form-label">Montant <span className="text-muted" style={{ fontSize: '0.6875rem', fontWeight: 400 }}>(pré-rempli depuis le tarif si trouvé)</span></label>
               <input type="number" className="form-input" value={form.montant} onChange={e => setForm({ ...form, montant: e.target.value })} placeholder="0" />
+            </div>
+          </div>
+          <div className="form-group">
+            <label className="form-label">Priorité</label>
+            <div className="d-flex gap-1" role="radiogroup" aria-label="Priorité">
+              {(['urgent','prioritaire','normal'] as const).map(p => {
+                const active = form.priorite === p;
+                const colour = p === 'urgent' ? 'var(--cds-support-error)' : p === 'prioritaire' ? 'var(--cds-support-warning)' : 'var(--cds-ui-03)';
+                return (
+                  <button
+                    type="button"
+                    key={p}
+                    role="radio"
+                    aria-checked={active}
+                    onClick={() => setForm({ ...form, priorite: p })}
+                    style={{
+                      padding: '0.375rem 0.875rem', cursor: 'pointer',
+                      border: `2px solid ${active ? colour : 'var(--cds-ui-03)'}`,
+                      background: active ? colour : 'transparent',
+                      color: active ? '#fff' : 'inherit',
+                      fontSize: '0.8125rem', textTransform: 'capitalize',
+                    }}
+                  >
+                    {p === 'urgent' && <i className="bi bi-exclamation-octagon" style={{ marginRight: '0.25rem' }}></i>}
+                    {p}
+                  </button>
+                );
+              })}
             </div>
           </div>
 

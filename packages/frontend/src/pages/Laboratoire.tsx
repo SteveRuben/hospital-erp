@@ -111,9 +111,14 @@ export default function Laboratoire() {
                 {items.map(ex => {
                   const dt = ex.date_examen ? new Date(ex.date_examen) : null;
                   const dateLabel = dt && !isNaN(dt.getTime()) ? dt.toLocaleDateString('fr-FR') : '—';
+                  const prio = (ex as any).priorite as 'urgent' | 'prioritaire' | 'normal' | undefined;
                   return (
-                    <div className="kanban-card" key={ex.id}>
-                      <h4>{ex.patient_prenom} {ex.patient_nom}</h4>
+                    <div className="kanban-card" key={ex.id} style={prio === 'urgent' ? { borderLeft: '4px solid var(--cds-support-error)' } : prio === 'prioritaire' ? { borderLeft: '4px solid var(--cds-support-warning)' } : undefined}>
+                      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start' }}>
+                        <h4>{ex.patient_prenom} {ex.patient_nom}</h4>
+                        {prio === 'urgent' && <span className="tag tag-red" style={{ fontSize: '0.5625rem', whiteSpace: 'nowrap' }}><i className="bi bi-exclamation-octagon-fill"></i> URGENT</span>}
+                        {prio === 'prioritaire' && <span className="tag tag-orange" style={{ fontSize: '0.5625rem', whiteSpace: 'nowrap' }}>prioritaire</span>}
+                      </div>
                       <p>{ex.type_examen}</p>
                       <p style={{ fontSize: '0.6875rem', color: 'var(--cds-text-secondary)' }}>{dateLabel}</p>
                       {ex.montant != null && Number(ex.montant) > 0 && (

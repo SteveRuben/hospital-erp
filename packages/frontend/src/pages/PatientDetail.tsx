@@ -360,7 +360,30 @@ function PathologiesTab({ data, patientId, onRefresh, showModal, setShowModal }:
 
 function PrescriptionsTab({ data, patientId, medecins, onRefresh, showModal, setShowModal }: any) {
   const [form, setForm] = useState({ patient_id: patientId, medecin_id: '', medicament: '', dosage: '', frequence: '', duree: '', voie: '', instructions: '', date_debut: '', date_fin: '' });
-  const handleSubmit = async (e: React.FormEvent) => { e.preventDefault(); await createPrescription(form); setShowModal(null); onRefresh(); };
+  // Allergy-check state: the backend returns 409 with the matching
+  // allergies when the medicament hits a documented allergie.active=TRUE.
+  // The medecin must explicitly tick a checkbox to override (recorded
+  // in audit). A 'fatale' allergy is hard-blocked — the user has to
+  // remove the allergy from the patient chart first.
+  const [allergyWarning, setAllergyWarning] = useState<{ allergies: Array<{ allergene: string; severite: string | null; reaction: string | null }>; fatal: boolean } | null>(null);
+  const [acknowledgedOverride, setAcknowledgedOverride] = useState(false);
+  const handleSubmit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    try {
+      await createPrescription({ ...form, override_allergy: acknowledgedOverride });
+      setShowModal(null);
+      setAllergyWarning(null);
+      setAcknowledgedOverride(false);
+      onRefresh();
+    } catch (err: any) {
+      const r = err.response?.data;
+      if (r?.code === 'allergy_warning' || r?.code === 'allergy_fatal') {
+        setAllergyWarning({ allergies: r.allergies ?? [], fatal: r.code === 'allergy_fatal' });
+        return;
+      }
+      alert(r?.error || 'Erreur');
+    }
+  };
   return (
     <div>
       <div className="d-flex justify-between align-center mb-2"><h3 style={{fontSize:'1rem'}}>Prescriptions</h3><button className="btn-primary btn-sm" onClick={() => setShowModal('prescription')}><i className="bi bi-plus"></i> Prescription</button></div>
@@ -372,8 +395,32 @@ function PrescriptionsTab({ data, patientId, medecins, onRefresh, showModal, set
         <div className="modal-overlay" onClick={()=>setShowModal(null)}><div className="modal-container modal-lg" onClick={e=>e.stopPropagation()}>
           <div className="modal-header"><h3>Nouvelle prescription</h3><button className="btn-icon" onClick={()=>setShowModal(null)}><i className="bi bi-x-lg"></i></button></div>
           <form onSubmit={handleSubmit}><div className="modal-body">
+            {allergyWarning && (
+              <div className={`notification notification-${allergyWarning.fatal ? 'error' : 'warning'} mb-2`}>
+                <i className="bi bi-exclamation-octagon"></i>
+                <div>
+                  <strong>{allergyWarning.fatal ? 'Allergie FATALE documentée — prescription bloquée' : 'Allergie documentée'}</strong>
+                  <ul style={{ margin: '0.25rem 0', paddingLeft: '1.25rem', fontSize: '0.8125rem' }}>
+                    {allergyWarning.allergies.map((a, i) => (
+                      <li key={i}>{a.allergene}{a.severite ? ` (${a.severite})` : ''}{a.reaction ? ` — ${a.reaction}` : ''}</li>
+                    ))}
+                  </ul>
+                  {!allergyWarning.fatal && (
+                    <label style={{ display: 'flex', alignItems: 'center', gap: '0.375rem', marginTop: '0.5rem', fontSize: '0.8125rem' }}>
+                      <input type="checkbox" checked={acknowledgedOverride} onChange={e => setAcknowledgedOverride(e.target.checked)} />
+                      <span>Je confirme prescrire malgré l'allergie (sera enregistré dans l'audit)</span>
+                    </label>
+                  )}
+                  {allergyWarning.fatal && (
+                    <p className="text-muted" style={{ fontSize: '0.75rem', marginTop: '0.25rem' }}>
+                      Pour prescrire ce médicament, retirez d'abord l'allergie du dossier du patient.
+                    </p>
+                  )}
+                </div>
+              </div>
+            )}
             <div className="grid-2">
-              <div className="form-group"><label className="form-label">Médicament *</label><input type="text" className="form-input" value={form.medicament} onChange={e=>setForm({...form,medicament:e.target.value})} required /></div>
+              <div className="form-group"><label className="form-label">Médicament *</label><input type="text" className="form-input" value={form.medicament} onChange={e=>{setForm({...form,medicament:e.target.value}); setAllergyWarning(null); setAcknowledgedOverride(false);}} required /></div>
               <div className="form-group"><label className="form-label">Médecin</label><select className="form-select" value={form.medecin_id} onChange={e=>setForm({...form,medecin_id:e.target.value})}><option value="">Sélectionner...</option>{medecins.map((m:any) => <option key={m.id} value={m.id}>Dr. {m.prenom} {m.nom}</option>)}</select></div>
             </div>
             <div className="grid-3">
@@ -383,7 +430,12 @@ function PrescriptionsTab({ data, patientId, medecins, onRefresh, showModal, set
             </div>
             <div className="form-group"><label className="form-label">Voie d'administration</label><select className="form-select" value={form.voie} onChange={e=>setForm({...form,voie:e.target.value})}><option value="">Sélectionner...</option><option value="orale">Orale</option><option value="iv">Intraveineuse</option><option value="im">Intramusculaire</option><option value="sc">Sous-cutanée</option><option value="topique">Topique</option><option value="rectale">Rectale</option></select></div>
             <div className="form-group"><label className="form-label">Instructions</label><textarea className="form-textarea" rows={2} value={form.instructions} onChange={e=>setForm({...form,instructions:e.target.value})} /></div>
-          </div><div className="modal-footer"><button type="button" className="btn-secondary" onClick={()=>setShowModal(null)}>Annuler</button><button type="submit" className="btn-primary">Prescrire</button></div></form>
+          </div><div className="modal-footer">
+            <button type="button" className="btn-secondary" onClick={()=>{setShowModal(null); setAllergyWarning(null); setAcknowledgedOverride(false);}}>Annuler</button>
+            <button type="submit" className="btn-primary" disabled={!!(allergyWarning?.fatal) || (!!allergyWarning && !acknowledgedOverride)}>
+              {allergyWarning && !allergyWarning.fatal ? 'Confirmer la prescription' : 'Prescrire'}
+            </button>
+          </div></form>
         </div></div>
       )}
     </div>

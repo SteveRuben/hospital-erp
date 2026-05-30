@@ -23,9 +23,60 @@ router.get('/:patientId', authenticate, requirePatientAccess, async (req: AuthRe
   } catch (err) { res.status(500).json({ error: 'Erreur serveur' }); }
 });
 
+/**
+ * Priority-2 patient-safety guard: prescribing a drug to which the
+ * patient is allergic now returns 409 with the matching allergy
+ * documented. The prescriber may override (medecin / admin only) by
+ * resending the request with `override_allergy: true` — the override
+ * fact is audit-logged so it's reviewable. Severite='fatale' is hard-
+ * blocked even with override; the prescriber must remove the allergy
+ * record from the patient chart first (separate ethical decision).
+ *
+ * The match is a case-insensitive substring check on both the
+ * medicament field and the dosage-stripped form (Paracetamol 500mg →
+ * 'paracetamol' compares to allergene 'paracétamol'). Naive but
+ * catches the obvious cases without an interaction-DB dependency.
+ */
+function normalize(s: string): string {
+  return s.toLowerCase().normalize('NFD').replace(/[̀-ͯ]/g, '').replace(/[^a-z0-9 ]+/g, ' ').trim();
+}
+
 router.post('/', authenticate, authorize('admin', 'medecin'), validate(createPrescriptionSchema), requirePatientAccess, async (req: AuthRequest, res: Response): Promise<void> => {
   try {
-    const { patient_id, medecin_id, consultation_id, medicament, dosage, frequence, duree, voie, instructions, date_debut, date_fin } = req.body;
+    const { patient_id, medecin_id, consultation_id, medicament, dosage, frequence, duree, voie, instructions, date_debut, date_fin, override_allergy } = req.body;
+
+    // Allergy check before any write.
+    const allergies = await prisma.allergie.findMany({
+      where: { patientId: Number(patient_id), active: true },
+      select: { id: true, allergene: true, severite: true, reaction: true },
+    });
+    const medNorm = normalize(String(medicament));
+    const matched = allergies.filter(a => {
+      const aNorm = normalize(a.allergene);
+      return medNorm.includes(aNorm) || aNorm.includes(medNorm);
+    });
+    if (matched.length > 0) {
+      const fatale = matched.find(m => (m.severite ?? '').toLowerCase() === 'fatale');
+      if (fatale) {
+        res.status(409).json({
+          error: 'Prescription bloquée — allergie de sévérité fatale documentée',
+          code: 'allergy_fatal',
+          allergies: matched,
+          override_allowed: false,
+        });
+        return;
+      }
+      if (!override_allergy) {
+        res.status(409).json({
+          error: `Allergie documentée à ${matched.map(m => m.allergene).join(', ')}. Envoyez override_allergy=true après confirmation explicite.`,
+          code: 'allergy_warning',
+          allergies: matched,
+          override_allowed: true,
+        });
+        return;
+      }
+    }
+
     const data: Parameters<typeof prisma.prescription.create>[0]['data'] = {
       patientId: Number(patient_id),
       medecinId: medecin_id ?? null,
@@ -40,8 +91,21 @@ router.post('/', authenticate, authorize('admin', 'medecin'), validate(createPre
     if (date_debut) data.dateDebut = new Date(date_debut);
     if (date_fin) data.dateFin = new Date(date_fin);
     const created = await prisma.prescription.create({ data });
+
+    // Audit any override so it can be reviewed later.
+    if (matched.length > 0 && override_allergy) {
+      const { logAudit } = await import('../services/audit.js');
+      logAudit({
+        userId: req.user!.id,
+        action: 'update',
+        tableName: 'prescriptions',
+        recordId: created.id,
+        details: `ALLERGY OVERRIDE — patient ${patient_id}, medicament ${medicament}, allergies matched: ${matched.map(m => `${m.allergene}(${m.severite ?? 'n/a'})`).join(', ')}`,
+      }).catch(() => {});
+    }
+
     res.status(201).json(created);
-  } catch (err) { res.status(500).json({ error: 'Erreur serveur' }); }
+  } catch (err) { console.error('[PRESCRIPTIONS] create failed:', err); res.status(500).json({ error: 'Erreur serveur' }); }
 });
 
 router.put('/:id/statut', authenticate, authorize('admin', 'medecin'), requireResourceAccess('prescription'), async (req: AuthRequest, res: Response): Promise<void> => {

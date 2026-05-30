@@ -1,3 +1,4 @@
+/// <reference types="vitest" />
 import { defineConfig } from 'vite';
 import react from '@vitejs/plugin-react';
 
@@ -20,5 +21,14 @@ export default defineConfig({
         },
       },
     },
+  },
+  // P1 of the post-CEO-review priorities: a minimal Vitest harness so
+  // form-data regressions (RDV strings, groupe_sanguin, PatientForm
+  // nulls, catalogue, mode_paiement) stop landing in prod undetected.
+  test: {
+    environment: 'jsdom',
+    globals: true,
+    setupFiles: ['./src/test/setup.ts'],
+    css: false,
   },
 });

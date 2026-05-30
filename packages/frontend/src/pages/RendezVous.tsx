@@ -1,5 +1,6 @@
 import { useState, useEffect, useRef } from 'react';
 import { getRendezVous, createRendezVous, updateRendezVousStatut, deleteRendezVous, getMedecins, getServices, searchPatientsForOrdering } from '../services/api';
+import { coerceRdvPayload } from '../lib/formCoerce';
 import type { RendezVous as RDV, Medecin, Service } from '../types';
 
 interface PatientSuggestion {
@@ -22,7 +23,7 @@ export default function RendezVous() {
   const [services, setServices] = useState<Service[]>([]);
   const [loading, setLoading] = useState(true);
   const [showModal, setShowModal] = useState(false);
-  const [form, setForm] = useState({ patient_id: '', medecin_id: '', service_id: '', date_rdv: '', motif: '', notes: '' });
+  const [form, setForm] = useState({ patient_id: '', medecin_id: '', service_id: '', date_rdv: '', motif: '', notes: '', priorite: 'normal' as 'urgent' | 'prioritaire' | 'normal' });
 
   // Patient typeahead state — replaces the old dropdown that loaded every
   // patient at once. Lets the receptionist find anyone by name or reference,
@@ -55,7 +56,7 @@ export default function RendezVous() {
   };
 
   const resetForm = () => {
-    setForm({ patient_id: '', medecin_id: '', service_id: '', date_rdv: '', motif: '', notes: '' });
+    setForm({ patient_id: '', medecin_id: '', service_id: '', date_rdv: '', motif: '', notes: '', priorite: 'normal' });
     setPatientQuery('');
     setPatientResults([]);
   };
@@ -70,18 +71,12 @@ export default function RendezVous() {
     e.preventDefault();
     if (!form.patient_id) { alert('Sélectionnez un patient dans la liste'); return; }
     if (!form.medecin_id) { alert('Sélectionnez un médecin'); return; }
-    // The backend schema (createRendezVousSchema) types *_id as numbers.
-    // HTML <select> and the typeahead store strings, so coerce here and
-    // drop optional fields that are still empty so Zod sees `undefined`
-    // instead of NaN.
-    const payload: Record<string, unknown> = {
-      patient_id: Number(form.patient_id),
-      medecin_id: Number(form.medecin_id),
-      date_rdv: form.date_rdv,
-      motif: form.motif || undefined,
-      notes: form.notes || undefined,
-    };
-    if (form.service_id) payload.service_id = Number(form.service_id);
+    // Coercion lives in src/lib/formCoerce so unit tests pin the
+    // behaviour. Patient/medecin guards above mean the throw inside
+    // the helper is unreachable from this path.
+    let payload: Record<string, unknown>;
+    try { payload = coerceRdvPayload(form); }
+    catch { alert('Champs requis manquants'); return; }
     try { await createRendezVous(payload); setShowModal(false); resetForm(); loadData(); } catch { alert('Erreur'); }
   };
 
@@ -116,7 +111,11 @@ export default function RendezVous() {
         <tbody>
           {rdvs.map(r => (
             <tr key={r.id}>
-              <td>{new Date(r.date_rdv).toLocaleTimeString('fr-FR', { hour: '2-digit', minute: '2-digit' })}</td>
+              <td>
+                {new Date(r.date_rdv).toLocaleTimeString('fr-FR', { hour: '2-digit', minute: '2-digit' })}
+                {(r as any).priorite === 'urgent' && <span className="tag tag-red" style={{ marginLeft: '0.375rem', fontSize: '0.5625rem' }}>URGENT</span>}
+                {(r as any).priorite === 'prioritaire' && <span className="tag tag-orange" style={{ marginLeft: '0.375rem', fontSize: '0.5625rem' }}>prio.</span>}
+              </td>
               <td>{r.patient_prenom} {r.patient_nom}</td>
               <td>Dr. {r.medecin_prenom} {r.medecin_nom}</td>
               <td>{r.service_nom}</td>
@@ -185,6 +184,23 @@ export default function RendezVous() {
                   <div className="form-group"><label className="form-label">Date et heure *</label><input type="datetime-local" className="form-input" value={form.date_rdv} onChange={e => setForm({...form, date_rdv: e.target.value})} required /></div>
                 </div>
                 <div className="form-group"><label className="form-label">Motif</label><input type="text" className="form-input" value={form.motif} onChange={e => setForm({...form, motif: e.target.value})} /></div>
+                <div className="form-group">
+                  <label className="form-label">Priorité</label>
+                  <div className="d-flex gap-1" role="radiogroup" aria-label="Priorité">
+                    {(['urgent','prioritaire','normal'] as const).map(p => {
+                      const active = form.priorite === p;
+                      const colour = p === 'urgent' ? 'var(--cds-support-error)' : p === 'prioritaire' ? 'var(--cds-support-warning)' : 'var(--cds-ui-03)';
+                      return (
+                        <button type="button" key={p} role="radio" aria-checked={active}
+                          onClick={() => setForm({...form, priorite: p})}
+                          style={{ padding: '0.375rem 0.875rem', cursor: 'pointer', border: `2px solid ${active ? colour : 'var(--cds-ui-03)'}`, background: active ? colour : 'transparent', color: active ? '#fff' : 'inherit', fontSize: '0.8125rem', textTransform: 'capitalize' }}>
+                          {p === 'urgent' && <i className="bi bi-exclamation-octagon" style={{ marginRight: '0.25rem' }}></i>}
+                          {p}
+                        </button>
+                      );
+                    })}
+                  </div>
+                </div>
               </div>
               <div className="modal-footer"><button type="button" className="btn-secondary" onClick={() => { setShowModal(false); resetForm(); }}>Annuler</button><button type="submit" className="btn-primary">Planifier</button></div>
             </form>
