@@ -3,6 +3,7 @@ import { useState, useEffect, createContext, useContext, useCallback, Suspense }
 import type { User } from './types';
 import { useSessionTimeout } from './hooks/useSessionTimeout';
 import Layout from './components/Layout';
+import ErrorBoundary from './components/ErrorBoundary';
 import OfflineBanner from './components/OfflineBanner';
 import RoleGuard from './components/RoleGuard';
 import { ConfirmProvider } from './components/ConfirmDialog';
@@ -152,6 +153,7 @@ function App() {
         <SnackbarProvider>
         <ConfirmProvider>
         <SessionManager>
+          <ErrorBoundary>
           <Suspense fallback={<PageLoader />}>
             <Routes>
               <Route path="/" element={user ? <Navigate to="/app" /> : <Landing />} />
@@ -220,6 +222,7 @@ function App() {
               } />
             </Routes>
           </Suspense>
+          </ErrorBoundary>
         </SessionManager>
         </ConfirmProvider>
         </SnackbarProvider>
