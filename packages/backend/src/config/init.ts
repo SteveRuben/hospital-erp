@@ -720,11 +720,11 @@ export const initDB = async (): Promise<void> => {
     }
 
     // Seed default habilitations
-    const modules = ['dashboard','patients','medecins','consultations','rendezvous','laboratoire','visites','file-attente','finances','services','listes-patients','documentation','utilisateurs','habilitations','import','lits','programmes','facturation','imagerie','orders','concepts','pharmacie','patient-merge','rapports','configuration','securite','formulaires','catalogue-examens','impressions','parametres-generaux','listes-reference','garde'];
+    const modules = ['dashboard','patients','medecins','consultations','rendezvous','laboratoire','visites','file-attente','finances','services','listes-patients','documentation','utilisateurs','habilitations','import','lits','programmes','facturation','imagerie','orders','concepts','pharmacie','patient-merge','rapports','configuration','securite','formulaires','catalogue-examens','impressions','parametres-generaux','listes-reference','garde','assurances'];
     const roleAccess: Record<string, string[]> = {
       admin: modules,
       medecin: ['dashboard','garde','patients','medecins','consultations','rendezvous','visites','file-attente','listes-patients','documentation','lits','programmes','imagerie','orders','pharmacie','formulaires'],
-      comptable: ['dashboard','finances','documentation','facturation','rapports','catalogue-examens'],
+      comptable: ['dashboard','finances','documentation','facturation','rapports','catalogue-examens','assurances'],
       laborantin: ['dashboard','laboratoire','documentation','orders'],
       reception: ['dashboard','patients','rendezvous','visites','file-attente','documentation'],
       pharmacien: ['dashboard','pharmacie','patients','documentation','orders'],
@@ -760,6 +760,7 @@ export const initDB = async (): Promise<void> => {
       ['Clinique', 1, 'lits', 'Lits & Hospitalisation', 'bi-hospital', '/app/lits', 7],
       ['Clinique', 1, 'programmes', 'Programmes de soins', 'bi-heart-pulse', '/app/programmes', 8],
       ['Administration', 2, 'facturation', 'Facturation', 'bi-receipt', '/app/facturation', 7],
+      ['Administration', 2, 'assurances', 'Assurances & PEC', 'bi-shield-check', '/app/assurances', 8],
       ['Clinique', 1, 'imagerie', 'Imagerie médicale', 'bi-image', '/app/imagerie', 9],
       ['Clinique', 1, 'orders', 'Ordres médicaux', 'bi-clipboard2-data', '/app/orders', 10],
       ['Administration', 2, 'concepts', 'Dictionnaire concepts', 'bi-book-half', '/app/concepts', 9],

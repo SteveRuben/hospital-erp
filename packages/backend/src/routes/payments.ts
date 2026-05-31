@@ -239,11 +239,181 @@ router.post('/webhook/remita', async (req, res): Promise<void> => {
 
 // === ASSURANCES ===
 
+// Public-facing list — only active assurances. Used by the dropdown
+// in PaymentModal. The admin variant /assurances/admin returns
+// everything (including inactive) plus claim/amount aggregates.
 router.get('/assurances', authenticate, async (_req: AuthRequest, res: Response): Promise<void> => {
   try {
     const rows = await prisma.assurance.findMany({ where: { actif: true }, orderBy: { nom: 'asc' } });
     res.json(rows);
   } catch (err) { res.status(500).json({ error: 'Erreur serveur' }); }
+});
+
+router.get('/assurances/admin', authenticate, authorize('admin', 'comptable'), async (_req: AuthRequest, res: Response): Promise<void> => {
+  try {
+    const rows = await prisma.assurance.findMany({ orderBy: { nom: 'asc' } });
+    // Aggregate claims per assurance — montant total engagé,
+    // montant déjà payé par l'assureur, nombre de PEC actives.
+    const stats = await prisma.priseEnCharge.groupBy({
+      by: ['assuranceId', 'statut'],
+      _count: { _all: true },
+      _sum: { montantAssurance: true },
+    });
+    const decorated = rows.map(a => {
+      const mine = stats.filter(s => s.assuranceId === a.id);
+      const enAttente = mine.find(s => s.statut === 'en_attente');
+      const accordee = mine.find(s => s.statut === 'accordee');
+      const payee = mine.find(s => s.statut === 'payee');
+      const refusee = mine.find(s => s.statut === 'refusee');
+      return {
+        ...a,
+        nb_en_attente: enAttente?._count._all ?? 0,
+        nb_accordee: accordee?._count._all ?? 0,
+        nb_payee: payee?._count._all ?? 0,
+        nb_refusee: refusee?._count._all ?? 0,
+        montant_a_recouvrer: Number(enAttente?._sum.montantAssurance ?? 0) + Number(accordee?._sum.montantAssurance ?? 0),
+        montant_recouvre: Number(payee?._sum.montantAssurance ?? 0),
+      };
+    });
+    res.json(decorated);
+  } catch (err) {
+    console.error('[PAYMENTS] assurances/admin failed:', err);
+    res.status(500).json({ error: 'Erreur serveur' });
+  }
+});
+
+router.post('/assurances', authenticate, authorize('admin'), async (req: AuthRequest, res: Response): Promise<void> => {
+  try {
+    const { nom, code, contact, taux_defaut } = req.body as { nom?: string; code?: string; contact?: string; taux_defaut?: number };
+    if (!nom || !String(nom).trim()) { res.status(400).json({ error: 'Nom requis' }); return; }
+    const taux = taux_defaut !== undefined ? Number(taux_defaut) : 80;
+    if (!Number.isFinite(taux) || taux < 0 || taux > 100) { res.status(400).json({ error: 'Taux entre 0 et 100' }); return; }
+    const created = await prisma.assurance.create({
+      data: {
+        nom: String(nom).trim().substring(0, 200),
+        code: code ? String(code).trim().toUpperCase().substring(0, 50) : null,
+        contact: contact ? String(contact).substring(0, 200) : null,
+        tauxDefaut: new Prisma.Decimal(taux),
+        actif: true,
+      },
+    });
+    await logAudit({ userId: req.user!.id, action: 'create', tableName: 'assurances', recordId: created.id, details: `Assurance ${created.nom}` });
+    res.status(201).json(created);
+  } catch (err: any) {
+    if (err?.code === 'P2002') { res.status(409).json({ error: 'Ce code d\'assurance existe déjà' }); return; }
+    console.error('[PAYMENTS] create assurance failed:', err);
+    res.status(500).json({ error: 'Erreur serveur' });
+  }
+});
+
+router.put('/assurances/:id', authenticate, authorize('admin'), async (req: AuthRequest, res: Response): Promise<void> => {
+  try {
+    const id = Number(req.params.id);
+    const { nom, code, contact, taux_defaut, actif } = req.body as { nom?: string; code?: string; contact?: string | null; taux_defaut?: number; actif?: boolean };
+    const data: any = {};
+    if (nom !== undefined) data.nom = String(nom).trim().substring(0, 200);
+    if (code !== undefined) data.code = code ? String(code).trim().toUpperCase().substring(0, 50) : null;
+    if (contact !== undefined) data.contact = contact ? String(contact).substring(0, 200) : null;
+    if (taux_defaut !== undefined) {
+      const t = Number(taux_defaut);
+      if (!Number.isFinite(t) || t < 0 || t > 100) { res.status(400).json({ error: 'Taux entre 0 et 100' }); return; }
+      data.tauxDefaut = new Prisma.Decimal(t);
+    }
+    if (actif !== undefined) data.actif = Boolean(actif);
+    const updated = await prisma.assurance.update({ where: { id }, data });
+    await logAudit({ userId: req.user!.id, action: 'update', tableName: 'assurances', recordId: id, details: `Mise à jour ${updated.nom}` });
+    res.json(updated);
+  } catch (err: any) {
+    if (err?.code === 'P2025') { res.status(404).json({ error: 'Assurance non trouvée' }); return; }
+    if (err?.code === 'P2002') { res.status(409).json({ error: 'Ce code existe déjà' }); return; }
+    res.status(500).json({ error: 'Erreur serveur' });
+  }
+});
+
+// === PRISES EN CHARGE — gestion ===
+
+router.get('/prises-en-charge', authenticate, authorize('admin', 'comptable'), async (req: AuthRequest, res: Response): Promise<void> => {
+  try {
+    const { assurance_id, statut, patient_id, debut, fin } = req.query;
+    const where: Prisma.PriseEnChargeWhereInput = {};
+    if (assurance_id) where.assuranceId = Number(assurance_id);
+    if (patient_id) where.patientId = Number(patient_id);
+    if (statut) {
+      const s = String(statut);
+      if (!(['en_attente', 'accordee', 'refusee', 'payee'] as const).includes(s as PriseEnChargeStatut)) {
+        res.status(400).json({ error: 'statut invalide' });
+        return;
+      }
+      where.statut = s as PriseEnChargeStatut;
+    }
+    if (debut || fin) {
+      where.createdAt = {};
+      if (debut) (where.createdAt as Prisma.DateTimeFilter).gte = new Date(String(debut));
+      if (fin) (where.createdAt as Prisma.DateTimeFilter).lte = new Date(String(fin));
+    }
+    const rows = await prisma.priseEnCharge.findMany({
+      where,
+      include: {
+        assurance: { select: { id: true, nom: true, code: true } },
+      },
+      orderBy: { createdAt: 'desc' },
+      take: 500,
+    });
+    // Decorate patient + examen labels in a single round-trip rather
+    // than per-row .include (cheaper for the 500-row default cap).
+    const patientIds = Array.from(new Set(rows.map(r => r.patientId)));
+    const examenIds = Array.from(new Set(rows.map(r => r.examenId).filter((v): v is number => v != null)));
+    const [patients, examens] = await Promise.all([
+      patientIds.length
+        ? prisma.patient.findMany({ where: { id: { in: patientIds } }, select: { id: true, nom: true, prenom: true, referenceId: true } })
+        : Promise.resolve([] as Array<{ id: number; nom: string; prenom: string; referenceId: string | null }>),
+      examenIds.length
+        ? prisma.examen.findMany({ where: { id: { in: examenIds } }, select: { id: true, typeExamen: true } })
+        : Promise.resolve([] as Array<{ id: number; typeExamen: string }>),
+    ]);
+    const pMap = new Map(patients.map(p => [p.id, p]));
+    const eMap = new Map(examens.map(e => [e.id, e]));
+    res.json(rows.map(r => ({
+      ...r,
+      patient_nom: pMap.get(r.patientId)?.nom ?? null,
+      patient_prenom: pMap.get(r.patientId)?.prenom ?? null,
+      patient_reference: pMap.get(r.patientId)?.referenceId ?? null,
+      examen_type: r.examenId ? eMap.get(r.examenId)?.typeExamen ?? null : null,
+      assurance_nom: r.assurance.nom,
+      assurance_code: r.assurance.code,
+    })));
+  } catch (err) {
+    console.error('[PAYMENTS] list PEC failed:', err);
+    res.status(500).json({ error: 'Erreur serveur' });
+  }
+});
+
+router.patch('/prises-en-charge/:id/statut', authenticate, authorize('admin', 'comptable'), async (req: AuthRequest, res: Response): Promise<void> => {
+  try {
+    const id = Number(req.params.id);
+    const { statut, notes } = req.body as { statut?: string; notes?: string };
+    const validStatuts = ['en_attente', 'accordee', 'refusee', 'payee'] as const;
+    if (!statut || !validStatuts.includes(statut as PriseEnChargeStatut)) {
+      res.status(400).json({ error: 'Statut requis (en_attente | accordee | refusee | payee)' });
+      return;
+    }
+    const before = await prisma.priseEnCharge.findUnique({ where: { id } });
+    if (!before) { res.status(404).json({ error: 'Prise en charge non trouvée' }); return; }
+    const updated = await prisma.priseEnCharge.update({
+      where: { id },
+      data: {
+        statut: statut as PriseEnChargeStatut,
+        notes: notes !== undefined ? (notes ? String(notes).substring(0, 1000) : null) : before.notes,
+      },
+    });
+    await logAudit({
+      userId: req.user!.id, action: 'update', tableName: 'prises_en_charge', recordId: id,
+      details: `PEC #${id} : ${before.statut} → ${updated.statut}${notes ? ` — ${notes.substring(0, 100)}` : ''}`,
+    });
+    res.json(updated);
+  } catch (err) {
+    res.status(500).json({ error: 'Erreur serveur' });
+  }
 });
 
 router.post('/prise-en-charge', authenticate, authorize('admin', 'comptable', 'reception'), async (req: AuthRequest, res: Response): Promise<void> => {

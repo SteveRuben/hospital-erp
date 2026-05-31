@@ -58,6 +58,7 @@ const Profil = lazy(() => import('./pages/Profil'));
 const CatalogueExamens = lazy(() => import('./pages/CatalogueExamens'));
 const Impressions = lazy(() => import('./pages/Impressions'));
 const Garde = lazy(() => import('./pages/Garde'));
+const Assurances = lazy(() => import('./pages/Assurances'));
 const ParametresGeneraux = lazy(() => import('./pages/ParametresGeneraux'));
 const ListesReference = lazy(() => import('./pages/ListesReference'));
 
@@ -209,6 +210,7 @@ function App() {
                         <Route path="/catalogue-examens" element={<RoleGuard roles={['admin','comptable']}><CatalogueExamens /></RoleGuard>} />
                         <Route path="/impressions" element={<RoleGuard roles={['admin']}><Impressions /></RoleGuard>} />
                         <Route path="/garde" element={<RoleGuard roles={['admin','medecin']}><Garde /></RoleGuard>} />
+                        <Route path="/assurances" element={<RoleGuard roles={['admin','comptable']}><Assurances /></RoleGuard>} />
                         <Route path="/parametres-generaux" element={<RoleGuard roles={['admin']}><ParametresGeneraux /></RoleGuard>} />
                         <Route path="/listes-reference" element={<RoleGuard roles={['admin']}><ListesReference /></RoleGuard>} />
                       </Routes>

@@ -432,9 +432,47 @@ export const cancelPayment = (reference: string) =>
   api.post(`/payments/cancel/${reference}`);
 
 export interface AssuranceRow { id: number; nom: string; code: string | null; tauxDefaut: number | string | null; actif: boolean; contact: string | null }
+export interface AssuranceAdminRow extends AssuranceRow {
+  nb_en_attente: number;
+  nb_accordee: number;
+  nb_payee: number;
+  nb_refusee: number;
+  montant_a_recouvrer: number;
+  montant_recouvre: number;
+}
 export const getAssurances = () => api.get<AssuranceRow[]>('/payments/assurances');
+export const getAssurancesAdmin = () => api.get<AssuranceAdminRow[]>('/payments/assurances/admin');
+export const createAssurance = (data: { nom: string; code?: string; contact?: string; taux_defaut?: number }) =>
+  api.post<AssuranceRow>('/payments/assurances', data);
+export const updateAssurance = (id: number, data: { nom?: string; code?: string | null; contact?: string | null; taux_defaut?: number; actif?: boolean }) =>
+  api.put<AssuranceRow>(`/payments/assurances/${id}`, data);
 export const createPriseEnCharge = (data: { assurance_id: number; patient_id: number; examen_id?: number; facture_id?: number; numero_police: string; montant_total: number; montant_assurance: number; montant_patient: number; notes?: string }) =>
   api.post('/payments/prise-en-charge', data);
+
+export interface PriseEnChargeRow {
+  id: number;
+  assuranceId: number;
+  patientId: number;
+  examenId: number | null;
+  factureId: number | null;
+  numeroPolice: string;
+  montantTotal: number | string;
+  montantAssurance: number | string;
+  montantPatient: number | string;
+  statut: 'en_attente' | 'accordee' | 'refusee' | 'payee';
+  notes: string | null;
+  createdAt: string;
+  patient_nom: string | null;
+  patient_prenom: string | null;
+  patient_reference: string | null;
+  examen_type: string | null;
+  assurance_nom: string;
+  assurance_code: string | null;
+}
+export const getPrisesEnCharge = (params?: { assurance_id?: number; statut?: string; patient_id?: number; debut?: string; fin?: string }) =>
+  api.get<PriseEnChargeRow[]>('/payments/prises-en-charge', { params });
+export const updatePECStatut = (id: number, statut: 'en_attente' | 'accordee' | 'refusee' | 'payee', notes?: string) =>
+  api.patch<PriseEnChargeRow>(`/payments/prises-en-charge/${id}/statut`, { statut, notes });
 
 // Profile + admin user actions
 export const updateMe = (data: { nom?: string; prenom?: string; telephone?: string }) => api.put('/auth/me', data);

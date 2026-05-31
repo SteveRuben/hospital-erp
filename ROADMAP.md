@@ -7,7 +7,7 @@
 
 ## 1. État réel (qu'a-t-on aujourd'hui ?)
 
-Le projet est passé d'un ERP hospitalier basique (avril 2026) à une plateforme
+Le projet est passé d'un ERP hospitalier  (avril 2026) à une plateforme
 clinico-administrative avec interopérabilité et conformité HIPAA. Synthèse :
 
 ### 1.1 Clinique (parité OpenMRS atteinte sur le cœur)
@@ -51,6 +51,7 @@ clinico-administrative avec interopérabilité et conformité HIPAA. Synthèse :
 - Docs réglementaires : PSSI, PIA, RGPD registre, PCA, consentement portail
 
 ### 1.5 Interopérabilité (FHIR R4 read-only)
+
 - GET /fhir/metadata (CapabilityStatement)
 - GET /fhir/Patient/:id, /fhir/Patient?name= (Bundle searchset)
 - GET /fhir/Observation?patient= — clinique + vitaux **LOINC-codés**
