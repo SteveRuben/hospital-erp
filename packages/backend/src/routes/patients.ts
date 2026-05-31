@@ -419,7 +419,7 @@ router.get('/:id/historique', authenticate, async (req: AuthRequest, res: Respon
       }),
       prisma.examen.findMany({
         where: { patientId },
-        select: { id: true, reference: true, typeExamen: true, resultat: true, dateExamen: true, statut: true },
+        select: { id: true, reference: true, typeExamen: true, resultat: true, montant: true, dateExamen: true, statut: true },
         orderBy: { dateExamen: 'desc' }, take: limit, skip,
       }),
       prisma.recette.findMany({
@@ -566,12 +566,24 @@ router.get('/:id/historique', authenticate, async (req: AuthRequest, res: Respon
       id: v.id, type_visite: v.typeVisite, date_debut: v.dateDebut, date_fin: v.dateFin, statut: v.statut,
       created_at: v.createdAt, service_nom: v.service?.nom ?? null,
     }));
+    const examens = examensRows.map(e => ({
+      id: e.id, reference: e.reference, type_examen: e.typeExamen, resultat: e.resultat,
+      montant: e.montant, date_examen: e.dateExamen, statut: e.statut,
+    }));
+    const recettes = recettesRows.map(r => ({
+      id: r.id, type_acte: r.typeActe, montant: r.montant, mode_paiement: r.modePaiement,
+      date_recette: r.dateRecette,
+    }));
+    const documents = documentsRows.map(d => ({
+      id: d.id, type_document: d.typeDocument, description: d.description,
+      fichier_url: d.fichierUrl, created_at: d.createdAt,
+    }));
 
     res.json({
       consultations,
-      examens: examensRows,
-      recettes: recettesRows,
-      documents: documentsRows,
+      examens,
+      recettes,
+      documents,
       notes, allergies, pathologies,
       prescriptions, ordonnances, vaccinations,
       alertes, rendez_vous, vitaux,
