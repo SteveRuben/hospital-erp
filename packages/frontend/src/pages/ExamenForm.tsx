@@ -154,7 +154,10 @@ export default function ExamenForm() {
     e.preventDefault();
     if (!form.patient_id) { setError('Sélectionnez un patient dans la liste'); return; }
     if (!form.type_examen.trim()) { setError("Type d'examen requis"); return; }
-    if (!isMedecin && !form.demandeur_id) { setError('Sélectionnez le médecin prescripteur'); return; }
+    // Prescripteur obligatoire à la création seulement : les examens créés
+    // avant l'ajout de ce champ ont demandeur_id null, et on ne doit pas
+    // bloquer la mise à jour de leur résultat pour autant.
+    if (!isEdit && !isMedecin && !form.demandeur_id) { setError('Sélectionnez le médecin prescripteur'); return; }
     setError('');
     const payload = {
       patient_id: form.patient_id,
