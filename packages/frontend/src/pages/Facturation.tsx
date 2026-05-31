@@ -29,6 +29,12 @@ export default function Facturation() {
   const [tarifForm, setTarifForm] = useState({ code: '', libelle: '', categorie: '', montant: '' });
   const [factureForm, setFactureForm] = useState({ patient_id: '', lignes: [{ tarif_id: '', libelle: '', quantite: 1, prix_unitaire: 0 }] as Array<{tarif_id: string; libelle: string; quantite: number; prix_unitaire: number}>, notes: '' });
   const [paiementForm, setPaiementForm] = useState({ facture_id: 0, montant: '', mode_paiement: 'especes', reference: '' });
+  // Last-payment confirmation banner. The bottom-right snackbar
+  // disappears in 5 s and is easy to miss when the cashier was
+  // focused on the row that just vanished from the quick-pay list.
+  // This banner persists at the top of the Caisse tab until the
+  // cashier dismisses it or makes another payment.
+  const [lastPayment, setLastPayment] = useState<{ type: 'examen' | 'facture'; libelle: string; montant: number; mode: string; at: Date } | null>(null);
 
   useEffect(() => { loadAll(); }, []);
 
@@ -52,7 +58,19 @@ export default function Facturation() {
     setPendingExamens(prev => prev.filter(p => p.id !== examen.id));
     try {
       await markExamenPaid(examen.id, mode);
-      showSnackbar(`${examen.type_examen} — payé (${mode})`, 'success');
+      // Two confirmations on purpose: a snackbar for the casual case
+      // and a persistent banner so the cashier sees that the payment
+      // actually landed even if they were looking elsewhere.
+      const modeLabel = modesPaiement.find(m => m.code.toLowerCase() === mode.toLowerCase())?.libelle ?? mode;
+      const montant = Number(examen.montant ?? 0);
+      setLastPayment({
+        type: 'examen',
+        libelle: `${examen.type_examen} — ${examen.patient_prenom ?? ''} ${examen.patient_nom ?? ''}`.trim(),
+        montant,
+        mode: modeLabel,
+        at: new Date(),
+      });
+      showSnackbar(`✓ ${examen.type_examen} — payé (${modeLabel})`, 'success');
     } catch (err: any) {
       showSnackbar(err.response?.data?.error || 'Erreur — examen restauré dans la liste', 'error');
       // Rollback the optimistic removal so the cashier can retry.
@@ -71,7 +89,28 @@ export default function Facturation() {
     try { await createFacture({ patient_id: Number(factureForm.patient_id), lignes, notes: factureForm.notes }); setShowModal(null); setFactureForm({ patient_id: '', lignes: [{ tarif_id: '', libelle: '', quantite: 1, prix_unitaire: 0 }], notes: '' }); loadAll(); } catch (err: any) { alert(err.response?.data?.error || 'Erreur'); }
   };
 
-  const handlePaiement = async (e: React.FormEvent) => { e.preventDefault(); try { await createPaiement({ ...paiementForm, montant: parseFloat(paiementForm.montant) }); setShowModal(null); viewDetail(paiementForm.facture_id); loadAll(); } catch { alert('Erreur'); } };
+  const handlePaiement = async (e: React.FormEvent) => {
+    e.preventDefault();
+    try {
+      const montant = parseFloat(paiementForm.montant);
+      await createPaiement({ ...paiementForm, montant });
+      const facture = factures.find(f => f.id === paiementForm.facture_id);
+      const modeLabel = modesPaiement.find(m => m.code.toLowerCase() === paiementForm.mode_paiement.toLowerCase())?.libelle ?? paiementForm.mode_paiement;
+      setLastPayment({
+        type: 'facture',
+        libelle: facture ? `Facture ${facture.numero} — ${facture.patient_prenom ?? ''} ${facture.patient_nom ?? ''}`.trim() : `Facture #${paiementForm.facture_id}`,
+        montant,
+        mode: modeLabel,
+        at: new Date(),
+      });
+      showSnackbar(`✓ Paiement de ${montant.toLocaleString('fr-FR')} XOF enregistré (${modeLabel})`, 'success');
+      setShowModal(null);
+      viewDetail(paiementForm.facture_id);
+      loadAll();
+    } catch (err: any) {
+      showSnackbar(err.response?.data?.error || 'Erreur lors du paiement', 'error');
+    }
+  };
 
   const addLigne = () => setFactureForm({ ...factureForm, lignes: [...factureForm.lignes, { tarif_id: '', libelle: '', quantite: 1, prix_unitaire: 0 }] });
   const removeLigne = (i: number) => setFactureForm({ ...factureForm, lignes: factureForm.lignes.filter((_, idx) => idx !== i) });
@@ -151,6 +190,32 @@ ${paiement.notes ? `<tr><td><strong>Notes</strong></td><td>${paiement.notes}</td
 
       {tab === 'caisse' && (
         <div>
+          {lastPayment && (
+            <div
+              role="status"
+              className="notification notification-success mb-2"
+              style={{ alignItems: 'center', padding: '0.75rem 1rem' }}
+            >
+              <i className="bi bi-check-circle-fill" style={{ fontSize: '1.25rem' }}></i>
+              <div style={{ flex: 1 }}>
+                <strong>Paiement enregistré</strong>
+                <div style={{ fontSize: '0.8125rem', marginTop: '0.125rem' }}>
+                  {lastPayment.libelle} — <strong>{fmt(lastPayment.montant)}</strong> par {lastPayment.mode}
+                  <span className="text-muted" style={{ marginLeft: '0.5rem', fontSize: '0.75rem' }}>
+                    {lastPayment.at.toLocaleTimeString('fr-FR')}
+                  </span>
+                </div>
+              </div>
+              <button
+                className="btn-ghost btn-sm"
+                onClick={() => setLastPayment(null)}
+                title="Masquer"
+                style={{ marginLeft: 'auto' }}
+              >
+                <i className="bi bi-x-lg"></i>
+              </button>
+            </div>
+          )}
           <p className="text-muted mb-2" style={{ fontSize: '0.8125rem' }}>
             Examens en attente de paiement. Un clic sur le mode = encaissé et envoyé en prélèvement au labo.
           </p>
