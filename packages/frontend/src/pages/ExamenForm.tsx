@@ -1,9 +1,13 @@
-import { useState, useEffect, useRef } from 'react';
+import { useState, useEffect, useRef, useContext } from 'react';
 import { useNavigate, useParams, useSearchParams } from 'react-router-dom';
+import { AuthContext } from '../App';
 import {
   createExamen, updateExamen, getExamen, searchPatientsForOrdering,
   getExamenTypesForPatient, getTarifsByCategorie, type TarifRow, getPatient,
+  getMedecins,
 } from '../services/api';
+
+interface MedecinOption { id: number; nom: string; prenom: string }
 
 /**
  * Examen creation/edit form.
@@ -26,6 +30,10 @@ export default function ExamenForm() {
   const { id } = useParams();
   const navigate = useNavigate();
   const [searchParams] = useSearchParams();
+  const { user } = useContext(AuthContext);
+  // Si l'utilisateur connecté est médecin, c'est lui le prescripteur (pas de
+  // champ). Sinon (laborantin/admin/réception) il doit désigner le médecin.
+  const isMedecin = user?.role === 'medecin';
   const isEdit = !!id;
   // ?patient_id=N pre-selects the patient (used by PatientDetail's
   // 'Examen' shortcut so the cashier doesn't have to re-search).
@@ -38,9 +46,14 @@ export default function ExamenForm() {
     date_examen: new Date().toISOString().substring(0, 10),
     montant: '',
     priorite: 'normal' as 'urgent' | 'prioritaire' | 'normal',
+    demandeur_id: '',
   });
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
+
+  // Liste des médecins pour le sélecteur de prescripteur (uniquement
+  // chargée quand l'utilisateur connecté n'est pas lui-même médecin).
+  const [medecins, setMedecins] = useState<MedecinOption[]>([]);
 
   // Patient typeahead
   const [patientQuery, setPatientQuery] = useState('');
@@ -78,6 +91,7 @@ export default function ExamenForm() {
           date_examen: d.date_examen ? String(d.date_examen).split('T')[0] : '',
           montant: d.montant != null ? String(d.montant) : '',
           priorite: (d.priorite as 'urgent' | 'prioritaire' | 'normal') ?? 'normal',
+          demandeur_id: d.demandeur_id != null ? String(d.demandeur_id) : '',
         });
         setPatientQuery(label);
       } else if (p?.data) {
@@ -88,6 +102,15 @@ export default function ExamenForm() {
       }
     }).catch(() => setError('Erreur de chargement')).finally(() => setLoading(false));
   }, [id, isEdit, prefillPatientId]);
+
+  // Charge la liste des médecins seulement si le saisisseur n'est pas médecin
+  // (sinon le prescripteur = lui-même, pas de sélecteur à alimenter).
+  useEffect(() => {
+    if (isMedecin) return;
+    getMedecins()
+      .then(({ data }) => setMedecins((data as MedecinOption[]) ?? []))
+      .catch(() => setMedecins([]));
+  }, [isMedecin]);
 
   // Whenever the patient changes, refresh the "previously ordered types" list
   useEffect(() => {
@@ -131,6 +154,7 @@ export default function ExamenForm() {
     e.preventDefault();
     if (!form.patient_id) { setError('Sélectionnez un patient dans la liste'); return; }
     if (!form.type_examen.trim()) { setError("Type d'examen requis"); return; }
+    if (!isMedecin && !form.demandeur_id) { setError('Sélectionnez le médecin prescripteur'); return; }
     setError('');
     const payload = {
       patient_id: form.patient_id,
@@ -139,6 +163,9 @@ export default function ExamenForm() {
       date_examen: form.date_examen,
       montant: form.montant === '' ? null : Number(form.montant),
       priorite: form.priorite,
+      // Ignoré par le backend si le saisisseur est médecin (il devient le
+      // prescripteur automatiquement).
+      demandeur_id: isMedecin ? undefined : (form.demandeur_id ? Number(form.demandeur_id) : null),
     };
     try {
       if (isEdit) await updateExamen(Number(id), payload);
@@ -276,6 +303,30 @@ export default function ExamenForm() {
               <input type="number" className="form-input" value={form.montant} onChange={e => setForm({ ...form, montant: e.target.value })} placeholder="0" />
             </div>
           </div>
+          {isMedecin ? (
+            <div className="form-group">
+              <label className="form-label">Médecin prescripteur</label>
+              <div className="text-muted" style={{ fontSize: '0.8125rem' }}>
+                <i className="bi bi-person-check"></i> Vous ({user?.prenom ?? ''} {user?.nom ?? ''}) êtes enregistré comme prescripteur.
+              </div>
+            </div>
+          ) : (
+            <div className="form-group">
+              <label className="form-label">Médecin prescripteur *</label>
+              <select
+                className="form-select"
+                value={form.demandeur_id}
+                onChange={e => setForm({ ...form, demandeur_id: e.target.value })}
+                required
+              >
+                <option value="">— Choisir le médecin —</option>
+                {medecins.map(m => (
+                  <option key={m.id} value={m.id}>{m.prenom} {m.nom}</option>
+                ))}
+              </select>
+            </div>
+          )}
+
           <div className="form-group">
             <label className="form-label">Priorité</label>
             <div className="d-flex gap-1" role="radiogroup" aria-label="Priorité">

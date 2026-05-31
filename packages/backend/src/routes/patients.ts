@@ -419,7 +419,7 @@ router.get('/:id/historique', authenticate, async (req: AuthRequest, res: Respon
       }),
       prisma.examen.findMany({
         where: { patientId },
-        select: { id: true, reference: true, typeExamen: true, resultat: true, montant: true, dateExamen: true, statut: true },
+        select: { id: true, reference: true, typeExamen: true, resultat: true, montant: true, dateExamen: true, statut: true, demandeurId: true },
         orderBy: { dateExamen: 'desc' }, take: limit, skip,
       }),
       prisma.recette.findMany({
@@ -566,10 +566,22 @@ router.get('/:id/historique', authenticate, async (req: AuthRequest, res: Respon
       id: v.id, type_visite: v.typeVisite, date_debut: v.dateDebut, date_fin: v.dateFin, statut: v.statut,
       created_at: v.createdAt, service_nom: v.service?.nom ?? null,
     }));
-    const examens = examensRows.map(e => ({
-      id: e.id, reference: e.reference, type_examen: e.typeExamen, resultat: e.resultat,
-      montant: e.montant, date_examen: e.dateExamen, statut: e.statut,
-    }));
+    // Résout les noms des médecins prescripteurs (examens.demandeur_id est un
+    // id d'utilisateur, sans relation Prisma — lookup manuel groupé).
+    const demandeurIds = [...new Set(examensRows.map(e => e.demandeurId).filter((id): id is number => id != null))];
+    const demandeurs = demandeurIds.length
+      ? await prisma.user.findMany({ where: { id: { in: demandeurIds } }, select: { id: true, nom: true, prenom: true } })
+      : [];
+    const demandeurById = new Map(demandeurs.map(d => [d.id, d]));
+    const examens = examensRows.map(e => {
+      const d = e.demandeurId != null ? demandeurById.get(e.demandeurId) : undefined;
+      return {
+        id: e.id, reference: e.reference, type_examen: e.typeExamen, resultat: e.resultat,
+        montant: e.montant, date_examen: e.dateExamen, statut: e.statut,
+        demandeur_id: e.demandeurId,
+        medecin_nom: d?.nom ?? null, medecin_prenom: d?.prenom ?? null,
+      };
+    });
     const recettes = recettesRows.map(r => ({
       id: r.id, type_acte: r.typeActe, montant: r.montant, mode_paiement: r.modePaiement,
       date_recette: r.dateRecette,

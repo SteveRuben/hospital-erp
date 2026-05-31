@@ -71,6 +71,24 @@ async function findResultRecipients(patientId: number, demandeurId: number | nul
   return u ? [u.id] : [];
 }
 
+/**
+ * Détermine le médecin demandeur d'un examen.
+ *   - utilisateur connecté médecin  → c'est lui le prescripteur.
+ *   - sinon                         → le médecin choisi dans le formulaire,
+ *     validé comme étant bien un utilisateur de rôle medecin.
+ * Renvoie null si rien d'exploitable (examen sans prescripteur connu).
+ */
+async function resolveDemandeur(
+  user: NonNullable<AuthRequest['user']>,
+  demandeurIdRaw: unknown,
+): Promise<number | null> {
+  if (user.role === 'medecin') return user.id;
+  const id = Number(demandeurIdRaw);
+  if (!Number.isInteger(id) || id <= 0) return null;
+  const medecin = await prisma.user.findFirst({ where: { id, role: 'medecin' }, select: { id: true } });
+  return medecin?.id ?? null;
+}
+
 router.get('/', authenticate, async (req: AuthRequest, res: Response): Promise<void> => {
   try {
     const { patient_id, date_debut, date_fin, statut } = req.query;
@@ -204,10 +222,14 @@ router.get('/patient/:patientId/types', authenticate, async (req: AuthRequest, r
 // laborantin-only via the other routes.
 router.post('/', authenticate, authorize('admin', 'laborantin', 'medecin'), async (req: AuthRequest, res: Response): Promise<void> => {
   try {
-    const { patient_id, type_examen, resultat, date_examen, montant, priorite } = req.body;
+    const { patient_id, type_examen, resultat, date_examen, montant, priorite, demandeur_id } = req.body;
     const montantNum = montant !== undefined && montant !== null && montant !== '' ? Number(montant) : null;
     const initialStatut: ExamenStatut = montantNum && montantNum > 0 ? ExamenStatut.a_payer : ExamenStatut.demande;
     const initialPriorite: Priorite = isValidPriorite(priorite) ? priorite : Priorite.normal;
+    // Prescripteur : si l'utilisateur connecté est médecin, c'est lui le
+    // demandeur ; sinon (laborantin/admin/réception) on prend le médecin
+    // choisi dans le formulaire. On valide que l'id désigne bien un médecin.
+    const demandeurId = await resolveDemandeur(req.user!, demandeur_id);
     const data: Parameters<typeof prisma.examen.create>[0]['data'] = {
       patientId: Number(patient_id),
       typeExamen: type_examen,
@@ -215,6 +237,7 @@ router.post('/', authenticate, authorize('admin', 'laborantin', 'medecin'), asyn
       montant: montantNum,
       statut: initialStatut,
       priorite: initialPriorite,
+      demandeurId,
     };
     if (date_examen) data.dateExamen = new Date(date_examen);
     const created = await prisma.examen.create({ data });
@@ -255,12 +278,13 @@ router.post('/:id/marquer-paye', authenticate, authorize('admin', 'comptable', '
 
 router.put('/:id', authenticate, authorize('admin', 'laborantin'), async (req: AuthRequest, res: Response): Promise<void> => {
   try {
-    const { type_examen, resultat, date_examen, montant, statut, priorite } = req.body;
+    const { type_examen, resultat, date_examen, montant, statut, priorite, demandeur_id } = req.body;
     const data: Parameters<typeof prisma.examen.update>[0]['data'] = {};
     if (type_examen !== undefined) data.typeExamen = type_examen;
     if (resultat !== undefined) data.resultat = resultat;
     if (montant !== undefined) data.montant = montant;
     if (date_examen) data.dateExamen = new Date(date_examen);
+    if (demandeur_id !== undefined) data.demandeurId = await resolveDemandeur(req.user!, demandeur_id);
     if (statut !== undefined) {
       if (!isValidStatut(statut)) {
         res.status(400).json({ error: 'Statut invalide' });
