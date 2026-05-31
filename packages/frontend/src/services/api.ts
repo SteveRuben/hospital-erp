@@ -1,5 +1,6 @@
 import axios from 'axios';
 import type { User, Patient, Medecin, Service, Consultation, Recette, Depense, Examen, DashboardStats, Bilan, RendezVous } from '../types';
+import { enqueue as enqueueOffline } from '../lib/offlineQueue';
 
 const API_URL = import.meta.env.VITE_API_URL || '/api';
 
@@ -8,6 +9,46 @@ const api = axios.create({ baseURL: API_URL, headers: { 'Content-Type': 'applica
 api.interceptors.request.use((config) => {
   const token = localStorage.getItem('token');
   if (token) config.headers.Authorization = `Bearer ${token}`;
+  return config;
+});
+
+/**
+ * Offline mutation queue. When navigator.onLine is false AND the
+ * request is a mutation (POST/PUT/PATCH/DELETE) and the body isn't a
+ * FormData (file uploads stay rejected — they don't survive an
+ * IndexedDB round-trip cleanly), we stash the request and return a
+ * synthetic 202 so the form UI can dismiss its modal. The
+ * OfflineBanner shows queue depth and replays on reconnect.
+ */
+const QUEUEABLE = new Set(['post', 'put', 'patch', 'delete']);
+api.interceptors.request.use(async (config) => {
+  if (typeof navigator !== 'undefined' && !navigator.onLine && config.method && QUEUEABLE.has(config.method.toLowerCase())) {
+    const isFormData = typeof FormData !== 'undefined' && config.data instanceof FormData;
+    if (!isFormData) {
+      const headers: Record<string, string> = {};
+      if (config.headers) {
+        for (const [k, v] of Object.entries(config.headers)) {
+          if (typeof v === 'string') headers[k] = v;
+        }
+      }
+      const fullUrl = (config.baseURL ?? '') + (config.url ?? '');
+      await enqueueOffline({
+        method: config.method!.toUpperCase() as 'POST' | 'PUT' | 'PATCH' | 'DELETE',
+        url: fullUrl,
+        body: config.data,
+        headers,
+      });
+      // Throw a marker axios will surface as an error; the API helper
+      // can decide how to message the user. We don't fabricate a fake
+      // 202 because optimistic UI on PUT-then-server-disagrees is
+      // hairy — better to be honest that the call is deferred.
+      return Promise.reject({
+        isOfflineQueued: true,
+        message: 'Requête mise en file d\'attente (hors-ligne)',
+        config,
+      });
+    }
+  }
   return config;
 });
 
@@ -353,6 +394,21 @@ export const validateAttribution = (id: number) =>
   api.patch<AttributionRow>(`/patient-attributions/${id}/valider`);
 export const cloturerAttribution = (id: number, motif?: string) =>
   api.patch<AttributionRow>(`/patient-attributions/${id}/cloturer`, { motif });
+
+// Dispensation (closed loop : Prescription → Dispensation)
+export interface DispensationRow {
+  id: number;
+  patientId: number | null;
+  prescriptionId: number | null;
+  medicamentId: number | null;
+  quantiteDelivree: number | null;
+  dispenseurId: number | null;
+  dateDispensation: string;
+  notes: string | null;
+}
+export const getPrescriptionDispensations = (patientId: number, prescriptionId: number) =>
+  api.get<DispensationRow[]>(`/prescriptions/${patientId}/dispensations/${prescriptionId}`);
+// createDispensation declared further down (legacy helper, untyped). Re-using it.
 
 // Profile + admin user actions
 export const updateMe = (data: { nom?: string; prenom?: string; telephone?: string }) => api.put('/auth/me', data);

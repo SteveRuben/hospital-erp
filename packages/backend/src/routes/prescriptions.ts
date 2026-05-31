@@ -9,17 +9,62 @@ const router = Router();
 
 router.get('/:patientId', authenticate, requirePatientAccess, async (req: AuthRequest, res: Response): Promise<void> => {
   try {
+    const patientId = Number(req.params.patientId);
     const rows = await prisma.prescription.findMany({
-      where: { patientId: Number(req.params.patientId) },
+      where: { patientId },
       include: { medecin: { select: { nom: true, prenom: true } } },
       orderBy: { createdAt: 'desc' },
     });
-    const mapped = rows.map(p => ({
-      ...p,
-      medecin_nom: p.medecin?.nom ?? null,
-      medecin_prenom: p.medecin?.prenom ?? null,
-    }));
+
+    // Decorate each prescription with its dispensation status — closes
+    // the loop so the UI can show "dispensé 2/3 fois" without a second
+    // round-trip per row. Group by prescriptionId so a single query
+    // covers the whole list.
+    const prescriptionIds = rows.map(r => r.id);
+    const dispGroups = prescriptionIds.length
+      ? await prisma.dispensation.groupBy({
+          by: ['prescriptionId'],
+          where: { prescriptionId: { in: prescriptionIds } },
+          _count: { _all: true },
+          _sum: { quantiteDelivree: true },
+          _max: { dateDispensation: true },
+        })
+      : [];
+    const dispMap = new Map(dispGroups.map(g => [g.prescriptionId, g]));
+
+    const mapped = rows.map(p => {
+      const d = dispMap.get(p.id);
+      return {
+        ...p,
+        medecin_nom: p.medecin?.nom ?? null,
+        medecin_prenom: p.medecin?.prenom ?? null,
+        dispensations_count: d?._count._all ?? 0,
+        dispensations_total: d?._sum.quantiteDelivree ?? 0,
+        last_dispensed_at: d?._max.dateDispensation ?? null,
+      };
+    });
     res.json(mapped);
+  } catch (err) { res.status(500).json({ error: 'Erreur serveur' }); }
+});
+
+// History of every dispensation tied to a specific prescription. Used
+// when a prescriber wants to audit "what did the pharmacien actually
+// give for my order?". Patient-access gated via the prescription's
+// patientId.
+router.get('/:patientId/dispensations/:prescriptionId', authenticate, requirePatientAccess, async (req: AuthRequest, res: Response): Promise<void> => {
+  try {
+    const prescriptionId = Number(req.params.prescriptionId);
+    const presc = await prisma.prescription.findUnique({ where: { id: prescriptionId }, select: { patientId: true } });
+    if (!presc) { res.status(404).json({ error: 'Prescription non trouvée' }); return; }
+    if (presc.patientId !== Number(req.params.patientId)) {
+      res.status(404).json({ error: 'Prescription non liée à ce patient' });
+      return;
+    }
+    const dispensations = await prisma.dispensation.findMany({
+      where: { prescriptionId },
+      orderBy: { dateDispensation: 'desc' },
+    });
+    res.json(dispensations);
   } catch (err) { res.status(500).json({ error: 'Erreur serveur' }); }
 });
 

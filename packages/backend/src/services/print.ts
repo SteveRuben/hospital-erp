@@ -244,3 +244,119 @@ Date : ${new Date(data.date).toLocaleDateString('fr-FR')}</p>
 ${renderFooter(est, est.piedLabo)}
 </body></html>`;
 };
+
+/**
+ * Résumé de sortie d'hospitalisation — given to the patient (or
+ * carried in their dossier) at discharge. Includes admission info,
+ * diagnostic, traitement, conseils, and the active prescription set.
+ * Most jurisdictions require a written discharge summary; this is
+ * the standard form.
+ */
+export const generateResumeSortieHtml = (
+  data: {
+    patient_nom: string; patient_prenom: string;
+    date_admission: string; date_sortie: string;
+    motif: string | null; statut_sortie: string;
+    medecin_nom: string; medecin_prenom: string; medecin_specialite: string | null;
+    service_nom: string | null;
+    diagnostic: string | null;
+    traitement_recu: string | null;
+    consignes: string | null;
+    prescriptions: Array<{ medicament: string; dosage?: string | null; frequence?: string | null; duree?: string | null }>;
+    rdv_suivi: string | null;
+  },
+  est: Establishment,
+  serverOrigin = '',
+): string => {
+  const accent = accentFor(est.theme);
+  const dureeJours = Math.max(1, Math.round((new Date(data.date_sortie).getTime() - new Date(data.date_admission).getTime()) / 86_400_000));
+  const presHtml = data.prescriptions.length === 0 ? '<p class="text-muted">Aucune ordonnance de sortie.</p>' :
+    `<table><thead><tr><th>Médicament</th><th>Dosage</th><th>Fréquence</th><th>Durée</th></tr></thead><tbody>` +
+    data.prescriptions.map(p => `<tr><td><strong>${escapeHtml(p.medicament)}</strong></td><td>${escapeHtml(p.dosage ?? '')}</td><td>${escapeHtml(p.frequence ?? '')}</td><td>${escapeHtml(p.duree ?? '')}</td></tr>`).join('') +
+    `</tbody></table>`;
+
+  return `<!DOCTYPE html><html><head><meta charset="utf-8"><title>Résumé de sortie</title>
+<style>${SHARED_STYLE}</style></head><body>
+${renderHeader(est, serverOrigin, est.enteteOrdonnance ?? '', accent)}
+<h2>Résumé de sortie d'hospitalisation</h2>
+<table style="margin-bottom:1rem"><tbody>
+  <tr><td><strong>Patient</strong></td><td>${escapeHtml(data.patient_prenom)} ${escapeHtml(data.patient_nom)}</td></tr>
+  <tr><td><strong>Service</strong></td><td>${escapeHtml(data.service_nom ?? '—')}</td></tr>
+  <tr><td><strong>Admission</strong></td><td>${new Date(data.date_admission).toLocaleDateString('fr-FR')}</td></tr>
+  <tr><td><strong>Sortie</strong></td><td>${new Date(data.date_sortie).toLocaleDateString('fr-FR')} (${escapeHtml(data.statut_sortie)})</td></tr>
+  <tr><td><strong>Durée</strong></td><td>${dureeJours} jour${dureeJours > 1 ? 's' : ''}</td></tr>
+  <tr><td><strong>Médecin référent</strong></td><td>Dr. ${escapeHtml(data.medecin_prenom)} ${escapeHtml(data.medecin_nom)}${data.medecin_specialite ? ` (${escapeHtml(data.medecin_specialite)})` : ''}</td></tr>
+</tbody></table>
+
+<h3>Motif d'admission</h3>
+<p>${escapeHtml(data.motif ?? '—')}</p>
+
+<h3>Diagnostic principal</h3>
+<p>${escapeHtml(data.diagnostic ?? '—')}</p>
+
+<h3>Traitement reçu pendant l'hospitalisation</h3>
+<p>${escapeHtml(data.traitement_recu ?? '—')}</p>
+
+<h3>Ordonnance de sortie</h3>
+${presHtml}
+
+<h3>Consignes au patient</h3>
+<p>${escapeHtml(data.consignes ?? '—')}</p>
+
+${data.rdv_suivi ? `<h3>Rendez-vous de contrôle</h3><p>${escapeHtml(data.rdv_suivi)}</p>` : ''}
+
+<div class="signature" style="margin-top:2rem"><p>Signature du médecin</p><br><br><p>_________________________</p><p>Dr. ${escapeHtml(data.medecin_prenom)} ${escapeHtml(data.medecin_nom)}</p></div>
+${renderFooter(est, est.piedOrdonnance ?? '')}
+</body></html>`;
+};
+
+/**
+ * Fiche de transmission inter-équipes (shift handoff). Imprimée par
+ * le médecin sortant pour le médecin entrant — situation actuelle du
+ * patient + ce qui a été fait + à surveiller. Format dense, une page.
+ */
+export const generateFicheTransmissionHtml = (
+  data: {
+    patient_nom: string; patient_prenom: string; patient_id: number;
+    age: number | null; sexe: string | null;
+    date_etablissement: string;
+    medecin_emetteur_nom: string; medecin_emetteur_prenom: string;
+    motif_actuel: string | null;
+    antecedents: string;
+    constantes: string;
+    traitements_en_cours: string;
+    a_surveiller: string;
+    examens_attente: string;
+  },
+  est: Establishment,
+  serverOrigin = '',
+): string => {
+  const accent = accentFor(est.theme);
+  return `<!DOCTYPE html><html><head><meta charset="utf-8"><title>Fiche de transmission</title>
+<style>${SHARED_STYLE}
+.transmission-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 0.75rem; margin-top: 0.5rem; }
+.transmission-grid h4 { margin: 0 0 0.25rem 0; font-size: 0.8125rem; text-transform: uppercase; color: ${accent}; }
+.transmission-grid p { margin: 0; font-size: 0.8125rem; }
+</style></head><body>
+${renderHeader(est, serverOrigin, est.enteteOrdonnance ?? '', accent)}
+<h2>Fiche de transmission</h2>
+<p style="font-size:0.875rem;margin-bottom:0.75rem">
+  <strong>${escapeHtml(data.patient_prenom)} ${escapeHtml(data.patient_nom)}</strong> (#${data.patient_id})
+  ${data.age !== null ? ` — ${data.age} ans` : ''}${data.sexe ? ` — ${escapeHtml(data.sexe)}` : ''}<br>
+  Établie le ${new Date(data.date_etablissement).toLocaleString('fr-FR')} par
+  Dr. ${escapeHtml(data.medecin_emetteur_prenom)} ${escapeHtml(data.medecin_emetteur_nom)}
+</p>
+
+<div class="transmission-grid">
+  <div><h4>Motif actuel</h4><p>${escapeHtml(data.motif_actuel ?? '—')}</p></div>
+  <div><h4>Antécédents pertinents</h4><p>${escapeHtml(data.antecedents)}</p></div>
+  <div><h4>Constantes récentes</h4><p>${escapeHtml(data.constantes)}</p></div>
+  <div><h4>Traitements en cours</h4><p>${escapeHtml(data.traitements_en_cours)}</p></div>
+  <div><h4>À surveiller</h4><p>${escapeHtml(data.a_surveiller)}</p></div>
+  <div><h4>Examens en attente</h4><p>${escapeHtml(data.examens_attente)}</p></div>
+</div>
+
+<div class="signature" style="margin-top:1.5rem"><p>Médecin entrant — émargement</p><br><br><p>_________________________</p></div>
+${renderFooter(est, est.piedOrdonnance ?? '')}
+</body></html>`;
+};

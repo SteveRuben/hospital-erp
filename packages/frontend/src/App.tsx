@@ -3,6 +3,7 @@ import { useState, useEffect, createContext, useContext, useCallback, Suspense }
 import type { User } from './types';
 import { useSessionTimeout } from './hooks/useSessionTimeout';
 import Layout from './components/Layout';
+import OfflineBanner from './components/OfflineBanner';
 import RoleGuard from './components/RoleGuard';
 import { ConfirmProvider } from './components/ConfirmDialog';
 import { SnackbarProvider } from './components/Snackbar';
@@ -159,6 +160,7 @@ function App() {
               <Route path="/app/*" element={
                 <ProtectedRoute>
                   <Layout>
+                    <OfflineBanner />
                     <Suspense fallback={<PageLoader />}>
                       <Routes>
                         <Route path="/" element={<Dashboard />} />

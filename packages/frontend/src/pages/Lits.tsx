@@ -79,7 +79,10 @@ export default function Lits() {
         <table className="data-table"><thead><tr><th>Patient</th><th>Lit</th><th>Pavillon</th><th>Médecin</th><th>Service</th><th>Admission</th><th>Actions</th></tr></thead>
           <tbody>{hosps.map((h: any) => (
             <tr key={h.id}><td className="fw-600">{h.patient_prenom} {h.patient_nom}</td><td>{h.lit_numero || '-'}</td><td>{h.pavillon_nom || '-'}</td><td>Dr. {h.medecin_prenom} {h.medecin_nom}</td><td>{h.service_nom || '-'}</td><td>{new Date(h.date_admission).toLocaleDateString('fr-FR')}</td>
-              <td><button className="btn-ghost btn-sm" onClick={() => handleSortie(h.id)}>Sortie ✓</button></td></tr>
+              <td>
+                <button className="btn-ghost btn-sm" onClick={() => handleSortie(h.id)} title="Marquer la sortie">Sortie ✓</button>
+                <button className="btn-ghost btn-sm" onClick={() => window.open(`/api/print/resume-sortie/${h.id}`, '_blank')} title="Imprimer le résumé de sortie"><i className="bi bi-printer"></i></button>
+              </td></tr>
           ))}{hosps.length === 0 && <tr><td colSpan={7} className="table-empty">Aucune hospitalisation active</td></tr>}</tbody>
         </table>
       )}

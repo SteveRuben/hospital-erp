@@ -12,6 +12,7 @@ import app from './app.js';
 import initDB from './config/init.js';
 import { attachRealtime } from './services/realtime.js';
 import { scheduleRetention } from './services/retention.js';
+import { scheduleAuditVerify } from './services/audit-verify-scheduler.js';
 
 const PORT = process.env.PORT || 5000;
 
@@ -21,6 +22,7 @@ const start = async () => {
     const server = http.createServer(app);
     attachRealtime(server);
     scheduleRetention();
+    scheduleAuditVerify();
     server.listen(PORT, () => {
       console.log(`Server running on port ${PORT}`);
     });

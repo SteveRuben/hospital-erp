@@ -3,6 +3,7 @@ import { prisma } from '../config/db.js';
 import { authenticate, authorize, AuthRequest } from '../middleware/auth.js';
 import { isEncryptionEnabled } from '../services/encryption.js';
 import { getSessionTimeoutMs } from '../services/session.js';
+import { verifyAuditChain } from '../services/audit-verify.js';
 
 const router = Router();
 
@@ -106,6 +107,19 @@ router.get('/posture', authenticate, authorize('admin'), async (_req: AuthReques
     });
   } catch (err) {
     console.error('[ADMIN] Posture error:', err);
+    res.status(500).json({ error: 'Erreur serveur' });
+  }
+});
+
+// On-demand audit-chain integrity check. The verifier also runs
+// automatically every 6 h via scheduleAuditVerify(); this endpoint
+// lets an admin trigger an immediate scan and see the breaks inline.
+router.get('/audit-verify', authenticate, authorize('admin'), async (_req: AuthRequest, res: Response): Promise<void> => {
+  try {
+    const result = await verifyAuditChain();
+    res.json(result);
+  } catch (err) {
+    console.error('[ADMIN] audit-verify failed:', err);
     res.status(500).json({ error: 'Erreur serveur' });
   }
 });

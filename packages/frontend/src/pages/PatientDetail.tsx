@@ -88,6 +88,7 @@ export default function PatientDetail() {
           <button className="btn-primary btn-sm" onClick={() => navigate('/app/rendezvous')}><i className="bi bi-calendar-plus"></i> RDV</button>
           <button className="btn-primary btn-sm" onClick={() => navigate('/app/consultations')}><i className="bi bi-clipboard-plus"></i> Consultation</button>
           <button className="btn-primary btn-sm" onClick={() => setShowModal('alerte')}><i className="bi bi-bell-fill"></i> Alerte</button>
+          <button className="btn-ghost btn-sm" onClick={() => window.open(`/api/print/fiche-transmission/${patient.id}`, '_blank')} title="Fiche de transmission inter-équipes"><i className="bi bi-printer"></i> Transmission</button>
         </div>
       </div>
 
@@ -387,9 +388,26 @@ function PrescriptionsTab({ data, patientId, medecins, onRefresh, showModal, set
   return (
     <div>
       <div className="d-flex justify-between align-center mb-2"><h3 style={{fontSize:'1rem'}}>Prescriptions</h3><button className="btn-primary btn-sm" onClick={() => setShowModal('prescription')}><i className="bi bi-plus"></i> Prescription</button></div>
-      <table className="data-table"><thead><tr><th>Médicament</th><th>Dosage</th><th>Fréquence</th><th>Durée</th><th>Voie</th><th>Médecin</th><th>Statut</th></tr></thead>
-        <tbody>{data.map((p:any) => <tr key={p.id}><td className="fw-600">{p.medicament}</td><td>{p.dosage||'-'}</td><td>{p.frequence||'-'}</td><td>{p.duree||'-'}</td><td>{p.voie||'-'}</td><td>Dr. {p.medecin_prenom} {p.medecin_nom}</td><td><span className={`tag ${p.statut==='active'?'tag-green':p.statut==='terminee'?'tag-gray':'tag-red'}`}>{p.statut}</span></td></tr>)}
-        {!data.length && <tr><td colSpan={7} className="table-empty">Aucune prescription</td></tr>}</tbody>
+      <table className="data-table"><thead><tr><th>Médicament</th><th>Dosage</th><th>Fréquence</th><th>Durée</th><th>Voie</th><th>Médecin</th><th>Dispensé</th><th>Statut</th></tr></thead>
+        <tbody>{data.map((p:any) => <tr key={p.id}>
+          <td className="fw-600">{p.medicament}</td>
+          <td>{p.dosage||'-'}</td>
+          <td>{p.frequence||'-'}</td>
+          <td>{p.duree||'-'}</td>
+          <td>{p.voie||'-'}</td>
+          <td>Dr. {p.medecin_prenom} {p.medecin_nom}</td>
+          <td>
+            {p.dispensations_count > 0 ? (
+              <span className="tag tag-blue" title={`${p.dispensations_total} unité(s) délivrée(s)`}>
+                <i className="bi bi-capsule"></i> {p.dispensations_count}× ({p.dispensations_total})
+              </span>
+            ) : (
+              <span className="text-muted" style={{ fontSize: '0.75rem' }}>—</span>
+            )}
+          </td>
+          <td><span className={`tag ${p.statut==='active'?'tag-green':p.statut==='terminee'?'tag-gray':'tag-red'}`}>{p.statut}</span></td>
+        </tr>)}
+        {!data.length && <tr><td colSpan={8} className="table-empty">Aucune prescription</td></tr>}</tbody>
       </table>
       {showModal === 'prescription' && (
         <div className="modal-overlay" onClick={()=>setShowModal(null)}><div className="modal-container modal-lg" onClick={e=>e.stopPropagation()}>
