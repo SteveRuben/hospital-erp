@@ -1,5 +1,6 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useContext } from 'react';
 import { useNavigate } from 'react-router-dom';
+import { AuthContext } from '../App';
 import { getExamens, updateExamen, deleteExamen, getPatients } from '../services/api';
 import { useSnackbar } from '../components/Snackbar';
 import { useBranding } from '../components/BrandingProvider';
@@ -45,6 +46,15 @@ const nextAction: Record<string, string> = {
   resultat: 'Valider',
   valide: 'Transmettre',
 };
+// Retour en arrière le long des étapes cliniques — réservé à l'admin (flux
+// bidirectionnel). On ne recule pas dans les états de paiement (a_payer/demande),
+// gérés à la caisse.
+const prevStatut: Record<string, string> = {
+  analyse: 'prelevement',
+  resultat: 'analyse',
+  valide: 'resultat',
+  transmis: 'valide',
+};
 
 export default function Laboratoire() {
   const [examens, setExamens] = useState<ExamenAug[]>([]);
@@ -55,7 +65,12 @@ export default function Laboratoire() {
   const navigate = useNavigate();
   const { showSnackbar } = useSnackbar();
   const { branding } = useBranding();
+  const { user } = useContext(AuthContext);
   const money = (n: number) => formatMoney(n, branding.devise);
+  // admin + laborantin pilotent tout le workflow ; le médecin a un accès en
+  // lecture et ne peut que valider un résultat (résultat → validé).
+  const canLabWorkflow = user?.role === 'admin' || user?.role === 'laborantin';
+  const isMedecin = user?.role === 'medecin';
 
   useEffect(() => { loadData(); }, []);
 
@@ -151,14 +166,20 @@ export default function Laboratoire() {
                       {FICHIERS_STATUTS.has(s) && (
                         <ExamenFichiers examenId={ex.id} canUpload={true} variant="compact" />
                       )}
-                      {s === 'analyse' && (
+                      {s === 'analyse' && canLabWorkflow && (
                         <button className="btn-primary btn-sm mt-1" onClick={() => handleAnalyseClick(ex)}>
                           {nextAction[s]} →
                         </button>
                       )}
-                      {s !== 'a_payer' && s !== 'analyse' && nextStatut[s] && (
+                      {s !== 'a_payer' && s !== 'analyse' && nextStatut[s] &&
+                        (canLabWorkflow || (isMedecin && s === 'resultat')) && (
                         <button className="btn-ghost btn-sm mt-1" onClick={() => changeStatut(ex, nextStatut[s])}>
                           {nextAction[s]} →
+                        </button>
+                      )}
+                      {user?.role === 'admin' && prevStatut[s] && (
+                        <button className="btn-ghost btn-sm mt-1" style={{ color: 'var(--cds-text-secondary)' }} title="Revenir à l'étape précédente" onClick={() => changeStatut(ex, prevStatut[s])}>
+                          ← {statutLabels[prevStatut[s]]?.label}
                         </button>
                       )}
                     </div>
@@ -184,8 +205,15 @@ export default function Laboratoire() {
                   <td>{ex.resultat || '-'}</td>
                   <td>{ex.montant ? money(Number(ex.montant)) : '-'}</td>
                   <td>
-                    <button className="btn-icon" onClick={() => navigate(`/app/laboratoire/${ex.id}/modifier`)}><i className="bi bi-pencil"></i></button>
-                    <button className="btn-icon" onClick={async () => { if (confirm('Supprimer ?')) { await deleteExamen(ex.id); loadData(); }}}><i className="bi bi-trash"></i></button>
+                    {isMedecin && statut === 'resultat' && (
+                      <button className="btn-ghost btn-sm" onClick={() => changeStatut(ex, 'valide')}>Valider</button>
+                    )}
+                    {canLabWorkflow && (
+                      <button className="btn-icon" onClick={() => navigate(`/app/laboratoire/${ex.id}/modifier`)}><i className="bi bi-pencil"></i></button>
+                    )}
+                    {user?.role === 'admin' && (
+                      <button className="btn-icon" onClick={async () => { if (confirm('Supprimer ?')) { await deleteExamen(ex.id); loadData(); }}}><i className="bi bi-trash"></i></button>
+                    )}
                   </td>
                 </tr>
               );

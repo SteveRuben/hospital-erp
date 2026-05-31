@@ -276,9 +276,21 @@ router.post('/:id/marquer-paye', authenticate, authorize('admin', 'comptable', '
   }
 });
 
-router.put('/:id', authenticate, authorize('admin', 'laborantin'), async (req: AuthRequest, res: Response): Promise<void> => {
+router.put('/:id', authenticate, authorize('admin', 'laborantin', 'medecin'), async (req: AuthRequest, res: Response): Promise<void> => {
   try {
     const { type_examen, resultat, date_examen, montant, statut, priorite, demandeur_id } = req.body;
+    // Le médecin a un accès restreint au labo : il peut UNIQUEMENT valider un
+    // résultat (résultat → validé), sans toucher aux autres champs. Toute autre
+    // opération PUT lui est refusée.
+    if (req.user!.role === 'medecin') {
+      const onlyValidation = statut === ExamenStatut.valide
+        && type_examen === undefined && resultat === undefined && montant === undefined
+        && date_examen === undefined && priorite === undefined && demandeur_id === undefined;
+      if (!onlyValidation) {
+        res.status(403).json({ error: 'En tant que médecin, vous ne pouvez que valider un résultat (« résultat » → « validé »).' });
+        return;
+      }
+    }
     const data: Parameters<typeof prisma.examen.update>[0]['data'] = {};
     if (type_examen !== undefined) data.typeExamen = type_examen;
     if (resultat !== undefined) data.resultat = resultat;
@@ -309,10 +321,15 @@ router.put('/:id', authenticate, authorize('admin', 'laborantin'), async (req: A
     if (!before) { res.status(404).json({ error: 'Examen non trouvé' }); return; }
 
     if (statut !== undefined) {
-      try { assertTransition('examen', before.statut, statut); }
-      catch (e) {
-        if (e instanceof WorkflowError) { res.status(400).json({ error: e.message }); return; }
-        throw e;
+      // Admin : flux bidirectionnel — n'importe quelle transition est permise
+      // (y compris un retour en arrière). La contrainte unidirectionnelle ne
+      // s'applique qu'aux autres rôles.
+      if (req.user!.role !== 'admin') {
+        try { assertTransition('examen', before.statut, statut); }
+        catch (e) {
+          if (e instanceof WorkflowError) { res.status(400).json({ error: e.message }); return; }
+          throw e;
+        }
       }
     }
 
