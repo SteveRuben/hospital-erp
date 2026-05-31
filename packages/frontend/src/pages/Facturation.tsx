@@ -1,9 +1,11 @@
 import { useState, useEffect } from 'react';
-import api, { getTarifs, createTarif, getFactures, getFacture, createFacture, createPaiement, printFacture, getExamens, markExamenPaid } from '../services/api';
+import api, { getTarifs, createTarif, getFactures, getFacture, createFacture, createPaiement, printFacture, getExamens } from '../services/api';
 import { useSnackbar } from '../components/Snackbar';
 import PatientTypeahead from '../components/PatientTypeahead';
+import PaymentModal from '../components/PaymentModal';
 
 interface RefItem { code: string; libelle: string }
+type PaymentMode = 'mobile_money' | 'carte' | 'virement' | 'especes' | 'assurance';
 
 interface PendingExamen {
   id: number;
@@ -35,6 +37,9 @@ export default function Facturation() {
   // This banner persists at the top of the Caisse tab until the
   // cashier dismisses it or makes another payment.
   const [lastPayment, setLastPayment] = useState<{ type: 'examen' | 'facture'; libelle: string; montant: number; mode: string; at: Date } | null>(null);
+  // Modal de paiement actif (mode + examen ciblé). Remplace l'ancien
+  // « 1-clic » qui marquait directement payé sans confirmation.
+  const [paymentTarget, setPaymentTarget] = useState<{ examen: PendingExamen; mode: PaymentMode } | null>(null);
 
   useEffect(() => { loadAll(); }, []);
 
@@ -52,30 +57,31 @@ export default function Facturation() {
     finally { setLoading(false); }
   };
 
-  // Quick-pay an exam in 1 click with the chosen mode. Optimistic UI: remove
-  // the row immediately so the cashier doesn't accidentally double-click.
-  const quickPay = async (examen: PendingExamen, mode: string) => {
+  // Ouvre le modal de paiement sur le mode choisi. Plus de quickPay
+  // direct : la confirmation passe par PaymentModal (Remita pour MM,
+  // saisie ref pour carte/virement, monnaie à rendre pour espèces,
+  // prise en charge pour assurance).
+  const openPayment = (examen: PendingExamen, mode: PaymentMode) => {
+    setPaymentTarget({ examen, mode });
+  };
+
+  const onPaymentSuccess = (info: { mode: string; reference?: string; montant: number; assurance?: string; co_paiement?: number }) => {
+    if (!paymentTarget) return;
+    const { examen } = paymentTarget;
     setPendingExamens(prev => prev.filter(p => p.id !== examen.id));
-    try {
-      await markExamenPaid(examen.id, mode);
-      // Two confirmations on purpose: a snackbar for the casual case
-      // and a persistent banner so the cashier sees that the payment
-      // actually landed even if they were looking elsewhere.
-      const modeLabel = modesPaiement.find(m => m.code.toLowerCase() === mode.toLowerCase())?.libelle ?? mode;
-      const montant = Number(examen.montant ?? 0);
-      setLastPayment({
-        type: 'examen',
-        libelle: `${examen.type_examen} — ${examen.patient_prenom ?? ''} ${examen.patient_nom ?? ''}`.trim(),
-        montant,
-        mode: modeLabel,
-        at: new Date(),
-      });
-      showSnackbar(`✓ ${examen.type_examen} — payé (${modeLabel})`, 'success');
-    } catch (err: any) {
-      showSnackbar(err.response?.data?.error || 'Erreur — examen restauré dans la liste', 'error');
-      // Rollback the optimistic removal so the cashier can retry.
-      loadAll();
-    }
+    const modeLabel = info.assurance
+      ? `Assurance ${info.assurance}${info.co_paiement ? ` (co-paiement ${info.co_paiement.toLocaleString('fr-FR')} XOF restant)` : ''}`
+      : modesPaiement.find(m => m.code.toLowerCase() === info.mode.toLowerCase())?.libelle ?? info.mode;
+    setLastPayment({
+      type: 'examen',
+      libelle: `${examen.type_examen} — ${examen.patient_prenom ?? ''} ${examen.patient_nom ?? ''}`.trim(),
+      montant: info.montant,
+      mode: modeLabel,
+      at: new Date(),
+    });
+    showSnackbar(`✓ ${examen.type_examen} — paiement enregistré`, 'success');
+    setPaymentTarget(null);
+    loadAll();
   };
 
   const viewDetail = async (id: number) => { try { const { data } = await getFacture(id); setDetail(data); setTab('detail'); } catch { alert('Erreur'); } };
@@ -231,19 +237,11 @@ ${paiement.notes ? `<tr><td><strong>Notes</strong></td><td>${paiement.notes}</td
                   <td className="fw-600">{ex.montant ? fmt(Number(ex.montant)) : '-'}</td>
                   <td>
                     <div className="d-flex gap-1" style={{ flexWrap: 'nowrap' }}>
-                      <button className="btn-primary btn-sm" title="Espèces" onClick={() => quickPay(ex, 'especes')}><i className="bi bi-cash"></i> Esp.</button>
-                      <button className="btn-primary btn-sm" title="Mobile Money" onClick={() => quickPay(ex, 'mobile_money')}><i className="bi bi-phone"></i> MM</button>
-                      <button className="btn-primary btn-sm" title="Carte bancaire" onClick={() => quickPay(ex, 'carte')}><i className="bi bi-credit-card"></i> Carte</button>
-                      <select className="form-select" style={{ padding: '0.25rem', fontSize: '0.75rem', width: 'auto' }} value="" onChange={e => { if (e.target.value) quickPay(ex, e.target.value); }} title="Autres modes">
-                        <option value="">⋯</option>
-                        {modesPaiement
-                          .map(m => m.code.toLowerCase())
-                          .filter(c => !['especes', 'mobile_money', 'carte'].includes(c))
-                          .map(c => {
-                            const item = modesPaiement.find(m => m.code.toLowerCase() === c)!;
-                            return <option key={c} value={c}>{item.libelle}</option>;
-                          })}
-                      </select>
+                      <button className="btn-primary btn-sm" title="Espèces" onClick={() => openPayment(ex, 'especes')}><i className="bi bi-cash"></i> Esp.</button>
+                      <button className="btn-primary btn-sm" title="Mobile Money via Remita" onClick={() => openPayment(ex, 'mobile_money')}><i className="bi bi-phone"></i> MM</button>
+                      <button className="btn-primary btn-sm" title="Carte bancaire" onClick={() => openPayment(ex, 'carte')}><i className="bi bi-credit-card"></i> Carte</button>
+                      <button className="btn-secondary btn-sm" title="Prise en charge assurance" onClick={() => openPayment(ex, 'assurance')}><i className="bi bi-shield-check"></i> Assur.</button>
+                      <button className="btn-ghost btn-sm" title="Virement" onClick={() => openPayment(ex, 'virement')}><i className="bi bi-bank"></i> Vir.</button>
                     </div>
                   </td>
                 </tr>
@@ -371,6 +369,20 @@ ${paiement.notes ? `<tr><td><strong>Notes</strong></td><td>${paiement.notes}</td
             <div className="form-group"><label className="form-label">Référence</label><input type="text" className="form-input" value={paiementForm.reference} onChange={e => setPaiementForm({...paiementForm, reference: e.target.value})} placeholder="N° transaction, bon assurance..." /></div>
           </div><div className="modal-footer"><button type="button" className="btn-secondary" onClick={() => setShowModal(null)}>Annuler</button><button type="submit" className="btn-primary">Enregistrer le paiement</button></div></form>
         </div></div>
+      )}
+
+      {/* Modal Paiement par mode (Remita / Carte / Espèces / Virement / Assurance) */}
+      {paymentTarget && (
+        <PaymentModal
+          examenId={paymentTarget.examen.id}
+          patientId={paymentTarget.examen.patient_id}
+          patientName={`${paymentTarget.examen.patient_prenom ?? ''} ${paymentTarget.examen.patient_nom ?? ''}`.trim()}
+          patientPhone={paymentTarget.examen.patient_telephone}
+          montant={Number(paymentTarget.examen.montant ?? 0)}
+          mode={paymentTarget.mode}
+          onSuccess={onPaymentSuccess}
+          onClose={() => setPaymentTarget(null)}
+        />
       )}
     </div>
   );

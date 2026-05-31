@@ -1,5 +1,6 @@
 import { useState, useEffect, useRef } from 'react';
-import { getRendezVous, createRendezVous, updateRendezVousStatut, deleteRendezVous, getMedecins, getServices, searchPatientsForOrdering } from '../services/api';
+import { useSearchParams } from 'react-router-dom';
+import { getRendezVous, createRendezVous, updateRendezVousStatut, deleteRendezVous, getMedecins, getServices, searchPatientsForOrdering, getPatient } from '../services/api';
 import { coerceRdvPayload } from '../lib/formCoerce';
 import type { RendezVous as RDV, Medecin, Service } from '../types';
 
@@ -33,7 +34,26 @@ export default function RendezVous() {
   const [patientOpen, setPatientOpen] = useState(false);
   const patientTimer = useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
 
+  const [searchParams] = useSearchParams();
   useEffect(() => { loadData(); }, []);
+
+  // Deep-link from PatientDetail's RDV shortcut. The URL carries
+  // ?new=1&patient_id=N — we hydrate the patient name, pre-fill the
+  // form, and pop the create modal open in one go.
+  useEffect(() => {
+    if (searchParams.get('new') !== '1') return;
+    const pid = searchParams.get('patient_id');
+    if (!pid) { setShowModal(true); return; }
+    getPatient(Number(pid))
+      .then(({ data }) => {
+        const p = data as any;
+        const label = `${p.prenom ?? ''} ${p.nom ?? ''}`.trim();
+        setForm(f => ({ ...f, patient_id: String(p.id) }));
+        setPatientQuery(label);
+        setShowModal(true);
+      })
+      .catch(() => setShowModal(true));
+  }, [searchParams]);
 
   // Debounced server-side search — 200ms so each keystroke doesn't fire.
   useEffect(() => {

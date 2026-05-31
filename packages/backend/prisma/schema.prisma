@@ -1155,6 +1155,89 @@ model PatientAttribution {
   @@map("patient_attributions")
 }
 
+// Registre des assurances santé acceptées par l'établissement. Le
+// taux de couverture par défaut est appliqué quand on ne dispose pas
+// d'information par acte ; en réalité c'est par contrat et par acte
+// — la table sert d'amorce que le caissier peut ajuster à la main.
+model Assurance {
+  id              Int       @id @default(autoincrement())
+  nom             String    @db.VarChar(200)
+  code            String?   @unique @db.VarChar(50)
+  contact         String?   @db.VarChar(200)
+  tauxDefaut      Decimal?  @default(80) @map("taux_defaut") @db.Decimal(5, 2)
+  actif           Boolean   @default(true)
+  createdAt       DateTime  @default(now()) @map("created_at")
+  prisesEnCharge  PriseEnCharge[]
+  @@map("assurances")
+}
+
+// Prise en charge — l'engagement de l'assureur sur un acte. Trois
+// montants explicites pour éviter toute ambiguïté comptable :
+//   montant_total       : prix de l'acte
+//   montant_assurance   : ce que l'assurance rembourse (tiers payant)
+//   montant_patient     : ticket modérateur restant à la charge du patient
+// Le statut suit le workflow d'autorisation : en_attente (créée),
+// accordee (l'assureur a validé), refusee, payee (l'assureur a réglé).
+enum PriseEnChargeStatut {
+  en_attente
+  accordee
+  refusee
+  payee
+}
+
+model PriseEnCharge {
+  id               Int                 @id @default(autoincrement())
+  assuranceId      Int                 @map("assurance_id")
+  patientId        Int                 @map("patient_id")
+  examenId         Int?                @map("examen_id")
+  factureId        Int?                @map("facture_id")
+  numeroPolice     String              @map("numero_police") @db.VarChar(100)
+  montantTotal     Decimal             @map("montant_total") @db.Decimal(12, 2)
+  montantAssurance Decimal             @map("montant_assurance") @db.Decimal(12, 2)
+  montantPatient   Decimal             @map("montant_patient") @db.Decimal(12, 2)
+  statut           PriseEnChargeStatut @default(en_attente)
+  notes            String?
+  createdByUserId  Int?                @map("created_by_user_id")
+  createdAt        DateTime            @default(now()) @map("created_at")
+  assurance        Assurance           @relation(fields: [assuranceId], references: [id])
+  @@index([patientId])
+  @@index([statut])
+  @@map("prises_en_charge")
+}
+
+// Trace d'un paiement initialisé via un agrégateur (Remita pour MM /
+// carte). Permet le polling et le rapprochement du webhook. Conservé
+// comme table séparée des paiements/recettes parce qu'on enregistre
+// même les tentatives non confirmées.
+enum PaymentIntentStatut {
+  pending
+  paid
+  failed
+  cancelled
+}
+
+model PaymentIntent {
+  id              Int                 @id @default(autoincrement())
+  reference       String              @unique @db.VarChar(100)
+  provider        String              @db.VarChar(30)            // 'remita' | 'manual'
+  mode            String              @db.VarChar(30)            // 'mobile_money' | 'carte' | 'virement' | 'especes'
+  examenId        Int?                @map("examen_id")
+  factureId       Int?                @map("facture_id")
+  patientId       Int?                @map("patient_id")
+  montant         Decimal             @db.Decimal(12, 2)
+  phone           String?             @db.VarChar(30)
+  externalRef     String?             @map("external_ref") @db.VarChar(200)
+  ussdCode        String?             @map("ussd_code") @db.VarChar(60)
+  statut          PaymentIntentStatut @default(pending)
+  errorMessage    String?             @map("error_message")
+  createdByUserId Int?                @map("created_by_user_id")
+  createdAt       DateTime            @default(now()) @map("created_at")
+  updatedAt       DateTime            @default(now()) @map("updated_at")
+  @@index([statut])
+  @@index([examenId])
+  @@map("payment_intents")
+}
+
 model WebhookEvent {
   id          Int      @id @default(autoincrement())
   eventId     String   @unique @map("event_id") @db.VarChar(100)

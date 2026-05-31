@@ -180,7 +180,7 @@ function App() {
                         <Route path="/consultations/:id/modifier" element={<RoleGuard roles={['admin','medecin']}><ConsultationForm /></RoleGuard>} />
                         <Route path="/finances" element={<RoleGuard roles={['admin','comptable']}><Finances /></RoleGuard>} />
                         <Route path="/laboratoire" element={<RoleGuard roles={['admin','laborantin']}><Laboratoire /></RoleGuard>} />
-                        <Route path="/laboratoire/nouveau" element={<RoleGuard roles={['admin','laborantin']}><ExamenForm /></RoleGuard>} />
+                        <Route path="/laboratoire/nouveau" element={<RoleGuard roles={['admin','laborantin','medecin']}><ExamenForm /></RoleGuard>} />
                         <Route path="/laboratoire/:id/modifier" element={<RoleGuard roles={['admin','laborantin']}><ExamenForm /></RoleGuard>} />
                         <Route path="/rendezvous" element={<RoleGuard roles={['admin','medecin','reception']}><RendezVous /></RoleGuard>} />
                         <Route path="/visites" element={<RoleGuard roles={['admin','medecin','reception']}><Visites /></RoleGuard>} />

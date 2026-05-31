@@ -85,8 +85,17 @@ export default function PatientDetail() {
           </div>
         </div>
         <div className="patient-actions">
-          <button className="btn-primary btn-sm" onClick={() => navigate('/app/rendezvous')}><i className="bi bi-calendar-plus"></i> RDV</button>
-          <button className="btn-primary btn-sm" onClick={() => navigate('/app/consultations')}><i className="bi bi-clipboard-plus"></i> Consultation</button>
+          {/* Gating by role mirrors the route RoleGuards so a user
+              never lands on a 403 page. */}
+          {(user?.role === 'admin' || user?.role === 'medecin' || user?.role === 'reception') && (
+            <button className="btn-primary btn-sm" onClick={() => navigate(`/app/rendezvous?new=1&patient_id=${patient.id}`)}><i className="bi bi-calendar-plus"></i> RDV</button>
+          )}
+          {(user?.role === 'admin' || user?.role === 'medecin') && (
+            <button className="btn-primary btn-sm" onClick={() => navigate(`/app/consultations/nouvelle?patient_id=${patient.id}`)}><i className="bi bi-clipboard-plus"></i> Consultation</button>
+          )}
+          {(user?.role === 'admin' || user?.role === 'laborantin' || user?.role === 'medecin') && (
+            <button className="btn-primary btn-sm" onClick={() => navigate(`/app/laboratoire/nouveau?patient_id=${patient.id}`)}><i className="bi bi-flask"></i> Examen</button>
+          )}
           <button className="btn-primary btn-sm" onClick={() => setShowModal('alerte')}><i className="bi bi-bell-fill"></i> Alerte</button>
           <button className="btn-ghost btn-sm" onClick={() => window.open(`/api/print/fiche-transmission/${patient.id}`, '_blank')} title="Fiche de transmission inter-équipes"><i className="bi bi-printer"></i> Transmission</button>
         </div>

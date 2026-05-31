@@ -410,6 +410,32 @@ export const getPrescriptionDispensations = (patientId: number, prescriptionId: 
   api.get<DispensationRow[]>(`/prescriptions/${patientId}/dispensations/${prescriptionId}`);
 // createDispensation declared further down (legacy helper, untyped). Re-using it.
 
+// Payments + insurance
+export interface PaymentIntentInit {
+  reference: string;
+  ussd_code: string | null;
+  provider: string;
+  mode: string;
+  instructions: string;
+}
+export interface PaymentIntentStatus {
+  statut: 'pending' | 'paid' | 'failed' | 'cancelled';
+  error_message?: string | null;
+}
+export const initiatePayment = (data: { mode: 'mobile_money' | 'carte' | 'virement' | 'especes'; examen_id?: number; facture_id?: number; montant: number; phone?: string }) =>
+  api.post<PaymentIntentInit>('/payments/initiate', data);
+export const getPaymentStatus = (reference: string) =>
+  api.get<PaymentIntentStatus>(`/payments/status/${reference}`);
+export const confirmPayment = (reference: string, external_ref?: string) =>
+  api.post(`/payments/confirm/${reference}`, { external_ref });
+export const cancelPayment = (reference: string) =>
+  api.post(`/payments/cancel/${reference}`);
+
+export interface AssuranceRow { id: number; nom: string; code: string | null; tauxDefaut: number | string | null; actif: boolean; contact: string | null }
+export const getAssurances = () => api.get<AssuranceRow[]>('/payments/assurances');
+export const createPriseEnCharge = (data: { assurance_id: number; patient_id: number; examen_id?: number; facture_id?: number; numero_police: string; montant_total: number; montant_assurance: number; montant_patient: number; notes?: string }) =>
+  api.post('/payments/prise-en-charge', data);
+
 // Profile + admin user actions
 export const updateMe = (data: { nom?: string; prenom?: string; telephone?: string }) => api.put('/auth/me', data);
 export const adminResetPassword = (userId: number, new_password: string) => api.post(`/auth/users/${userId}/reset-password`, { new_password });

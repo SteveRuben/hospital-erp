@@ -174,7 +174,11 @@ router.get('/patient/:patientId/types', authenticate, async (req: AuthRequest, r
   } catch (err) { res.status(500).json({ error: 'Erreur serveur' }); }
 });
 
-router.post('/', authenticate, authorize('admin', 'laborantin'), async (req: AuthRequest, res: Response): Promise<void> => {
+// Examen creation is also open to medecin — clinicians need to order
+// labs from the patient chart without depending on a laborantin to
+// type the request in. Result entry / Kanban moves stay
+// laborantin-only via the other routes.
+router.post('/', authenticate, authorize('admin', 'laborantin', 'medecin'), async (req: AuthRequest, res: Response): Promise<void> => {
   try {
     const { patient_id, type_examen, resultat, date_examen, montant, priorite } = req.body;
     const montantNum = montant !== undefined && montant !== null && montant !== '' ? Number(montant) : null;

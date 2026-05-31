@@ -1,8 +1,8 @@
 import { useState, useEffect, useRef } from 'react';
-import { useNavigate, useParams } from 'react-router-dom';
+import { useNavigate, useParams, useSearchParams } from 'react-router-dom';
 import {
   createExamen, updateExamen, getExamen, searchPatientsForOrdering,
-  getExamenTypesForPatient, getTarifsByCategorie, type TarifRow,
+  getExamenTypesForPatient, getTarifsByCategorie, type TarifRow, getPatient,
 } from '../services/api';
 
 /**
@@ -25,9 +25,13 @@ interface PatientSuggestion {
 export default function ExamenForm() {
   const { id } = useParams();
   const navigate = useNavigate();
+  const [searchParams] = useSearchParams();
   const isEdit = !!id;
+  // ?patient_id=N pre-selects the patient (used by PatientDetail's
+  // 'Examen' shortcut so the cashier doesn't have to re-search).
+  const prefillPatientId = searchParams.get('patient_id') ?? '';
   const [form, setForm] = useState({
-    patient_id: '',
+    patient_id: prefillPatientId,
     patient_label: '',
     type_examen: '',
     resultat: '',
@@ -51,12 +55,15 @@ export default function ExamenForm() {
   // Tarif catalogue for autofill
   const [tarifs, setTarifs] = useState<TarifRow[]>([]);
 
-  // Load existing exam (edit mode) + tarif catalogue (always)
+  // Load existing exam (edit mode) + tarif catalogue (always).
+  // When arriving with ?patient_id=N (from PatientDetail), also fetch
+  // the patient so the typeahead shows the name instead of the bare id.
   useEffect(() => {
     Promise.all([
       isEdit ? getExamen(Number(id)) : Promise.resolve(null),
       getTarifsByCategorie('examen').catch(() => ({ data: [] })),
-    ]).then(([e, t]) => {
+      !isEdit && prefillPatientId ? getPatient(Number(prefillPatientId)).catch(() => null) : Promise.resolve(null),
+    ]).then(([e, t, p]) => {
       setTarifs(t.data ?? []);
       if (e?.data) {
         const d = e.data as any;
@@ -73,9 +80,14 @@ export default function ExamenForm() {
           priorite: (d.priorite as 'urgent' | 'prioritaire' | 'normal') ?? 'normal',
         });
         setPatientQuery(label);
+      } else if (p?.data) {
+        const pd = p.data as any;
+        const label = `${pd.prenom ?? ''} ${pd.nom ?? ''}`.trim();
+        setForm(f => ({ ...f, patient_id: String(pd.id), patient_label: label }));
+        setPatientQuery(label);
       }
     }).catch(() => setError('Erreur de chargement')).finally(() => setLoading(false));
-  }, [id, isEdit]);
+  }, [id, isEdit, prefillPatientId]);
 
   // Whenever the patient changes, refresh the "previously ordered types" list
   useEffect(() => {

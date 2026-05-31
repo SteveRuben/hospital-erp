@@ -1,14 +1,19 @@
 import { useState, useEffect } from 'react';
-import { useNavigate, useParams } from 'react-router-dom';
-import { createConsultation, updateConsultation, getConsultation, getMedecins, getServices } from '../services/api';
+import { useNavigate, useParams, useSearchParams } from 'react-router-dom';
+import { createConsultation, updateConsultation, getConsultation, getMedecins, getServices, getPatient } from '../services/api';
 import PatientTypeahead from '../components/PatientTypeahead';
 import type { Medecin, Service } from '../types';
 
 export default function ConsultationForm() {
   const { id } = useParams();
   const navigate = useNavigate();
+  const [searchParams] = useSearchParams();
   const isEdit = !!id;
-  const [form, setForm] = useState({ patient_id: '', medecin_id: '', service_id: '', diagnostic: '', traitement: '', notes: '', motif: '' });
+  // ?patient_id=N pre-selects the patient. Used by PatientDetail to
+  // route directly into a pre-filled creation form instead of dumping
+  // the user on the consultation list and forcing them to search again.
+  const prefillPatientId = searchParams.get('patient_id') ?? '';
+  const [form, setForm] = useState({ patient_id: prefillPatientId, medecin_id: '', service_id: '', diagnostic: '', traitement: '', notes: '', motif: '' });
   const [patientInitialLabel, setPatientInitialLabel] = useState('');
   const [medecins, setMedecins] = useState<Medecin[]>([]);
   const [services, setServices] = useState<Service[]>([]);
@@ -20,15 +25,19 @@ export default function ConsultationForm() {
       getMedecins(),
       getServices(),
       isEdit ? getConsultation(Number(id)) : Promise.resolve(null),
-    ]).then(([m, s, c]) => {
+      // Hydrate the patient label when we land via ?patient_id so the
+      // typeahead shows the name instead of a bare numeric id.
+      !isEdit && prefillPatientId ? getPatient(Number(prefillPatientId)).catch(() => null) : Promise.resolve(null),
+    ]).then(([m, s, c, p]) => {
       setMedecins(m.data);
       setServices(s.data);
       if (c?.data) {
         const d = c.data as any;
         setForm({ patient_id: String(d.patient_id || ''), medecin_id: String(d.medecin_id || ''), service_id: String(d.service_id || ''), diagnostic: d.diagnostic || '', traitement: d.traitement || '', notes: d.notes || '', motif: d.motif || '' });
-        // Pre-fill the typeahead with the existing patient name so the user
-        // sees who's already attached to the consultation they're editing.
         setPatientInitialLabel(`${d.patient_prenom ?? ''} ${d.patient_nom ?? ''}`.trim());
+      } else if (p?.data) {
+        const pd = p.data as any;
+        setPatientInitialLabel(`${pd.prenom ?? ''} ${pd.nom ?? ''}`.trim());
       }
     }).catch(() => setError('Erreur de chargement')).finally(() => setLoading(false));
   }, [id]);
