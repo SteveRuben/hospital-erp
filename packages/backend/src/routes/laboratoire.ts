@@ -1,10 +1,34 @@
 import { Router, Response } from 'express';
+import multer from 'multer';
+import path from 'path';
+import fs from 'fs';
+import { fileURLToPath } from 'url';
 import { Prisma, ExamenStatut, Priorite } from '@prisma/client';
 import { prisma } from '../config/db.js';
 import { authenticate, authorize, AuthRequest } from '../middleware/auth.js';
 import { notifyMany } from '../services/notify.js';
 import { patientAccessScope, canAccessPatient } from '../services/access-control.js';
 import { assertTransition, WorkflowError } from '../services/workflow.js';
+import { validateUpload, EXAMEN_FICHIER_MIMES } from '../middleware/upload-validation.js';
+import { logAudit } from '../services/audit.js';
+
+// Storage pour les pièces jointes des examens. Même pattern que
+// imagerie : disque local, dossier dédié, nom sanitizé.
+const __dirname = path.dirname(fileURLToPath(import.meta.url));
+const examenFichierDir = path.resolve(__dirname, '../../uploads/examens');
+if (!fs.existsSync(examenFichierDir)) fs.mkdirSync(examenFichierDir, { recursive: true });
+const examenFichierStorage = multer.diskStorage({
+  destination: (_req, _file, cb) => cb(null, examenFichierDir),
+  filename: (_req, file, cb) => cb(null, `${Date.now()}-${file.originalname.replace(/[^a-zA-Z0-9.-]/g, '_')}`),
+});
+const examenFichierUpload = multer({
+  storage: examenFichierStorage,
+  limits: { fileSize: 10 * 1024 * 1024 }, // 10 Mo — au-delà ça relève d'imagerie
+  fileFilter: (_req, file, cb) => {
+    const allowed = ['.pdf', '.png', '.jpg', '.jpeg', '.gif', '.bmp', '.zip', '.xlsx', '.xls'];
+    cb(null, allowed.includes(path.extname(file.originalname).toLowerCase()));
+  },
+});
 
 const router = Router();
 
@@ -303,6 +327,128 @@ router.delete('/:id', authenticate, authorize('admin'), async (req: AuthRequest,
       res.status(404).json({ error: 'Examen non trouvé' });
     }
   } catch (err) { res.status(500).json({ error: 'Erreur serveur' }); }
+});
+
+// === Pièces jointes ===
+
+// List : tout utilisateur ayant accès au patient peut voir les fichiers.
+router.get('/:id/fichiers', authenticate, async (req: AuthRequest, res: Response): Promise<void> => {
+  try {
+    const examen = await prisma.examen.findUnique({ where: { id: Number(req.params.id) }, select: { patientId: true } });
+    if (!examen) { res.status(404).json({ error: 'Examen non trouvé' }); return; }
+    if (!(await canAccessPatient(req.user!, examen.patientId))) {
+      res.status(403).json({ error: 'Accès refusé' });
+      return;
+    }
+    const rows = await prisma.examenFichier.findMany({
+      where: { examenId: Number(req.params.id) },
+      orderBy: { createdAt: 'desc' },
+    });
+    res.json(rows.map(f => ({
+      ...f,
+      // Décor pour le frontend (camelCase déjà, mais on aligne sur le reste de l'API).
+      examen_id: f.examenId,
+      fichier_url: f.fichierUrl,
+      fichier_nom: f.fichierNom,
+      fichier_type: f.fichierType,
+      fichier_taille: f.fichierTaille,
+      uploaded_by_id: f.uploadedById,
+      created_at: f.createdAt,
+    })));
+  } catch (err) { console.error('[LABO] list fichiers failed:', err); res.status(500).json({ error: 'Erreur serveur' }); }
+});
+
+// Upload : l'examen doit avoir au moins atteint 'analyse'. Multer écrit
+// d'abord sur disque, validateUpload vérifie les magic bytes, puis on
+// crée la ligne ExamenFichier.
+router.post('/:id/fichiers', authenticate, authorize('admin', 'laborantin', 'medecin'), examenFichierUpload.single('file'), validateUpload(EXAMEN_FICHIER_MIMES), async (req: AuthRequest, res: Response): Promise<void> => {
+  try {
+    if (!req.file) { res.status(400).json({ error: 'Fichier requis' }); return; }
+    const id = Number(req.params.id);
+    const examen = await prisma.examen.findUnique({ where: { id }, select: { statut: true, patientId: true } });
+    if (!examen) {
+      try { if (req.file?.path) fs.unlinkSync(req.file.path); } catch { /* ignore */ }
+      res.status(404).json({ error: 'Examen non trouvé' });
+      return;
+    }
+    // Les fichiers ne sont uploadables qu'à partir du moment où le
+    // laborantin commence l'analyse. En amont (demande / a_payer /
+    // prelevement) il n'y a rien à joindre.
+    const allowed: ExamenStatut[] = [ExamenStatut.analyse, ExamenStatut.resultat, ExamenStatut.valide, ExamenStatut.transmis];
+    if (!allowed.includes(examen.statut)) {
+      try { if (req.file?.path) fs.unlinkSync(req.file.path); } catch { /* ignore */ }
+      res.status(409).json({ error: `Statut ${examen.statut} : les fichiers sont uploadables à partir de 'analyse'` });
+      return;
+    }
+
+    const fichierUrl = `/uploads/examens/${req.file.filename}`;
+    const notes = typeof req.body?.notes === 'string' ? req.body.notes.substring(0, 500) : null;
+
+    const created = await prisma.examenFichier.create({
+      data: {
+        examenId: id,
+        fichierUrl,
+        fichierNom: req.file.originalname.substring(0, 255),
+        fichierType: req.file.mimetype.substring(0, 100),
+        fichierTaille: req.file.size,
+        notes,
+        uploadedById: req.user!.id,
+      },
+    });
+
+    await logAudit({
+      userId: req.user!.id, action: 'create', tableName: 'examen_fichiers', recordId: created.id,
+      details: `Fichier ${req.file.originalname} (${req.file.size} octets) joint à examen #${id}`,
+    });
+
+    res.status(201).json({
+      ...created,
+      examen_id: created.examenId,
+      fichier_url: created.fichierUrl,
+      fichier_nom: created.fichierNom,
+      fichier_type: created.fichierType,
+      fichier_taille: created.fichierTaille,
+      uploaded_by_id: created.uploadedById,
+      created_at: created.createdAt,
+    });
+  } catch (err) {
+    console.error('[LABO] upload fichier failed:', err);
+    try { if (req.file?.path) fs.unlinkSync(req.file.path); } catch { /* ignore */ }
+    res.status(500).json({ error: 'Erreur serveur' });
+  }
+});
+
+// Delete : admin + laborantin + l'auteur de l'upload.
+router.delete('/:id/fichiers/:fichierId', authenticate, async (req: AuthRequest, res: Response): Promise<void> => {
+  try {
+    const fichierId = Number(req.params.fichierId);
+    const fichier = await prisma.examenFichier.findUnique({ where: { id: fichierId } });
+    if (!fichier || fichier.examenId !== Number(req.params.id)) {
+      res.status(404).json({ error: 'Fichier non trouvé' });
+      return;
+    }
+    const u = req.user!;
+    const canDelete = u.role === 'admin' || u.role === 'laborantin' || fichier.uploadedById === u.id;
+    if (!canDelete) { res.status(403).json({ error: 'Non autorisé' }); return; }
+
+    await prisma.examenFichier.delete({ where: { id: fichierId } });
+
+    // Nettoyage du fichier sur disque — best-effort.
+    try {
+      const localPath = path.resolve(examenFichierDir, path.basename(fichier.fichierUrl));
+      if (localPath.startsWith(examenFichierDir) && fs.existsSync(localPath)) fs.unlinkSync(localPath);
+    } catch (err) { console.warn('[LABO] unlink failed:', err); }
+
+    await logAudit({
+      userId: u.id, action: 'delete', tableName: 'examen_fichiers', recordId: fichierId,
+      details: `Fichier ${fichier.fichierNom} supprimé`,
+    });
+
+    res.json({ message: 'Fichier supprimé' });
+  } catch (err) {
+    console.error('[LABO] delete fichier failed:', err);
+    res.status(500).json({ error: 'Erreur serveur' });
+  }
 });
 
 export default router;

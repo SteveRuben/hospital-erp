@@ -1378,6 +1378,23 @@ export const initDB = async (): Promise<void> => {
       ON CONFLICT (code) DO NOTHING;
     `);
 
+    // Pièces jointes des examens de labo (scans de résultats, photos
+    // de lame, PDF analyseur). Visibles dès le statut 'analyse'.
+    await client.query(`
+      CREATE TABLE IF NOT EXISTS examen_fichiers (
+        id               SERIAL PRIMARY KEY,
+        examen_id        INTEGER NOT NULL REFERENCES examens(id) ON DELETE CASCADE,
+        fichier_url      TEXT NOT NULL,
+        fichier_nom      VARCHAR(255) NOT NULL,
+        fichier_type     VARCHAR(100),
+        fichier_taille   INTEGER,
+        notes            VARCHAR(500),
+        uploaded_by_id   INTEGER REFERENCES users(id) ON DELETE SET NULL,
+        created_at       TIMESTAMP NOT NULL DEFAULT now()
+      );
+      CREATE INDEX IF NOT EXISTS idx_examen_fichiers_examen ON examen_fichiers(examen_id);
+    `);
+
     // Examen payment tracking — adds a "à payer" step to the Kanban before
     // prélèvement when montant > 0. Paid exams skip straight to prélèvement.
     await client.query(`

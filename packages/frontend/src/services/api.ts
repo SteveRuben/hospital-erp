@@ -359,6 +359,31 @@ export const markExamenPaid = (examenId: number, mode_paiement?: string) =>
   api.post(`/laboratoire/${examenId}/marquer-paye`, { mode_paiement });
 export const getExamenTypesForPatient = (patientId: number) =>
   api.get<string[]>(`/laboratoire/patient/${patientId}/types`);
+
+// Pièces jointes des examens (résultats scannés, PDF analyseur, photos).
+export interface ExamenFichierRow {
+  id: number;
+  examen_id: number;
+  fichier_url: string;
+  fichier_nom: string;
+  fichier_type: string | null;
+  fichier_taille: number | null;
+  notes: string | null;
+  uploaded_by_id: number | null;
+  created_at: string;
+}
+export const getExamenFichiers = (examenId: number) =>
+  api.get<ExamenFichierRow[]>(`/laboratoire/${examenId}/fichiers`);
+export const uploadExamenFichier = (examenId: number, file: File, notes?: string) => {
+  const fd = new FormData();
+  fd.append('file', file);
+  if (notes) fd.append('notes', notes);
+  return api.post<ExamenFichierRow>(`/laboratoire/${examenId}/fichiers`, fd, {
+    headers: { 'Content-Type': 'multipart/form-data' },
+  });
+};
+export const deleteExamenFichier = (examenId: number, fichierId: number) =>
+  api.delete(`/laboratoire/${examenId}/fichiers/${fichierId}`);
 export interface TarifRow { id: number; code: string; libelle: string; categorie: string; montant: number; service_nom: string | null }
 export const getTarifsByCategorie = (categorie: string) =>
   api.get<TarifRow[]>('/facturation/tarifs', { params: { categorie } });

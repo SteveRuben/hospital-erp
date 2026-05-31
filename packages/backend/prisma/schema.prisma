@@ -429,8 +429,27 @@ model Examen {
   modePaiement  String?      @map("mode_paiement") @db.VarChar(50)
   createdAt     DateTime     @default(now()) @map("created_at")
   patient       Patient      @relation(fields: [patientId], references: [id])
+  fichiers      ExamenFichier[]
   @@index([statut, priorite])
   @@map("examens")
+}
+
+// Fichiers joints à un examen : résultats scannés, photos de lame,
+// PDF d'analyseur automatique, etc. Visibles dès le statut 'analyse' et
+// conservés tout le long du cycle (resultat / valide / transmis).
+model ExamenFichier {
+  id            Int      @id @default(autoincrement())
+  examenId      Int      @map("examen_id")
+  fichierUrl    String   @map("fichier_url")
+  fichierNom    String   @map("fichier_nom") @db.VarChar(255)
+  fichierType   String?  @map("fichier_type") @db.VarChar(100)
+  fichierTaille Int?     @map("fichier_taille")
+  notes         String?  @db.VarChar(500)
+  uploadedById  Int?     @map("uploaded_by_id")
+  createdAt     DateTime @default(now()) @map("created_at")
+  examen        Examen   @relation(fields: [examenId], references: [id], onDelete: Cascade)
+  @@index([examenId])
+  @@map("examen_fichiers")
 }
 
 // RDV lifecycle. Order: planifie → confirme → en_cours → termine.

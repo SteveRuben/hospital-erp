@@ -4,7 +4,12 @@ import { getExamens, updateExamen, deleteExamen, getPatients } from '../services
 import { useSnackbar } from '../components/Snackbar';
 import { useBranding } from '../components/BrandingProvider';
 import { formatMoney } from '../components/format';
+import ExamenFichiers from '../components/ExamenFichiers';
 import type { Examen, Patient } from '../types';
+
+// Statuts à partir desquels les pièces jointes existent (et sont
+// uploadables). Avant 'analyse' il n'y a logiquement rien à joindre.
+const FICHIERS_STATUTS = new Set(['analyse', 'resultat', 'valide', 'transmis']);
 
 type ExamenAug = Examen & {
   statut?: string;
@@ -143,6 +148,9 @@ export default function Laboratoire() {
                           <i className="bi bi-cash-stack"></i> En attente de paiement à la caisse
                         </div>
                       )}
+                      {FICHIERS_STATUTS.has(s) && (
+                        <ExamenFichiers examenId={ex.id} canUpload={true} variant="compact" />
+                      )}
                       {s === 'analyse' && (
                         <button className="btn-primary btn-sm mt-1" onClick={() => handleAnalyseClick(ex)}>
                           {nextAction[s]} →
@@ -231,6 +239,7 @@ function ResultEntryModal({ examen, onClose, onDone }: { examen: ExamenAug; onCl
               <label className="form-label">Résultat *</label>
               <textarea className="form-input" rows={5} value={resultat} onChange={e => setResultat(e.target.value)} autoFocus required />
             </div>
+            <ExamenFichiers examenId={examen.id} canUpload={true} variant="full" />
           </div>
           <div className="modal-footer">
             <button type="button" className="btn-secondary" onClick={onClose} disabled={saving}>Annuler</button>

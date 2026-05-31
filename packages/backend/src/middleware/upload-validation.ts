@@ -108,4 +108,17 @@ export const IMAGERIE_MIMES: AllowedMime[] = [
   'application/dicom',
 ];
 
+// Fichiers attachables à un examen de labo : résultats d'analyseurs
+// automatiques (PDF), photos de lame (image), exports CSV/Excel.
+export const EXAMEN_FICHIER_MIMES: AllowedMime[] = [
+  'image/png',
+  'image/jpeg',
+  'image/gif',
+  'image/bmp',
+  'application/pdf',
+  'application/zip',
+  'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+  'application/vnd.ms-excel',
+];
+
 export default validateUpload;

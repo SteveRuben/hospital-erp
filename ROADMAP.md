@@ -1,7 +1,7 @@
 # ROADMAP — Hospital ERP
 
-**Mise à jour : 2026-05-30**
-**Branche : master | Tag interne : v2-comms-interop**
+**Mise à jour : 2026-05-31**
+**Branche : master | Tag interne : v3-clinical-hardening**
 
 ---
 
