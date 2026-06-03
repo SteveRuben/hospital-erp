@@ -1891,6 +1891,12 @@ export const initDB = async (): Promise<void> => {
       ALTER TABLE services ADD COLUMN IF NOT EXISTS actif BOOLEAN DEFAULT TRUE;
     `);
 
+    // Add hash chain columns to audit_log (for audit-verify)
+    await client.query(`
+      ALTER TABLE audit_log ADD COLUMN IF NOT EXISTS hash VARCHAR(64);
+      ALTER TABLE audit_log ADD COLUMN IF NOT EXISTS prev_hash VARCHAR(64);
+    `);
+
     // Migration: link existing villes to Cameroun
     await client.query("UPDATE reference_lists SET parent_code = 'CM' WHERE categorie = 'ville' AND parent_code IS NULL");
 
