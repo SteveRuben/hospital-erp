@@ -1971,6 +1971,11 @@ export const initDB = async (): Promise<void> => {
         updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
       );
     `);
+    // Non-fatal: the re-baseline is a one-time cleanup, not a startup
+    // prerequisite. If it ever fails (permissions, an unforeseen edge), the
+    // server must still boot — a broken chain is non-blocking noise, a crash
+    // loop is an outage. Log and continue.
+    try {
     await client.query(`
       DO $$
       DECLARE
@@ -2022,6 +2027,9 @@ export const initDB = async (): Promise<void> => {
         INSERT INTO audit_chain_meta (k, v) VALUES ('rebaseline_ms_v1', now()::text);
       END $$;
     `);
+    } catch (rebaselineErr) {
+      console.error('[INIT] Audit chain re-baseline skipped (non-fatal):', rebaselineErr);
+    }
 
     // Migration: link existing villes to Cameroun
     await client.query("UPDATE reference_lists SET parent_code = 'CM' WHERE categorie = 'ville' AND parent_code IS NULL");
