@@ -1,1 +1,1 @@
-web: node packages/backend/dist/index.js
+web: node packages/backend/dist/scripts/migrate-bootstrap.js && cd packages/backend && npx prisma migrate deploy && cd ../.. && node packages/backend/dist/index.js
