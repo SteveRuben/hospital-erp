@@ -69,6 +69,24 @@ async function fetchBatch(afterId: number): Promise<AuditRow[]> {
 }
 
 /**
+ * The hash chain lives in two columns (hash / prev_hash) added by both a
+ * Prisma migration and init.ts. On a database where neither has run yet
+ * (fresh boot before the ALTER TABLE, or a partial deploy), the verifier
+ * query references columns that don't exist and Postgres raises 42703.
+ * We probe information_schema first so a missing-column situation is a
+ * clean "skip" instead of a crash that the scheduler logs every 6h.
+ */
+async function hashColumnsExist(): Promise<boolean> {
+  const rows = await prisma.$queryRaw<Array<{ cnt: bigint }>>`
+    SELECT COUNT(*)::bigint AS cnt
+      FROM information_schema.columns
+     WHERE table_name = 'audit_log'
+       AND column_name IN ('hash', 'prev_hash')
+  `;
+  return Number(rows[0]?.cnt ?? 0) >= 2;
+}
+
+/**
  * Walk the entire audit_log and verify the hash chain.
  *
  * Returns immediately on the first batch if the table is small.
@@ -77,6 +95,21 @@ async function fetchBatch(afterId: number): Promise<AuditRow[]> {
  */
 export async function verifyAuditChain(): Promise<VerifyResult> {
   const t0 = Date.now();
+
+  // Guard: the hash chain lives in two columns (hash / prev_hash) added by
+  // both a Prisma migration and init.ts. On a database where neither has run
+  // yet (fresh boot before the ALTER TABLE, or a partial deploy), the verifier
+  // query references columns that don't exist and Postgres raises 42703. We
+  // probe information_schema first so a missing-column situation is a clean
+  // "skip" instead of a crash the scheduler logs loudly every 6h.
+  if (!(await hashColumnsExist())) {
+    return {
+      ok: true, scanned: 0, breaks: 0,
+      issues: ['hash/prev_hash columns absent — chain not initialised yet, skipping'],
+      durationMs: Date.now() - t0, lastVerifiedId: 0,
+    };
+  }
+
   let afterId = 0;
   let prevHash: string | null = null;
   let scanned = 0;

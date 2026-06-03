@@ -720,18 +720,18 @@ export const initDB = async (): Promise<void> => {
     }
 
     // Seed default habilitations
-    const modules = ['dashboard','patients','medecins','consultations','rendezvous','laboratoire','visites','file-attente','finances','services','listes-patients','documentation','utilisateurs','habilitations','import','lits','programmes','facturation','imagerie','orders','concepts','pharmacie','patient-merge','rapports','configuration','securite','formulaires','catalogue-examens','impressions','parametres-generaux','listes-reference','garde','assurances'];
+    const modules = ['dashboard','patients','medecins','consultations','rendezvous','laboratoire','visites','file-attente','finances','services','listes-patients','documentation','utilisateurs','habilitations','import','lits','programmes','facturation','imagerie','orders','concepts','pharmacie','patient-merge','rapports','configuration','securite','formulaires','catalogue-examens','impressions','parametres-generaux','listes-reference','garde','assurances','parcours'];
     const roleAccess: Record<string, string[]> = {
       admin: modules,
-      medecin: ['dashboard','garde','patients','medecins','consultations','rendezvous','visites','file-attente','listes-patients','documentation','lits','programmes','imagerie','orders','pharmacie','formulaires'],
+      medecin: ['dashboard','garde','patients','medecins','consultations','rendezvous','visites','file-attente','listes-patients','documentation','lits','programmes','imagerie','orders','pharmacie','formulaires','parcours'],
       comptable: ['dashboard','finances','documentation','facturation','rapports','catalogue-examens','assurances'],
       laborantin: ['dashboard','laboratoire','documentation','orders'],
-      reception: ['dashboard','patients','rendezvous','visites','file-attente','documentation'],
+      reception: ['dashboard','patients','rendezvous','visites','file-attente','documentation','parcours'],
       pharmacien: ['dashboard','pharmacie','patients','documentation','orders'],
       // Infirmier (Phase 2 bis): bedside support — needs the patient
       // chart, vitals capture, queue management, file d'attente, and
       // the visite / hospitalisation views to see who is in the unit.
-      infirmier: ['dashboard','patients','consultations','visites','file-attente','lits','listes-patients','documentation','programmes','imagerie','formulaires'],
+      infirmier: ['dashboard','patients','consultations','visites','file-attente','lits','listes-patients','documentation','programmes','imagerie','formulaires','parcours'],
     };
     for (const [role, mods] of Object.entries(roleAccess)) {
       for (const mod of modules) {
@@ -743,7 +743,8 @@ export const initDB = async (): Promise<void> => {
     const menuItems = [
       ['Accueil', 0, 'dashboard', 'Dashboard', 'bi-speedometer2', '/app', 0],
       ['Accueil', 0, 'garde', 'Prise de garde', 'bi-clipboard-pulse', '/app/garde', 1],
-      ['Clinique', 1, 'patients', 'Patients', 'bi-people', '/app/patients', 0],
+      ['Clinique', 1, 'parcours', 'Parcours patients', 'bi-signpost-2', '/app/parcours', 0],
+      ['Clinique', 1, 'patients', 'Patients', 'bi-people', '/app/patients', 1],
       ['Clinique', 1, 'medecins', 'Médecins', 'bi-person-badge', '/app/medecins', 1],
       ['Clinique', 1, 'consultations', 'Consultations', 'bi-clipboard-pulse', '/app/consultations', 2],
       ['Clinique', 1, 'rendezvous', 'Rendez-vous', 'bi-calendar-event', '/app/rendezvous', 3],
@@ -1897,6 +1898,47 @@ export const initDB = async (): Promise<void> => {
       ALTER TABLE audit_log ADD COLUMN IF NOT EXISTS prev_hash VARCHAR(64);
     `);
 
+    // OWASP A09: hash-chain trigger. Mirrors prisma/migrations/20260516020000.
+    // Railway deploys boot via init.ts (not `prisma migrate deploy`), so the
+    // trigger must be (re)created here or the hash/prev_hash columns stay NULL
+    // and the chain is never computed. pgcrypto provides digest().
+    await client.query(`CREATE EXTENSION IF NOT EXISTS pgcrypto;`);
+    await client.query(`
+      CREATE OR REPLACE FUNCTION compute_audit_hash()
+      RETURNS TRIGGER AS $$
+      DECLARE
+        last_hash VARCHAR(64);
+      BEGIN
+        PERFORM pg_advisory_xact_lock(hashtext('audit_log_chain'));
+        SELECT hash INTO last_hash
+          FROM audit_log
+          WHERE hash IS NOT NULL
+          ORDER BY id DESC
+          LIMIT 1;
+        NEW.prev_hash := last_hash;
+        NEW.hash := encode(
+          digest(
+            COALESCE(NEW.user_id::text, '')    || '|' ||
+            COALESCE(NEW.action, '')           || '|' ||
+            COALESCE(NEW.table_name, '')       || '|' ||
+            COALESCE(NEW.record_id::text, '')  || '|' ||
+            COALESCE(NEW.details, '')          || '|' ||
+            COALESCE(NEW.created_at::text, '') || '|' ||
+            COALESCE(NEW.prev_hash, ''),
+            'sha256'
+          ),
+          'hex'
+        );
+        RETURN NEW;
+      END;
+      $$ LANGUAGE plpgsql;
+
+      DROP TRIGGER IF EXISTS audit_log_hash_chain ON audit_log;
+      CREATE TRIGGER audit_log_hash_chain
+        BEFORE INSERT ON audit_log
+        FOR EACH ROW EXECUTE FUNCTION compute_audit_hash();
+    `);
+
     // Migration: link existing villes to Cameroun
     await client.query("UPDATE reference_lists SET parent_code = 'CM' WHERE categorie = 'ville' AND parent_code IS NULL");
 
@@ -1920,6 +1962,35 @@ export const initDB = async (): Promise<void> => {
         source VARCHAR(50) NOT NULL,
         payload TEXT,
         processed_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+      );
+    `);
+
+    // Parcours patient (Kanban de suivi du séjour)
+    await client.query(`
+      DO $$ BEGIN
+        CREATE TYPE "ParcoursStatut" AS ENUM ('triage', 'consultation', 'examens', 'traitement', 'sortie');
+      EXCEPTION WHEN duplicate_object THEN null;
+      END $$;
+    `);
+    await client.query(`
+      CREATE TABLE IF NOT EXISTS parcours_patient (
+        id SERIAL PRIMARY KEY,
+        patient_id INTEGER NOT NULL REFERENCES patients(id) ON DELETE CASCADE,
+        statut "ParcoursStatut" NOT NULL DEFAULT 'triage',
+        service_id INTEGER REFERENCES services(id),
+        medecin_user_id INTEGER REFERENCES users(id),
+        priorite VARCHAR(20) DEFAULT 'normal',
+        motif VARCHAR(500),
+        notes TEXT,
+        created_by INTEGER REFERENCES users(id),
+        date_entree TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+        date_triage TIMESTAMP,
+        date_consultation TIMESTAMP,
+        date_examens TIMESTAMP,
+        date_traitement TIMESTAMP,
+        date_sortie TIMESTAMP,
+        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+        updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
       );
     `);
 
@@ -1960,6 +2031,11 @@ export const initDB = async (): Promise<void> => {
       CREATE INDEX IF NOT EXISTS idx_patient_attributions_medecin ON patient_attributions(medecin_user_id, actif);
       CREATE INDEX IF NOT EXISTS idx_patients_archived ON patients(archived);
       CREATE INDEX IF NOT EXISTS idx_patients_nom_prenom ON patients(nom, prenom);
+      -- Parcours patient indexes
+      CREATE INDEX IF NOT EXISTS idx_parcours_patient_statut ON parcours_patient(statut);
+      CREATE INDEX IF NOT EXISTS idx_parcours_patient_patient_id ON parcours_patient(patient_id);
+      CREATE INDEX IF NOT EXISTS idx_parcours_patient_medecin ON parcours_patient(medecin_user_id);
+      CREATE INDEX IF NOT EXISTS idx_parcours_patient_date ON parcours_patient(date_entree DESC);
       -- Composite index for paginated list (WHERE archived=$1 ORDER BY created_at DESC)
       CREATE INDEX IF NOT EXISTS idx_patients_archived_created ON patients(archived, created_at DESC);
       -- Sort indexes for chronological listings

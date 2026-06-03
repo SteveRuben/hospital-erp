@@ -594,3 +594,47 @@ export const mergePatients = (keep_id: number, merge_id: number) => api.post('/p
 
 // Carte patient — HTML print, opens in new tab
 export const printCartePatient = (patientId: number) => authedDownload(`/export/carte/${patientId}`);
+
+// Parcours patient (Kanban de suivi)
+export interface ParcoursRow {
+  id: number;
+  patient_id: number;
+  statut: 'triage' | 'consultation' | 'examens' | 'traitement' | 'sortie';
+  service_id: number | null;
+  medecin_user_id: number | null;
+  priorite: string;
+  motif: string | null;
+  notes: string | null;
+  created_by: number | null;
+  date_entree: string;
+  date_triage: string | null;
+  date_consultation: string | null;
+  date_examens: string | null;
+  date_traitement: string | null;
+  date_sortie: string | null;
+  created_at: string;
+  patient_nom: string | null;
+  patient_prenom: string | null;
+  patient_telephone: string | null;
+  patient_reference: string | null;
+  patient_sexe: string | null;
+  patient_date_naissance: string | null;
+  service_nom: string | null;
+  medecin_nom: string | null;
+  medecin_prenom: string | null;
+  medecin_specialite: string | null;
+}
+export const getParcours = (params?: { statut?: string; patient_id?: number; medecin_user_id?: number; priorite?: string; page?: number; limit?: number }) =>
+  api.get<{ data: ParcoursRow[]; total: number; page: number; limit: number; totalPages: number }>('/parcours', { params });
+export const getParcoursStats = () => api.get<Record<string, number>>('/parcours/stats');
+export const createParcours = (data: { patient_id: number; service_id?: number; medecin_user_id?: number; priorite?: string; motif?: string; notes?: string }) =>
+  api.post<ParcoursRow>('/parcours', data);
+export const updateParcoursStatut = (id: number, statut: string, extra?: { notes?: string; medecin_user_id?: number; service_id?: number }) =>
+  api.patch<ParcoursRow>(`/parcours/${id}/statut`, { statut, ...extra });
+export const updateParcours = (id: number, data: { service_id?: number; medecin_user_id?: number; priorite?: string; motif?: string; notes?: string }) =>
+  api.put<ParcoursRow>(`/parcours/${id}`, data);
+export const deleteParcours = (id: number) => api.delete(`/parcours/${id}`);
+
+// Consultation statut update
+export const updateConsultationStatut = (id: number, statut: string) =>
+  api.patch(`/consultations/${id}/statut`, { statut });

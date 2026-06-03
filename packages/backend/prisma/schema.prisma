@@ -78,6 +78,7 @@ model User {
   backupFor                 User[]            @relation("UserSuppleant")
   service                   Service?          @relation("UserService", fields: [serviceId], references: [id])
   servicesAsChef            Service[]         @relation("ServiceChefMedecin")
+  parcoursAsMedecin         ParcoursPatient[] @relation("ParcoursMedecin")
 
   @@map("users")
 }
@@ -155,6 +156,7 @@ model Patient {
   orders          Order[]
   visites         Visite[]
   hospitalisations Hospitalisation[]
+  parcours        ParcoursPatient[]
 
   @@map("patients")
 }
@@ -192,6 +194,7 @@ model Service {
   encounters    Encounter[]
   visites       Visite[]
   hospitalisations Hospitalisation[]
+  parcours      ParcoursPatient[]
 
   @@map("services")
 }
@@ -1289,4 +1292,46 @@ model ReferenceList {
   createdAt  DateTime @default(now()) @map("created_at")
   @@unique([categorie, code])
   @@map("reference_lists")
+}
+
+// ===== PARCOURS PATIENT (Kanban de suivi) =====
+
+// Tracks a patient through the care journey steps:
+// triage → consultation → examens → traitement → sortie
+enum ParcoursStatut {
+  triage
+  consultation
+  examens
+  traitement
+  sortie
+}
+
+model ParcoursPatient {
+  id              Int            @id @default(autoincrement())
+  patientId       Int            @map("patient_id")
+  statut          ParcoursStatut @default(triage)
+  serviceId       Int?           @map("service_id")
+  medecinUserId   Int?           @map("medecin_user_id")
+  priorite        String         @default("normal") @db.VarChar(20)
+  motif           String?        @db.VarChar(500)
+  notes           String?
+  createdBy       Int?           @map("created_by")
+  dateEntree      DateTime       @default(now()) @map("date_entree")
+  dateTriage      DateTime?      @map("date_triage")
+  dateConsultation DateTime?     @map("date_consultation")
+  dateExamens     DateTime?      @map("date_examens")
+  dateTraitement  DateTime?      @map("date_traitement")
+  dateSortie      DateTime?      @map("date_sortie")
+  createdAt       DateTime       @default(now()) @map("created_at")
+  updatedAt       DateTime       @default(now()) @map("updated_at")
+
+  patient         Patient        @relation(fields: [patientId], references: [id], onDelete: Cascade)
+  service         Service?       @relation(fields: [serviceId], references: [id])
+  medecin         User?          @relation("ParcoursMedecin", fields: [medecinUserId], references: [id])
+
+  @@index([statut])
+  @@index([patientId])
+  @@index([medecinUserId])
+  @@index([dateEntree(sort: Desc)])
+  @@map("parcours_patient")
 }

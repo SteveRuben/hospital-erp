@@ -7,6 +7,7 @@ import { generatePatientReferenceId } from '../services/reference.js';
 import { canAccessPatient, accessiblePatientIds } from '../services/access-control.js';
 import { validate, createPatientSchema } from '../middleware/validation.js';
 import { encryptFields, decryptFields, PATIENT_ENCRYPTED_FIELDS } from '../services/encryption.js';
+import { ParcoursStatut } from '@prisma/client';
 
 // OWASP A02: encrypt sensitive PHI at rest. Encryption is a passthrough when
 // PHI_ENCRYPTION_KEY is not configured, so this is safe to enable per environment.
@@ -289,6 +290,23 @@ router.post('/', authenticate, authorize('admin', 'medecin', 'reception'), valid
     const created = await prisma.patient.create({ data: encryptFields(data as Record<string, unknown>, ENC_FIELDS) as Prisma.PatientCreateInput });
 
     auditCreate(req.user!.id, 'patients', created.id, `Created patient ${prenom} ${nom}`);
+
+    // Auto-create a parcours at 'triage' step — this places the newly
+    // registered patient on the Kanban board immediately.
+    try {
+      await prisma.parcoursPatient.create({
+        data: {
+          patientId: created.id,
+          statut: ParcoursStatut.triage,
+          createdBy: req.user!.id,
+          dateTriage: new Date(),
+          priorite: 'normal',
+        },
+      });
+    } catch (parcoursErr) {
+      // Non-blocking: if the parcours creation fails, the patient is still created.
+      console.error('[PATIENTS] Auto-parcours creation failed:', parcoursErr);
+    }
 
     res.status(201).json(decryptPatient(created));
   } catch (err) {

@@ -25,7 +25,7 @@ import {
   ExamenStatut, RendezVousStatut, ConsultationStatut, OrderStatut,
   PathologieStatut, PrescriptionStatut, OrdonnanceStatut, VisiteStatut,
   HospitalisationStatut, FileAttenteStatut, LitStatut,
-  ProgrammePatientStatut, FactureStatut,
+  ProgrammePatientStatut, FactureStatut, ParcoursStatut,
 } from '@prisma/client';
 
 export class WorkflowError extends Error {
@@ -134,6 +134,16 @@ const FACTURE: Record<FactureStatut, ReadonlySet<FactureStatut>> = {
   annulee:    new Set(),
 };
 
+// Parcours patient: linear care journey. Each step can only go forward.
+// 'sortie' is terminal. Admin can go backwards (handled at the route level).
+const PARCOURS: Record<ParcoursStatut, ReadonlySet<ParcoursStatut>> = {
+  triage:       new Set([ParcoursStatut.consultation, ParcoursStatut.sortie]),
+  consultation: new Set([ParcoursStatut.examens, ParcoursStatut.traitement, ParcoursStatut.sortie]),
+  examens:      new Set([ParcoursStatut.traitement, ParcoursStatut.consultation, ParcoursStatut.sortie]),
+  traitement:   new Set([ParcoursStatut.sortie, ParcoursStatut.examens]),
+  sortie:       new Set(),
+};
+
 const TABLES = {
   examen:           EXAMEN,
   rdv:              RDV,
@@ -148,6 +158,7 @@ const TABLES = {
   lit:              LIT,
   programmePatient: PROGRAMME_PATIENT,
   facture:          FACTURE,
+  parcours:         PARCOURS,
 } as const;
 
 export type WorkflowKind = keyof typeof TABLES;

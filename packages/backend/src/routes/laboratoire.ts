@@ -11,6 +11,7 @@ import { patientAccessScope, canAccessPatient } from '../services/access-control
 import { assertTransition, WorkflowError } from '../services/workflow.js';
 import { validateUpload, EXAMEN_FICHIER_MIMES } from '../middleware/upload-validation.js';
 import { logAudit } from '../services/audit.js';
+import { recordActeRevenue } from '../services/billing.js';
 
 // Storage pour les pièces jointes des examens. Même pattern que
 // imagerie : disque local, dossier dédié, nom sanitizé.
@@ -269,6 +270,21 @@ router.post('/:id/marquer-paye', authenticate, authorize('admin', 'comptable', '
         ...(before.statut === ExamenStatut.a_payer ? { statut: ExamenStatut.prelevement } : {}),
       },
     });
+
+    // Auto-billing (flow analysis §5): a paid exam generates a revenue line.
+    // Best-effort and idempotent.
+    if (updated.montant != null && Number(updated.montant) > 0) {
+      recordActeRevenue({
+        kind: 'examen',
+        sourceId: id,
+        patientId: updated.patientId,
+        typeActe: `Examen — ${updated.typeExamen}`,
+        montant: Number(updated.montant),
+        modePaiement: updated.modePaiement,
+        userId: req.user!.id,
+      }).catch(() => { /* logged inside */ });
+    }
+
     res.json(updated);
   } catch (err) {
     console.error('[LABO] marquer-paye failed:', err);

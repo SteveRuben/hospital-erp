@@ -23,6 +23,7 @@ const Dashboard = lazy(() => import('./pages/Dashboard'));
 const Patients = lazy(() => import('./pages/Patients'));
 const PatientForm = lazy(() => import('./pages/PatientForm'));
 const PatientDetail = lazy(() => import('./pages/PatientDetail'));
+const Parcours = lazy(() => import('./pages/Parcours'));
 const Medecins = lazy(() => import('./pages/Medecins'));
 const MedecinForm = lazy(() => import('./pages/MedecinForm'));
 const Services = lazy(() => import('./pages/Services'));
@@ -168,6 +169,7 @@ function App() {
                       <Routes>
                         <Route path="/" element={<Dashboard />} />
                         <Route path="/recherche" element={<Recherche />} />
+                        <Route path="/parcours" element={<RoleGuard roles={['admin','medecin','reception','infirmier']}><Parcours /></RoleGuard>} />
                         <Route path="/patients" element={<RoleGuard roles={['admin','medecin','reception']}><Patients /></RoleGuard>} />
                         <Route path="/patients/nouveau" element={<RoleGuard roles={['admin','medecin','reception']}><PatientForm /></RoleGuard>} />
                         <Route path="/patients/:id/modifier" element={<RoleGuard roles={['admin','medecin','reception']}><PatientForm /></RoleGuard>} />

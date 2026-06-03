@@ -63,6 +63,7 @@ import inboxRoutes from './routes/inbox.js';
 import chatRoutes from './routes/chat.js';
 import fhirRoutes from './routes/fhir.js';
 import formulairesRoutes from './routes/formulaires.js';
+import parcoursRoutes from './routes/parcours.js';
 
 const app = express();
 
@@ -184,6 +185,7 @@ app.use('/api/chat', chatRoutes);
 // FHIR convention and external clients can use them as base URLs directly.
 app.use('/fhir', fhirRoutes);
 app.use('/api/formulaires', formulairesRoutes);
+app.use('/api/parcours', parcoursRoutes);
 
 // Serve uploaded files
 app.use('/uploads', express.static(path.resolve(__dirname, '../uploads')));

@@ -1,10 +1,13 @@
 import { Router, Response } from 'express';
-import { Prisma } from '@prisma/client';
+import { Prisma, ConsultationStatut } from '@prisma/client';
 import { prisma } from '../config/db.js';
 import { authenticate, authorize, AuthRequest } from '../middleware/auth.js';
 import { getPaginationParams, paginatedResponse } from '../middleware/pagination.js';
 import { validate, createConsultationSchema } from '../middleware/validation.js';
 import { patientAccessScope, canAccessPatient } from '../services/access-control.js';
+import { assertTransition, WorkflowError } from '../services/workflow.js';
+import { logAudit } from '../services/audit.js';
+import { billConsultation } from '../services/billing.js';
 
 const router = Router();
 
@@ -118,6 +121,56 @@ router.put('/:id', authenticate, authorize('admin', 'medecin'), async (req: Auth
       res.status(404).json({ error: 'Consultation non trouvée' });
     }
   } catch (err) { res.status(500).json({ error: 'Erreur serveur' }); }
+});
+
+/**
+ * PATCH /:id/statut — transition the consultation state (en_cours → terminee/annulee).
+ * Closes the gap where consultations stayed en_cours forever.
+ */
+router.patch('/:id/statut', authenticate, authorize('admin', 'medecin'), async (req: AuthRequest, res: Response): Promise<void> => {
+  try {
+    const id = Number(req.params.id);
+    const { statut } = req.body;
+
+    if (!statut || !['en_cours', 'terminee', 'annulee'].includes(statut)) {
+      res.status(400).json({ error: 'Statut invalide (en_cours, terminee, annulee)' });
+      return;
+    }
+
+    const before = await prisma.consultation.findUnique({ where: { id }, select: { statut: true, patientId: true } });
+    if (!before) { res.status(404).json({ error: 'Consultation non trouvée' }); return; }
+
+    // Admin bypass for backwards transitions
+    if (req.user!.role !== 'admin') {
+      try { assertTransition('consultation', before.statut ?? 'en_cours', statut); }
+      catch (e) {
+        if (e instanceof WorkflowError) { res.status(400).json({ error: e.message }); return; }
+        throw e;
+      }
+    }
+
+    const updated = await prisma.consultation.update({
+      where: { id },
+      data: { statut: statut as ConsultationStatut },
+    });
+
+    await logAudit({
+      userId: req.user!.id, action: 'update', tableName: 'consultations', recordId: id,
+      details: `Consultation #${id}: ${before.statut} → ${statut}`,
+    });
+
+    // Auto-billing (flow analysis §5): a completed consultation generates a
+    // revenue line from the linked service price. Best-effort and idempotent —
+    // never blocks the status change.
+    if (statut === 'terminee') {
+      billConsultation(id, req.user!.id).catch(() => { /* logged inside */ });
+    }
+
+    res.json(updated);
+  } catch (err) {
+    console.error('[CONSULTATIONS] statut update failed:', err);
+    res.status(500).json({ error: 'Erreur serveur' });
+  }
 });
 
 router.delete('/:id', authenticate, authorize('admin'), async (req: AuthRequest, res: Response): Promise<void> => {
