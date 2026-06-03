@@ -14,9 +14,25 @@ router.get('/:patientId', authenticate, requirePatientAccess, asyncHandler(async
     include: { medecin: { select: { nom: true, prenom: true } } },
     orderBy: { dateMesure: 'desc' },
   });
-  // Flatten medecin to mirror the prior LEFT JOIN shape (medecin_nom / medecin_prenom)
+  // Mappe en snake_case attendu par le frontend. Le spread brut renvoyait du
+  // camelCase Prisma (saturationO2, tensionSystolique, dateMesure...) -> SpO2,
+  // TA et date n'apparaissaient pas dans l'onglet Signes vitaux.
   const mapped = rows.map(v => ({
-    ...v,
+    id: v.id,
+    patient_id: v.patientId,
+    medecin_id: v.medecinId,
+    temperature: v.temperature,
+    tension_systolique: v.tensionSystolique,
+    tension_diastolique: v.tensionDiastolique,
+    pouls: v.pouls,
+    frequence_respiratoire: v.frequenceRespiratoire,
+    saturation_o2: v.saturationO2,
+    poids: v.poids,
+    taille: v.taille,
+    glycemie: v.glycemie,
+    notes: v.notes,
+    date_mesure: v.dateMesure,
+    created_at: v.createdAt,
     medecin_nom: v.medecin?.nom ?? null,
     medecin_prenom: v.medecin?.prenom ?? null,
   }));

@@ -13,7 +13,20 @@ router.get('/:patientId', authenticate, requirePatientAccess, asyncHandler(async
     where: { patientId: Number(req.params.patientId) },
     orderBy: { createdAt: 'desc' },
   });
-  res.json(rows);
+  // Mappe en snake_case : le brut renvoyait typeAllergie (camelCase) alors que
+  // le frontend lit a.type_allergie -> la colonne Type restait vide.
+  const mapped = rows.map(a => ({
+    id: a.id,
+    patient_id: a.patientId,
+    allergene: a.allergene,
+    type_allergie: a.typeAllergie,
+    severite: a.severite,
+    reaction: a.reaction,
+    active: a.active,
+    date_debut: a.dateDebut,
+    created_at: a.createdAt,
+  }));
+  res.json(mapped);
 }));
 
 router.post('/', authenticate, authorize('admin', 'medecin'), validate(createAllergieSchema), requirePatientAccess, asyncHandler(async (req, res) => {
