@@ -6,49 +6,40 @@ import { fileURLToPath } from 'url';
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 dotenv.config({ path: path.resolve(__dirname, '../../.env') });
 
+/**
+ * Reset COMPLET de la base : supprime tout le schéma `public` puis le recrée
+ * vide. Robuste face à la dérive du schéma — plus aucune liste de tables à
+ * maintenir (l'ancienne version oubliait assurances, prises_en_charge,
+ * payment_intents, examen_fichiers, reference_lists, concepts/EAV, etc.).
+ *
+ * Après ce reset, REDÉMARRER le serveur : la séquence de boot recrée tout
+ *   (migrate-bootstrap → prisma migrate deploy → init.ts seed) :
+ *   schéma + données de base (admin, habilitations, menu, listes de référence).
+ *
+ * DESTRUCTIF ET IRRÉVERSIBLE. Garde-fou : exige CONFIRM_RESET=1 pour éviter un
+ * déclenchement accidentel contre une base de production.
+ *
+ *   Local   :  CONFIRM_RESET=1 npm run db:reset
+ *   Railway :  one-off command ->  CONFIRM_RESET=1 npm run db:reset
+ *              puis redéployer / redémarrer le service.
+ */
 const resetDB = async () => {
+  if (process.env.CONFIRM_RESET !== '1') {
+    console.error('Reset refusé (operation destructive). Relancez avec :  CONFIRM_RESET=1 npm run db:reset');
+    process.exit(1);
+  }
   const client = await pool.connect();
   try {
-    console.log('Dropping all tables...');
-    await client.query(`
-      DROP TABLE IF EXISTS paiements CASCADE;
-      DROP TABLE IF EXISTS facture_lignes CASCADE;
-      DROP TABLE IF EXISTS factures CASCADE;
-      DROP TABLE IF EXISTS tarifs CASCADE;
-      DROP TABLE IF EXISTS programme_patients CASCADE;
-      DROP TABLE IF EXISTS programmes CASCADE;
-      DROP TABLE IF EXISTS hospitalisations CASCADE;
-      DROP TABLE IF EXISTS lits CASCADE;
-      DROP TABLE IF EXISTS pavillons CASCADE;
-      DROP TABLE IF EXISTS liste_patient_membres CASCADE;
-      DROP TABLE IF EXISTS listes_patients CASCADE;
-      DROP TABLE IF EXISTS formulaire_reponses CASCADE;
-      DROP TABLE IF EXISTS formulaires CASCADE;
-      DROP TABLE IF EXISTS file_attente CASCADE;
-      DROP TABLE IF EXISTS visites CASCADE;
-      DROP TABLE IF EXISTS alertes CASCADE;
-      DROP TABLE IF EXISTS notes CASCADE;
-      DROP TABLE IF EXISTS vaccinations CASCADE;
-      DROP TABLE IF EXISTS ordonnances CASCADE;
-      DROP TABLE IF EXISTS prescriptions CASCADE;
-      DROP TABLE IF EXISTS pathologies CASCADE;
-      DROP TABLE IF EXISTS allergies CASCADE;
-      DROP TABLE IF EXISTS vitaux CASCADE;
-      DROP TABLE IF EXISTS audit_log CASCADE;
-      DROP TABLE IF EXISTS documents CASCADE;
-      DROP TABLE IF EXISTS rendez_vous CASCADE;
-      DROP TABLE IF EXISTS examens CASCADE;
-      DROP TABLE IF EXISTS depenses CASCADE;
-      DROP TABLE IF EXISTS recettes CASCADE;
-      DROP TABLE IF EXISTS consultations CASCADE;
-      DROP TABLE IF EXISTS services CASCADE;
-      DROP TABLE IF EXISTS medecins CASCADE;
-      DROP TABLE IF EXISTS patients CASCADE;
-      DROP TABLE IF EXISTS users CASCADE;
-    `);
-    console.log('All tables dropped. Restart the server to recreate them.');
+    const { rows } = await client.query('SELECT current_database() AS db, current_user AS usr');
+    console.log(`Reset COMPLET du schéma public — base "${rows[0].db}" (user ${rows[0].usr})...`);
+    await client.query('DROP SCHEMA IF EXISTS public CASCADE;');
+    await client.query('CREATE SCHEMA public;');
+    await client.query('GRANT ALL ON SCHEMA public TO CURRENT_USER;');
+    console.log('Schéma public recréé (vide).');
+    console.log('-> Redémarrez/redéployez le serveur : migrate deploy + init.ts recréent et re-seedent tout.');
   } catch (err) {
-    console.error('Error resetting database:', err);
+    console.error('Erreur lors du reset:', err);
+    process.exitCode = 1;
   } finally {
     client.release();
     await pool.end();
