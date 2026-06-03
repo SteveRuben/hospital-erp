@@ -85,6 +85,11 @@ export default function ConsultationForm() {
           <div className="form-group"><label className="form-label">Notes</label><textarea className="form-input" rows={2} value={form.notes} onChange={e => setForm({...form, notes: e.target.value})} placeholder="Notes additionnelles..." /></div>
 
           <div style={{ display: 'flex', justifyContent: 'flex-end', gap: '0.75rem', marginTop: '2rem', paddingTop: '1.5rem', borderTop: '1px solid var(--cds-ui-03)' }}>
+            {isEdit && form.patient_id && (
+              <button type="button" className="btn-ghost" style={{ marginRight: 'auto' }} onClick={() => navigate(`/app/laboratoire/nouveau?patient_id=${form.patient_id}&consultation_id=${id}`)}>
+                <i className="bi bi-flask"></i> Prescrire un examen
+              </button>
+            )}
             <button type="button" className="btn-secondary" onClick={() => navigate('/app/consultations')}>Annuler</button>
             <button type="submit" className="btn-primary">{isEdit ? 'Enregistrer' : 'Créer la consultation'}</button>
           </div>

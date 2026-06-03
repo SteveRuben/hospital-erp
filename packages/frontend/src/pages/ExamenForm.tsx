@@ -38,6 +38,10 @@ export default function ExamenForm() {
   // ?patient_id=N pre-selects the patient (used by PatientDetail's
   // 'Examen' shortcut so the cashier doesn't have to re-search).
   const prefillPatientId = searchParams.get('patient_id') ?? '';
+  // ?consultation_id=N : examen prescrit depuis une consultation. On le
+  // transmet au backend pour lier l'examen et alimenter le statut « en
+  // attente des résultats » côté consultation.
+  const prefillConsultationId = searchParams.get('consultation_id') ?? '';
   const [form, setForm] = useState({
     patient_id: prefillPatientId,
     patient_label: '',
@@ -169,6 +173,7 @@ export default function ExamenForm() {
       // Ignoré par le backend si le saisisseur est médecin (il devient le
       // prescripteur automatiquement).
       demandeur_id: isMedecin ? undefined : (form.demandeur_id ? Number(form.demandeur_id) : null),
+      consultation_id: prefillConsultationId || undefined,
     };
     try {
       if (isEdit) await updateExamen(Number(id), payload);
@@ -208,6 +213,9 @@ export default function ExamenForm() {
       <div className="page-header"><h1 className="page-title">{isEdit ? "Modifier l'examen" : 'Nouvel examen'}</h1></div>
 
       {error && <div className="notification notification-error mb-2"><i className="bi bi-exclamation-triangle"></i><span>{error}</span></div>}
+      {!isEdit && prefillConsultationId && (
+        <div className="notification notification-info mb-2"><i className="bi bi-link-45deg"></i><span>Cet examen sera lié à la consultation #{prefillConsultationId} (statut « en attente des résultats »).</span></div>
+      )}
 
       <div className="tile" style={{ padding: '2rem' }}>
         <form onSubmit={handleSubmit}>

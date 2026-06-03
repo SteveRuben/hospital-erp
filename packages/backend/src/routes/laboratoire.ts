@@ -223,7 +223,7 @@ router.get('/patient/:patientId/types', authenticate, async (req: AuthRequest, r
 // laborantin-only via the other routes.
 router.post('/', authenticate, authorize('admin', 'laborantin', 'medecin'), async (req: AuthRequest, res: Response): Promise<void> => {
   try {
-    const { patient_id, type_examen, resultat, date_examen, montant, priorite, demandeur_id } = req.body;
+    const { patient_id, type_examen, resultat, date_examen, montant, priorite, demandeur_id, consultation_id } = req.body;
     const montantNum = montant !== undefined && montant !== null && montant !== '' ? Number(montant) : null;
     const initialStatut: ExamenStatut = montantNum && montantNum > 0 ? ExamenStatut.a_payer : ExamenStatut.demande;
     const initialPriorite: Priorite = isValidPriorite(priorite) ? priorite : Priorite.normal;
@@ -231,6 +231,7 @@ router.post('/', authenticate, authorize('admin', 'laborantin', 'medecin'), asyn
     // demandeur ; sinon (laborantin/admin/réception) on prend le médecin
     // choisi dans le formulaire. On valide que l'id désigne bien un médecin.
     const demandeurId = await resolveDemandeur(req.user!, demandeur_id);
+    const consultId = consultation_id != null && consultation_id !== '' ? Number(consultation_id) : null;
     const data: Parameters<typeof prisma.examen.create>[0]['data'] = {
       patientId: Number(patient_id),
       typeExamen: type_examen,
@@ -239,6 +240,7 @@ router.post('/', authenticate, authorize('admin', 'laborantin', 'medecin'), asyn
       statut: initialStatut,
       priorite: initialPriorite,
       demandeurId,
+      ...(consultId && Number.isInteger(consultId) ? { consultationId: consultId } : {}),
     };
     if (date_examen) data.dateExamen = new Date(date_examen);
     const created = await prisma.examen.create({ data });

@@ -1,5 +1,5 @@
 import { Router, Response } from 'express';
-import { Prisma, ConsultationStatut } from '@prisma/client';
+import { Prisma, ConsultationStatut, ExamenStatut } from '@prisma/client';
 import { prisma } from '../config/db.js';
 import { authenticate, authorize, AuthRequest } from '../middleware/auth.js';
 import { getPaginationParams, paginatedResponse } from '../middleware/pagination.js';
@@ -51,14 +51,29 @@ router.get('/', authenticate, async (req: AuthRequest, res: Response): Promise<v
       }),
     ]);
 
+    // Statut « en attente des résultats » dérivé : nombre d'examens liés à
+    // chaque consultation qui ne sont pas encore validés/transmis. Une seule
+    // requête groupée pour la page (pas de N+1).
+    const consultIds = rows.map(r => r.id);
+    const pendingGroups = consultIds.length
+      ? await prisma.examen.groupBy({
+          by: ['consultationId'],
+          where: { consultationId: { in: consultIds }, statut: { notIn: [ExamenStatut.valide, ExamenStatut.transmis] } },
+          _count: { _all: true },
+        })
+      : [];
+    const pendingByConsult = new Map(pendingGroups.map(g => [g.consultationId, g._count._all]));
+
     const mapped = rows.map(c => ({
       ...c,
+      patient_id: c.patientId,
       patient_nom: c.patient?.nom ?? null,
       patient_prenom: c.patient?.prenom ?? null,
       medecin_nom: c.medecin?.nom ?? null,
       medecin_prenom: c.medecin?.prenom ?? null,
       specialite: c.medecin?.specialite ?? null,
       service_nom: c.service?.nom ?? null,
+      examens_en_attente: pendingByConsult.get(c.id) ?? 0,
     }));
 
     res.json(paginatedResponse(mapped, total, { page, limit, offset }));

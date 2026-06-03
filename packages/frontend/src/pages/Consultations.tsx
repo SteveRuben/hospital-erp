@@ -42,8 +42,16 @@ export default function Consultations() {
                 <td>Dr. {c.medecin_prenom} {c.medecin_nom}</td>
                 <td>{c.service_nom || '-'}</td>
                 <td style={{ maxWidth: '200px', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{c.diagnostic || '-'}</td>
-                <td><span className={`tag ${c.statut === 'terminee' ? 'tag-green' : c.statut === 'annulee' ? 'tag-red' : 'tag-blue'}`}>{c.statut}</span></td>
                 <td>
+                  <span className={`tag ${c.statut === 'terminee' ? 'tag-green' : c.statut === 'annulee' ? 'tag-red' : 'tag-blue'}`}>{c.statut}</span>
+                  {c.examens_en_attente > 0 && (
+                    <span className="tag tag-orange" style={{ marginLeft: '0.25rem' }} title={`${c.examens_en_attente} examen(s) non validé(s)`}>
+                      <i className="bi bi-hourglass-split"></i> En attente résultats ({c.examens_en_attente})
+                    </span>
+                  )}
+                </td>
+                <td>
+                  <button className="btn-icon" title="Prescrire un examen" onClick={() => navigate(`/app/laboratoire/nouveau?patient_id=${c.patient_id}&consultation_id=${c.id}`)}><i className="bi bi-flask"></i></button>
                   <button className="btn-icon" onClick={() => navigate(`/app/consultations/${c.id}/modifier`)}><i className="bi bi-pencil"></i></button>
                   <button className="btn-icon" onClick={() => handleDelete(c.id)}><i className="bi bi-trash"></i></button>
                 </td>

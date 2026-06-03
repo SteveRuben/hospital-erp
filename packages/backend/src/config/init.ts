@@ -1400,6 +1400,14 @@ export const initDB = async (): Promise<void> => {
       ON CONFLICT (code) DO NOTHING;
     `);
 
+    // Lien examen -> consultation : permet de prescrire un examen depuis une
+    // consultation et d'afficher un statut « en attente des résultats ».
+    // Idempotent (aussi couvert par la migration Prisma).
+    await client.query(`
+      ALTER TABLE examens ADD COLUMN IF NOT EXISTS consultation_id INTEGER REFERENCES consultations(id) ON DELETE SET NULL;
+      CREATE INDEX IF NOT EXISTS idx_examens_consultation_id ON examens(consultation_id);
+    `);
+
     // Pièces jointes des examens de labo (scans de résultats, photos
     // de lame, PDF analyseur). Visibles dès le statut 'analyse'.
     await client.query(`
