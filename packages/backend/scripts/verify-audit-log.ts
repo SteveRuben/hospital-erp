@@ -33,10 +33,10 @@ interface AuditRow {
 }
 
 function formatTimestamp(d: Date): string {
-  // PostgreSQL TIMESTAMP::text default form is `YYYY-MM-DD HH:MM:SS.ffffff`
-  // (no T, no Z). Mirror that so digest input matches the DB trigger.
-  const iso = d.toISOString(); // 2026-05-16T12:34:56.789Z
-  return iso.replace('T', ' ').replace('Z', '').replace(/\.(\d{3})$/, '.$1000');
+  // Must match the DB trigger's to_char(created_at, 'YYYY-MM-DD HH24:MI:SS.MS').
+  // Prisma hands us created_at as a JS Date (millisecond precision); toISOString
+  // emits 3-digit milliseconds, matching Postgres '.MS'. No microsecond padding.
+  return d.toISOString().replace('T', ' ').replace('Z', '');
 }
 
 function computeHash(row: AuditRow): string {

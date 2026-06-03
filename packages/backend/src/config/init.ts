@@ -1927,6 +1927,10 @@ export const initDB = async (): Promise<void> => {
           ORDER BY id DESC
           LIMIT 1;
         NEW.prev_hash := last_hash;
+        -- created_at MUST be formatted to millisecond precision here: the
+        -- TS verifier reads it back via Prisma as a JS Date (ms precision),
+        -- so hashing the raw ::text (microsecond) would never match the
+        -- recompute. to_char(...'.MS') pins both sides to YYYY-MM-DD HH24:MI:SS.mmm.
         NEW.hash := encode(
           digest(
             COALESCE(NEW.user_id::text, '')    || '|' ||
@@ -1934,7 +1938,7 @@ export const initDB = async (): Promise<void> => {
             COALESCE(NEW.table_name, '')       || '|' ||
             COALESCE(NEW.record_id::text, '')  || '|' ||
             COALESCE(NEW.details, '')          || '|' ||
-            COALESCE(NEW.created_at::text, '') || '|' ||
+            to_char(NEW.created_at, 'YYYY-MM-DD HH24:MI:SS.MS') || '|' ||
             COALESCE(NEW.prev_hash, ''),
             'sha256'
           ),
@@ -1948,6 +1952,59 @@ export const initDB = async (): Promise<void> => {
       CREATE TRIGGER audit_log_hash_chain
         BEFORE INSERT ON audit_log
         FOR EACH ROW EXECUTE FUNCTION compute_audit_hash();
+    `);
+
+    // One-time re-baseline of the audit hash chain.
+    //
+    // The original trigger hashed created_at::text (microsecond precision)
+    // while the verifier recomputes from a JS Date (millisecond precision),
+    // so every trigger-written row failed verification. The chain was never
+    // valid. Now that the formula is fixed (millisecond on both sides), walk
+    // every existing row in id order and recompute hash/prev_hash with the
+    // corrected formula, establishing a clean baseline. Guarded by a marker
+    // so it runs exactly once. This rewrites no genuine tamper-evidence —
+    // there was none to preserve.
+    await client.query(`
+      CREATE TABLE IF NOT EXISTS audit_chain_meta (
+        k VARCHAR(50) PRIMARY KEY,
+        v TEXT,
+        updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+      );
+    `);
+    await client.query(`
+      DO $$
+      DECLARE
+        r RECORD;
+        last_hash TEXT := NULL;
+        new_hash TEXT;
+      BEGIN
+        IF EXISTS (SELECT 1 FROM audit_chain_meta WHERE k = 'rebaseline_ms_v1') THEN
+          RETURN;
+        END IF;
+
+        FOR r IN SELECT * FROM audit_log ORDER BY id ASC FOR UPDATE LOOP
+          new_hash := encode(digest(
+            COALESCE(r.user_id::text, '')    || '|' ||
+            COALESCE(r.action, '')           || '|' ||
+            COALESCE(r.table_name, '')       || '|' ||
+            COALESCE(r.record_id::text, '')  || '|' ||
+            COALESCE(r.details, '')          || '|' ||
+            to_char(r.created_at, 'YYYY-MM-DD HH24:MI:SS.MS') || '|' ||
+            COALESCE(last_hash, ''),
+            'sha256'), 'hex');
+          UPDATE audit_log SET prev_hash = last_hash, hash = new_hash WHERE id = r.id;
+          last_hash := new_hash;
+        END LOOP;
+
+        -- Tamper-evident record of the re-baseline itself (the INSERT trigger
+        -- chains it onto the freshly recomputed tail).
+        INSERT INTO audit_log (user_id, action, table_name, record_id, details, created_at)
+        VALUES (NULL, 'system', 'audit_log', NULL,
+                'Audit hash chain re-baselined (created_at ms-precision formula fix)',
+                CURRENT_TIMESTAMP);
+
+        INSERT INTO audit_chain_meta (k, v) VALUES ('rebaseline_ms_v1', now()::text);
+      END $$;
     `);
 
     // Migration: link existing villes to Cameroun

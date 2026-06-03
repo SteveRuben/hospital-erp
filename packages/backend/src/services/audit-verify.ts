@@ -38,9 +38,12 @@ export interface VerifyResult {
   lastVerifiedId: number;
 }
 
+// Must match the DB trigger's to_char(created_at, 'YYYY-MM-DD HH24:MI:SS.MS').
+// Prisma hands us created_at as a JS Date (millisecond precision); toISOString
+// always emits 3-digit milliseconds, which lines up with Postgres '.MS'.
+// Do NOT pad to microseconds — the trigger only hashes millisecond precision.
 function formatTimestamp(d: Date): string {
-  const iso = d.toISOString();
-  return iso.replace('T', ' ').replace('Z', '').replace(/\.(\d{3})$/, '.$1000');
+  return d.toISOString().replace('T', ' ').replace('Z', '');
 }
 
 function computeHash(row: AuditRow): string {
