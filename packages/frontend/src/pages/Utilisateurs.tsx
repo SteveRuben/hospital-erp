@@ -1,5 +1,6 @@
 import { useState, useEffect, useContext } from 'react';
 import { getUsers, createUser, impersonateUser, adminResetPassword, adminSuspendUser, adminUnsuspendUser, getUserAuditLog, type UserAuditEntry } from '../services/api';
+import api from '../services/api';
 import { AuthContext } from '../App';
 import { useSnackbar } from '../components/Snackbar';
 import { useConfirm } from '../components/ConfirmDialog';
@@ -29,6 +30,9 @@ export default function Utilisateurs() {
   const { confirm } = useConfirm();
   const [resetTarget, setResetTarget] = useState<AdminUser | null>(null);
   const [activityTarget, setActivityTarget] = useState<AdminUser | null>(null);
+  const [showPwd, setShowPwd] = useState(false);
+  const [editTarget, setEditTarget] = useState<AdminUser | null>(null);
+  const [editForm, setEditForm] = useState({ nom: '', prenom: '', telephone: '', role: '' });
 
   useEffect(() => { loadUsers(); }, []);
 
@@ -80,6 +84,32 @@ export default function Utilisateurs() {
     } catch (err: any) { showSnackbar(err.response?.data?.error || 'Erreur', 'error'); }
   };
 
+  const handleDelete = async (u: AdminUser) => {
+    const ok = await confirm({ title: 'Supprimer l\'utilisateur', message: `Supprimer définitivement le compte "${u.username}" (${u.prenom} ${u.nom}) ? Cette action est irréversible.`, confirmLabel: 'Supprimer', variant: 'danger' });
+    if (!ok) return;
+    try {
+      await api.delete(`/auth/users/${u.id}`);
+      showSnackbar('Utilisateur supprimé', 'success');
+      loadUsers();
+    } catch (err: any) { showSnackbar(err.response?.data?.error || 'Erreur', 'error'); }
+  };
+
+  const handleEdit = (u: AdminUser) => {
+    setEditTarget(u);
+    setEditForm({ nom: u.nom || '', prenom: u.prenom || '', telephone: u.telephone || '', role: u.role });
+  };
+
+  const submitEdit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!editTarget) return;
+    try {
+      await api.put(`/auth/users/${editTarget.id}`, editForm);
+      showSnackbar('Utilisateur modifié', 'success');
+      setEditTarget(null);
+      loadUsers();
+    } catch (err: any) { showSnackbar(err.response?.data?.error || 'Erreur', 'error'); }
+  };
+
   if (loading) return <div className="loading"><div className="spinner"></div></div>;
 
   return (
@@ -119,6 +149,7 @@ export default function Utilisateurs() {
               <td>{u.telephone || '-'}</td>
               <td>{u.created_at ? new Date(u.created_at).toLocaleDateString('fr-FR') : '-'}</td>
               <td style={{ whiteSpace: 'nowrap' }}>
+                <button className="btn-icon" title="Modifier" onClick={() => handleEdit(u)}><i className="bi bi-pencil"></i></button>
                 <button className="btn-icon" title="Voir l'activité" onClick={() => setActivityTarget(u)}><i className="bi bi-clock-history"></i></button>
                 {u.id !== currentUser?.id && (
                   <>
@@ -126,6 +157,7 @@ export default function Utilisateurs() {
                     <button className="btn-icon" title={u.suspended ? 'Réactiver' : 'Suspendre'} onClick={() => handleSuspendToggle(u)}>
                       <i className={`bi ${u.suspended ? 'bi-unlock' : 'bi-slash-circle'}`}></i>
                     </button>
+                    <button className="btn-icon" title="Supprimer" onClick={() => handleDelete(u)} style={{ color: 'var(--cds-support-error)' }}><i className="bi bi-trash"></i></button>
                     {!u.suspended && (
                       <button className="btn-icon" title="Voir en tant que cet utilisateur" onClick={() => handleImpersonate(u.id)}><i className="bi bi-eye"></i></button>
                     )}
@@ -149,6 +181,32 @@ export default function Utilisateurs() {
         <ActivityDrawer target={activityTarget} onClose={() => setActivityTarget(null)} />
       )}
 
+      {/* Modal modification */}
+      {editTarget && (
+        <div className="modal-overlay" onClick={() => setEditTarget(null)}>
+          <div className="modal-container" onClick={e => e.stopPropagation()}>
+            <div className="modal-header"><h3>Modifier — {editTarget.username}</h3><button className="btn-icon" onClick={() => setEditTarget(null)}><i className="bi bi-x-lg"></i></button></div>
+            <form onSubmit={submitEdit}>
+              <div className="modal-body">
+                <div className="grid-2">
+                  <div className="form-group"><label className="form-label">Nom</label><input type="text" className="form-input" value={editForm.nom} onChange={e => setEditForm({...editForm, nom: e.target.value})} /></div>
+                  <div className="form-group"><label className="form-label">Prénom</label><input type="text" className="form-input" value={editForm.prenom} onChange={e => setEditForm({...editForm, prenom: e.target.value})} /></div>
+                </div>
+                <div className="grid-2">
+                  <div className="form-group"><label className="form-label">Téléphone</label><input type="tel" className="form-input" value={editForm.telephone} onChange={e => setEditForm({...editForm, telephone: e.target.value})} /></div>
+                  <div className="form-group"><label className="form-label">Rôle</label>
+                    <select className="form-select" value={editForm.role} onChange={e => setEditForm({...editForm, role: e.target.value})}>
+                      {Object.entries(roleConfig).map(([role, cfg]) => <option key={role} value={role}>{cfg.label}</option>)}
+                    </select>
+                  </div>
+                </div>
+              </div>
+              <div className="modal-footer"><button type="button" className="btn-secondary" onClick={() => setEditTarget(null)}>Annuler</button><button type="submit" className="btn-primary">Enregistrer</button></div>
+            </form>
+          </div>
+        </div>
+      )}
+
       {/* Modal création */}
       {showModal && (
         <div className="modal-overlay" onClick={() => setShowModal(false)}>
@@ -161,7 +219,12 @@ export default function Utilisateurs() {
                   <div className="form-group"><label className="form-label">Nom d'utilisateur *</label><input type="text" className="form-input" value={form.username} onChange={e => setForm({...form, username: e.target.value})} required placeholder="ex: dr.dupont" /></div>
                   <div className="form-group">
                     <label className="form-label">Mot de passe *</label>
-                    <input type="password" className="form-input" value={form.password} onChange={e => setForm({...form, password: e.target.value})} required placeholder="Ex: Hospital1" />
+                    <div style={{ position: 'relative' }}>
+                      <input type={showPwd ? 'text' : 'password'} className="form-input" value={form.password} onChange={e => setForm({...form, password: e.target.value})} required placeholder="Ex: Hospital1!" style={{ paddingRight: '2.5rem' }} />
+                      <button type="button" onClick={() => setShowPwd(!showPwd)} style={{ position: 'absolute', right: '0.5rem', top: '50%', transform: 'translateY(-50%)', background: 'none', border: 'none', cursor: 'pointer', padding: '0.25rem', color: 'var(--cds-text-secondary)' }}>
+                        <i className={`bi ${showPwd ? 'bi-eye-slash' : 'bi-eye'}`}></i>
+                      </button>
+                    </div>
                     <div style={{ marginTop: '0.5rem', fontSize: '0.75rem', color: 'var(--cds-text-secondary)', background: 'var(--cds-field-01)', padding: '0.5rem 0.75rem' }}>
                       <strong>Règles du mot de passe :</strong>
                       <ul style={{ margin: '0.25rem 0 0 1rem', padding: 0 }}>
@@ -176,6 +239,9 @@ export default function Utilisateurs() {
                         </li>
                         <li style={{ color: /[0-9]/.test(form.password) ? 'var(--cds-support-success)' : 'inherit' }}>
                           {/[0-9]/.test(form.password) ? '✓' : '○'} Au moins 1 chiffre (0-9)
+                        </li>
+                        <li style={{ color: /[!@#$%^&*()_+\-=\[\]{};':"\\|,.<>\/?]/.test(form.password) ? 'var(--cds-support-success)' : 'inherit' }}>
+                          {/[!@#$%^&*()_+\-=\[\]{};':"\\|,.<>\/?]/.test(form.password) ? '✓' : '○'} Au moins 1 caractère spécial (!@#$...)
                         </li>
                       </ul>
                     </div>
