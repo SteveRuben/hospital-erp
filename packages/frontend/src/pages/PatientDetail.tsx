@@ -1,6 +1,6 @@
 import { useState, useEffect, useContext } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
-import { getPatient, getPatientHistorique, getRendezVous, getVitaux, createVitaux, getAllergies, createAllergie, getPathologies, createPathologie, getPrescriptions, createPrescription, getVaccinations, createVaccination, getNotes, createNote, getAlertes, createAlerte, toggleAlerte, getOrdonnances, getMedecins, getAttributions, createAttribution, validateAttribution, cloturerAttribution, type AttributionRow } from '../services/api';
+import { getPatient, getPatientHistorique, getRendezVous, getVitaux, createVitaux, getAllergies, createAllergie, getPathologies, createPathologie, getPrescriptions, createPrescription, getVaccinations, createVaccination, getNotes, createNote, getAlertes, createAlerte, toggleAlerte, getOrdonnances, getMedecins, getAttributions, createAttribution, validateAttribution, cloturerAttribution, printFicheTransmission, type AttributionRow } from '../services/api';
 import { AuthContext } from '../App';
 import type { Patient, RendezVous, Medecin } from '../types';
 import MentionTextarea from '../components/MentionTextarea';
@@ -97,7 +97,7 @@ export default function PatientDetail() {
             <button className="btn-primary btn-sm" onClick={() => navigate(`/app/laboratoire/nouveau?patient_id=${patient.id}`)}><i className="bi bi-flask"></i> Examen</button>
           )}
           <button className="btn-primary btn-sm" onClick={() => setShowModal('alerte')}><i className="bi bi-bell-fill"></i> Alerte</button>
-          <button className="btn-ghost btn-sm" onClick={() => window.open(`/api/print/fiche-transmission/${patient.id}`, '_blank')} title="Fiche de transmission inter-équipes"><i className="bi bi-printer"></i> Transmission</button>
+          <button className="btn-ghost btn-sm" onClick={() => printFicheTransmission(patient.id)} title="Fiche de transmission inter-équipes"><i className="bi bi-printer"></i> Transmission</button>
         </div>
       </div>
 

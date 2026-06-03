@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useSnackbar } from '../components/Snackbar';
-import api from '../services/api';
+import api, { exportReferenceList } from '../services/api';
 
 interface RefItem { id: number; categorie: string; code: string; libelle: string; actif: boolean; par_defaut: boolean; ordre: number; parent_code: string | null }
 
@@ -94,7 +94,7 @@ export default function ListesReference() {
     e.target.value = '';
   };
 
-  const exportCsv = () => { window.open(`/api/reference-lists/${selectedCat}/export`, '_blank'); };
+  const exportCsv = () => { exportReferenceList(selectedCat); };
 
   return (
     <div>

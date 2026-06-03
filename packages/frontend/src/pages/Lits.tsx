@@ -1,6 +1,6 @@
 import { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { getPavillons, createPavillon, getLits, createLit, updateLitStatut, getHospitalisations, sortieHospitalisation, getLitsStats, getPatients, getMedecins, getServices } from '../services/api';
+import { getPavillons, createPavillon, getLits, createLit, updateLitStatut, getHospitalisations, sortieHospitalisation, getLitsStats, getPatients, getMedecins, getServices, printResumeSortie } from '../services/api';
 import type { Patient, Medecin, Service } from '../types';
 
 const statutLit: Record<string, { label: string; tag: string }> = { disponible: { label: 'Disponible', tag: 'tag-green' }, occupe: { label: 'Occupé', tag: 'tag-red' }, maintenance: { label: 'Maintenance', tag: 'tag-yellow' }, reserve: { label: 'Réservé', tag: 'tag-blue' } };
@@ -81,7 +81,7 @@ export default function Lits() {
             <tr key={h.id}><td className="fw-600">{h.patient_prenom} {h.patient_nom}</td><td>{h.lit_numero || '-'}</td><td>{h.pavillon_nom || '-'}</td><td>Dr. {h.medecin_prenom} {h.medecin_nom}</td><td>{h.service_nom || '-'}</td><td>{new Date(h.date_admission).toLocaleDateString('fr-FR')}</td>
               <td>
                 <button className="btn-ghost btn-sm" onClick={() => handleSortie(h.id)} title="Marquer la sortie">Sortie ✓</button>
-                <button className="btn-ghost btn-sm" onClick={() => window.open(`/api/print/resume-sortie/${h.id}`, '_blank')} title="Imprimer le résumé de sortie"><i className="bi bi-printer"></i></button>
+                <button className="btn-ghost btn-sm" onClick={() => printResumeSortie(h.id)} title="Imprimer le résumé de sortie"><i className="bi bi-printer"></i></button>
               </td></tr>
           ))}{hosps.length === 0 && <tr><td colSpan={7} className="table-empty">Aucune hospitalisation active</td></tr>}</tbody>
         </table>

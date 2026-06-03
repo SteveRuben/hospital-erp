@@ -280,6 +280,13 @@ export const previewPrintTemplate = (type: 'facture' | 'ordonnance' | 'labo') =>
 export const printOrdonnance = (patientId: number, medecinId?: number) =>
   authedDownload(`/print/ordonnance/${patientId}?medecin_id=${medecinId || ''}`);
 export const printResultatLabo = (patientId: number) => authedDownload(`/print/labo/${patientId}`);
+// Fiche de transmission inter-équipes + résumé de sortie : HTML print en
+// nouvel onglet. Passent par authedDownload (en-tête Authorization) — un
+// window.open direct 401 « Token requis » car le JWT n'est pas envoyé.
+export const printFicheTransmission = (patientId: number) => authedDownload(`/print/fiche-transmission/${patientId}`);
+export const printResumeSortie = (hospitalisationId: number) => authedDownload(`/print/resume-sortie/${hospitalisationId}`);
+// Export CSV d'une liste de référence — Save-As (route derrière authenticate).
+export const exportReferenceList = (categorie: string) => authedDownload(`/reference-lists/${categorie}/export`, `${categorie}.csv`);
 
 // Impersonation
 export const impersonateUser = (userId: number) => api.post(`/auth/impersonate/${userId}`);
