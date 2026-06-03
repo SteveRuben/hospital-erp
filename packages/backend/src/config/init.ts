@@ -1977,9 +1977,20 @@ export const initDB = async (): Promise<void> => {
         r RECORD;
         last_hash TEXT := NULL;
         new_hash TEXT;
+        has_worm BOOLEAN;
       BEGIN
         IF EXISTS (SELECT 1 FROM audit_chain_meta WHERE k = 'rebaseline_ms_v1') THEN
           RETURN;
+        END IF;
+
+        -- audit_log carries a WORM trigger (audit_log_immutable) that rejects
+        -- every UPDATE/DELETE. The re-baseline legitimately needs to rewrite
+        -- hash/prev_hash once, so disable it for the duration. Everything runs
+        -- inside this single DO block / transaction: if anything below raises,
+        -- the DISABLE rolls back with it and the WORM guard is never left off.
+        has_worm := EXISTS (SELECT 1 FROM pg_trigger WHERE tgname = 'audit_log_immutable');
+        IF has_worm THEN
+          EXECUTE 'ALTER TABLE audit_log DISABLE TRIGGER audit_log_immutable';
         END IF;
 
         FOR r IN SELECT * FROM audit_log ORDER BY id ASC FOR UPDATE LOOP
@@ -1997,11 +2008,16 @@ export const initDB = async (): Promise<void> => {
         END LOOP;
 
         -- Tamper-evident record of the re-baseline itself (the INSERT trigger
-        -- chains it onto the freshly recomputed tail).
+        -- chains it onto the freshly recomputed tail; INSERT is not blocked by
+        -- the WORM guard, which only covers UPDATE/DELETE).
         INSERT INTO audit_log (user_id, action, table_name, record_id, details, created_at)
         VALUES (NULL, 'system', 'audit_log', NULL,
                 'Audit hash chain re-baselined (created_at ms-precision formula fix)',
                 CURRENT_TIMESTAMP);
+
+        IF has_worm THEN
+          EXECUTE 'ALTER TABLE audit_log ENABLE TRIGGER audit_log_immutable';
+        END IF;
 
         INSERT INTO audit_chain_meta (k, v) VALUES ('rebaseline_ms_v1', now()::text);
       END $$;
