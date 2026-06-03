@@ -1,6 +1,11 @@
 import { z } from 'zod';
 import { Request, Response, NextFunction } from 'express';
 
+// Empty <select> options post '' from the browser; treat it as "not provided"
+// so .optional() enum fields validate instead of failing with a 400.
+const emptyToNull = <T extends z.ZodTypeAny>(schema: T) =>
+  z.preprocess((v) => (v === '' ? null : v), schema);
+
 // Generic validation middleware
 export const validate = (schema: z.ZodSchema) => {
   return (req: Request, res: Response, next: NextFunction): void => {
@@ -46,14 +51,14 @@ export const createPatientSchema = z.object({
   nom: z.string().min(1).max(100).trim(),
   prenom: z.string().min(1).max(100).trim(),
   deuxieme_prenom: z.string().max(100).trim().optional().nullable(),
-  sexe: z.enum(['M', 'F', 'autre']).optional().nullable(),
+  sexe: emptyToNull(z.enum(['M', 'F', 'autre']).optional().nullable()),
   date_naissance: z.string().optional().nullable(),
   age_estime: z.number().int().min(0).max(150).optional().nullable(),
   lieu_naissance: z.string().max(100).trim().optional().nullable(),
   nationalite: z.string().max(100).trim().optional().nullable(),
   numero_identite: z.string().max(50).trim().optional().nullable(),
-  statut_matrimonial: z.enum(['celibataire', 'marie', 'divorce', 'veuf']).optional().nullable(),
-  groupe_sanguin: z.enum(['A+', 'A-', 'B+', 'B-', 'AB+', 'AB-', 'O+', 'O-']).optional().nullable(),
+  statut_matrimonial: emptyToNull(z.enum(['celibataire', 'marie', 'divorce', 'veuf']).optional().nullable()),
+  groupe_sanguin: emptyToNull(z.enum(['A+', 'A-', 'B+', 'B-', 'AB+', 'AB-', 'O+', 'O-']).optional().nullable()),
   pays: z.string().max(100).trim().optional().nullable(),
   province: z.string().max(100).trim().optional().nullable(),
   ville: z.string().max(100).trim().optional().nullable(),

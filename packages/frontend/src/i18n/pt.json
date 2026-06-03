@@ -30,6 +30,8 @@
   "auth.session_expired": "Sessão expirada por inatividade. Por favor, faça login novamente.",
   "auth.access_denied": "Acesso negado",
   "auth.connecting": "A ligar…",
+  "auth.show_password": "Mostrar palavra-passe",
+  "auth.hide_password": "Ocultar palavra-passe",
   "auth.must_change_password_title": "Alteração de palavra-passe",
   "auth.must_change_password_subtitle": "Deve alterar a sua palavra-passe antes de continuar",
   "auth.old_password": "Palavra-passe atual",

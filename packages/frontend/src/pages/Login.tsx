@@ -10,6 +10,7 @@ export default function Login() {
   const { t } = useTranslation();
   const [username, setUsername] = useState('');
   const [password, setPassword] = useState('');
+  const [showPwd, setShowPwd] = useState(false);
   const [error, setError] = useState('');
   const [loading, setLoading] = useState(false);
   const { login } = useContext(AuthContext);
@@ -60,7 +61,12 @@ export default function Login() {
           </div>
           <div className="form-group">
             <label className="form-label">{t('auth.password')}</label>
-            <input type="password" className="form-input" value={password} onChange={(e) => setPassword(e.target.value)} required />
+            <div style={{ position: 'relative' }}>
+              <input type={showPwd ? 'text' : 'password'} className="form-input" value={password} onChange={(e) => setPassword(e.target.value)} required style={{ paddingRight: '2.5rem' }} />
+              <button type="button" onClick={() => setShowPwd(!showPwd)} title={showPwd ? t('auth.hide_password') : t('auth.show_password')} style={{ position: 'absolute', right: '0.5rem', top: '50%', transform: 'translateY(-50%)', background: 'none', border: 'none', cursor: 'pointer', padding: '0.25rem', color: 'var(--cds-text-secondary)' }}>
+                <i className={`bi ${showPwd ? 'bi-eye-slash' : 'bi-eye'}`}></i>
+              </button>
+            </div>
           </div>
           <button type="submit" className="btn-primary" style={{ width: '100%', marginTop: '1rem' }} disabled={loading}>
             {loading ? t('auth.connecting') : t('auth.login')}

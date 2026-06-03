@@ -30,6 +30,8 @@
   "auth.session_expired": "Session expirée pour inactivité. Veuillez vous reconnecter.",
   "auth.access_denied": "Accès refusé",
   "auth.connecting": "Connexion…",
+  "auth.show_password": "Afficher le mot de passe",
+  "auth.hide_password": "Masquer le mot de passe",
   "auth.must_change_password_title": "Changement de mot de passe",
   "auth.must_change_password_subtitle": "Vous devez changer votre mot de passe avant de continuer",
   "auth.old_password": "Mot de passe actuel",
