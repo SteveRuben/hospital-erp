@@ -6,6 +6,24 @@ import { Request, Response, NextFunction } from 'express';
 const emptyToNull = <T extends z.ZodTypeAny>(schema: T) =>
   z.preprocess((v) => (v === '' ? null : v), schema);
 
+// Numeric fields fed from HTML <input>/<select> arrive as strings ("37.5") and
+// as empty strings ('') when left blank. Zod's z.number() rejects both, which
+// surfaced as a 400 on POST /api/vitaux and other clinical forms. These helpers
+// coerce a numeric string to a number and map ''/null/undefined to undefined so
+// .optional() does its job. A non-numeric string is passed through unchanged so
+// the underlying schema still raises a clear "expected number" error.
+const toNumber = (v: unknown): unknown => {
+  if (v === '' || v === null || v === undefined) return undefined;
+  if (typeof v === 'string') {
+    const trimmed = v.trim();
+    if (trimmed === '') return undefined;
+    const n = Number(trimmed);
+    return Number.isNaN(n) ? v : n;
+  }
+  return v;
+};
+const numeric = <T extends z.ZodTypeAny>(schema: T) => z.preprocess(toNumber, schema);
+
 // Generic validation middleware
 export const validate = (schema: z.ZodSchema) => {
   return (req: Request, res: Response, next: NextFunction): void => {
@@ -53,7 +71,7 @@ export const createPatientSchema = z.object({
   deuxieme_prenom: z.string().max(100).trim().optional().nullable(),
   sexe: emptyToNull(z.enum(['M', 'F', 'autre']).optional().nullable()),
   date_naissance: z.string().optional().nullable(),
-  age_estime: z.number().int().min(0).max(150).optional().nullable(),
+  age_estime: numeric(z.number().int().min(0).max(150).optional().nullable()),
   lieu_naissance: z.string().max(100).trim().optional().nullable(),
   nationalite: z.string().max(100).trim().optional().nullable(),
   numero_identite: z.string().max(50).trim().optional().nullable(),
@@ -74,36 +92,36 @@ export const createPatientSchema = z.object({
 });
 
 export const createRecetteSchema = z.object({
-  patient_id: z.number().int().positive().optional().nullable(),
-  service_id: z.number().int().positive().optional().nullable(),
+  patient_id: numeric(z.number().int().positive().optional().nullable()),
+  service_id: numeric(z.number().int().positive().optional().nullable()),
   type_acte: z.string().min(1).max(100).trim(),
-  montant: z.number().positive().max(999999999),
-  mode_paiement: z.enum(['especes', 'mobile_money', 'carte']).optional(),
+  montant: numeric(z.number().positive().max(999999999)),
+  mode_paiement: emptyToNull(z.enum(['especes', 'mobile_money', 'carte']).optional().nullable()),
   description: z.string().max(500).trim().optional().nullable(),
 });
 
 export const createDepenseSchema = z.object({
   type_depense: z.string().min(1).max(100).trim(),
   nature: z.string().max(100).trim().optional().nullable(),
-  montant: z.number().positive().max(999999999),
+  montant: numeric(z.number().positive().max(999999999)),
   fournisseur: z.string().max(100).trim().optional().nullable(),
   description: z.string().max(500).trim().optional().nullable(),
   date_depense: z.string().optional().nullable(),
 });
 
 export const createAllergieSchema = z.object({
-  patient_id: z.number().int().positive(),
+  patient_id: numeric(z.number().int().positive()),
   allergene: z.string().min(1).max(200).trim(),
-  type_allergie: z.enum(['medicament', 'alimentaire', 'environnement', 'autre']).optional(),
-  severite: z.enum(['legere', 'moderee', 'severe', 'fatale']).optional(),
+  type_allergie: emptyToNull(z.enum(['medicament', 'alimentaire', 'environnement', 'autre']).optional().nullable()),
+  severite: emptyToNull(z.enum(['legere', 'moderee', 'severe', 'fatale']).optional().nullable()),
   reaction: z.string().max(500).trim().optional().nullable(),
   date_debut: z.string().optional().nullable(),
 });
 
 export const createPrescriptionSchema = z.object({
-  patient_id: z.number().int().positive(),
-  medecin_id: z.number().int().positive().optional().nullable(),
-  consultation_id: z.number().int().positive().optional().nullable(),
+  patient_id: numeric(z.number().int().positive()),
+  medecin_id: numeric(z.number().int().positive().optional().nullable()),
+  consultation_id: numeric(z.number().int().positive().optional().nullable()),
   medicament: z.string().min(1).max(200).trim(),
   dosage: z.string().max(100).trim().optional().nullable(),
   frequence: z.string().max(100).trim().optional().nullable(),
@@ -121,25 +139,25 @@ export const createTarifSchema = z.object({
   code: z.string().min(1).max(50).trim(),
   libelle: z.string().min(1).max(200).trim(),
   categorie: z.string().min(1).max(100).trim(),
-  montant: z.number().positive().max(50_000_000), // Max 50M XOF
-  service_id: z.number().int().positive().optional().nullable(),
+  montant: numeric(z.number().positive().max(50_000_000)), // Max 50M XOF
+  service_id: numeric(z.number().int().positive().optional().nullable()),
 });
 
 export const createFactureSchema = z.object({
-  patient_id: z.number().int().positive(),
+  patient_id: numeric(z.number().int().positive()),
   lignes: z.array(z.object({
-    tarif_id: z.number().int().positive().optional().nullable(),
+    tarif_id: numeric(z.number().int().positive().optional().nullable()),
     libelle: z.string().min(1).max(200).trim(),
-    quantite: z.number().int().positive().max(1000),
-    prix_unitaire: z.number().positive().max(50_000_000),
+    quantite: numeric(z.number().int().positive().max(1000)),
+    prix_unitaire: numeric(z.number().positive().max(50_000_000)),
   })).min(1, 'Au moins une ligne requise'),
   notes: z.string().max(1000).trim().optional().nullable(),
 });
 
 export const createPaiementSchema = z.object({
-  facture_id: z.number().int().positive(),
-  montant: z.number().positive().max(100_000_000), // Max 100M XOF
-  mode_paiement: z.enum(['especes', 'mobile_money', 'carte', 'virement', 'assurance']).optional(),
+  facture_id: numeric(z.number().int().positive()),
+  montant: numeric(z.number().positive().max(100_000_000)), // Max 100M XOF
+  mode_paiement: emptyToNull(z.enum(['especes', 'mobile_money', 'carte', 'virement', 'assurance']).optional().nullable()),
   reference: z.string().max(100).trim().optional().nullable(),
   notes: z.string().max(500).trim().optional().nullable(),
 });
@@ -159,29 +177,29 @@ export const createServiceSchema = z.object({
 });
 
 export const createConsultationSchema = z.object({
-  patient_id: z.number().int().positive(),
-  medecin_id: z.number().int().positive().optional().nullable(),
-  service_id: z.number().int().positive().optional().nullable(),
+  patient_id: numeric(z.number().int().positive()),
+  medecin_id: numeric(z.number().int().positive().optional().nullable()),
+  service_id: numeric(z.number().int().positive().optional().nullable()),
   diagnostic: z.string().max(2000).trim().optional().nullable(),
   traitement: z.string().max(2000).trim().optional().nullable(),
   notes: z.string().max(5000).trim().optional().nullable(),
   motif: z.string().max(500).trim().optional().nullable(),
-  gravite: z.enum(['benigne', 'moderee', 'severe', 'critique']).optional().nullable(),
+  gravite: emptyToNull(z.enum(['benigne', 'moderee', 'severe', 'critique']).optional().nullable()),
 });
 
 export const createPathologieSchema = z.object({
-  patient_id: z.number().int().positive(),
+  patient_id: numeric(z.number().int().positive()),
   nom: z.string().min(1).max(200).trim(),
   code_cim: z.string().max(20).trim().optional().nullable(),
-  statut: z.enum(['active', 'guerie', 'chronique', 'remission']).optional().nullable(),
+  statut: emptyToNull(z.enum(['active', 'guerie', 'chronique', 'remission']).optional().nullable()),
   date_debut: z.string().optional().nullable(),
   date_fin: z.string().optional().nullable(),
   notes: z.string().max(2000).trim().optional().nullable(),
 });
 
 export const createVaccinationSchema = z.object({
-  patient_id: z.number().int().positive(),
-  medecin_id: z.number().int().positive().optional().nullable(),
+  patient_id: numeric(z.number().int().positive()),
+  medecin_id: numeric(z.number().int().positive().optional().nullable()),
   vaccin: z.string().min(1).max(200).trim(),
   lot: z.string().max(100).trim().optional().nullable(),
   dose: z.string().max(50).trim().optional().nullable(),
@@ -192,67 +210,67 @@ export const createVaccinationSchema = z.object({
 });
 
 export const createNoteSchema = z.object({
-  patient_id: z.number().int().positive(),
+  patient_id: numeric(z.number().int().positive()),
   titre: z.string().max(200).trim().optional().nullable(),
   contenu: z.string().min(1).max(10000).trim(),
-  type_note: z.enum(['general', 'medical', 'admin', 'urgence']).optional().nullable(),
+  type_note: emptyToNull(z.enum(['general', 'medical', 'admin', 'urgence']).optional().nullable()),
 });
 
 export const createAlerteSchema = z.object({
-  patient_id: z.number().int().positive(),
+  patient_id: numeric(z.number().int().positive()),
   type_alerte: z.string().max(50).trim().optional().nullable(),
   message: z.string().min(1).max(2000).trim(),
-  severite: z.enum(['info', 'warning', 'critique']).optional().nullable(),
+  severite: emptyToNull(z.enum(['info', 'warning', 'critique']).optional().nullable()),
 });
 
 export const createOrdonnanceSchema = z.object({
-  patient_id: z.number().int().positive(),
-  medecin_id: z.number().int().positive().optional().nullable(),
-  consultation_id: z.number().int().positive().optional().nullable(),
+  patient_id: numeric(z.number().int().positive()),
+  medecin_id: numeric(z.number().int().positive().optional().nullable()),
+  consultation_id: numeric(z.number().int().positive().optional().nullable()),
   notes: z.string().max(2000).trim().optional().nullable(),
 });
 
 export const createRendezVousSchema = z.object({
-  patient_id: z.number().int().positive(),
-  medecin_id: z.number().int().positive(),
-  service_id: z.number().int().positive().optional().nullable(),
+  patient_id: numeric(z.number().int().positive()),
+  medecin_id: numeric(z.number().int().positive()),
+  service_id: numeric(z.number().int().positive().optional().nullable()),
   date_rdv: z.string().min(1, 'Date requise'),
   motif: z.string().max(500).trim().optional().nullable(),
   notes: z.string().max(2000).trim().optional().nullable(),
 });
 
 export const createVitalSchema = z.object({
-  patient_id: z.number().int().positive(),
-  medecin_id: z.number().int().positive().optional().nullable(),
-  temperature: z.number().min(20).max(50).optional().nullable(),
-  tension_systolique: z.number().int().min(30).max(300).optional().nullable(),
-  tension_diastolique: z.number().int().min(20).max(200).optional().nullable(),
-  pouls: z.number().int().min(20).max(300).optional().nullable(),
-  frequence_respiratoire: z.number().int().min(5).max(80).optional().nullable(),
-  saturation_o2: z.number().int().min(0).max(100).optional().nullable(),
-  poids: z.number().min(0).max(500).optional().nullable(),
-  taille: z.number().min(0).max(300).optional().nullable(),
-  glycemie: z.number().min(0).max(50).optional().nullable(),
+  patient_id: numeric(z.number().int().positive()),
+  medecin_id: numeric(z.number().int().positive().optional().nullable()),
+  temperature: numeric(z.number().min(20).max(50).optional().nullable()),
+  tension_systolique: numeric(z.number().int().min(30).max(300).optional().nullable()),
+  tension_diastolique: numeric(z.number().int().min(20).max(200).optional().nullable()),
+  pouls: numeric(z.number().int().min(20).max(300).optional().nullable()),
+  frequence_respiratoire: numeric(z.number().int().min(5).max(80).optional().nullable()),
+  saturation_o2: numeric(z.number().int().min(0).max(100).optional().nullable()),
+  poids: numeric(z.number().min(0).max(500).optional().nullable()),
+  taille: numeric(z.number().min(0).max(300).optional().nullable()),
+  glycemie: numeric(z.number().min(0).max(50).optional().nullable()),
   notes: z.string().max(1000).trim().optional().nullable(),
 });
 
 export const createVisiteSchema = z.object({
-  patient_id: z.number().int().positive(),
-  service_id: z.number().int().positive().optional().nullable(),
-  type_visite: z.enum(['ambulatoire', 'urgence', 'hospitalisation', 'consultation']).optional().nullable(),
+  patient_id: numeric(z.number().int().positive()),
+  service_id: numeric(z.number().int().positive().optional().nullable()),
+  type_visite: emptyToNull(z.enum(['ambulatoire', 'urgence', 'hospitalisation', 'consultation']).optional().nullable()),
   notes: z.string().max(2000).trim().optional().nullable(),
 });
 
 export const createPavillonSchema = z.object({
   nom: z.string().min(1).max(100).trim(),
-  etage: z.number().int().min(-5).max(50).optional().nullable(),
-  service_id: z.number().int().positive().optional().nullable(),
-  capacite: z.number().int().min(0).max(1000).optional().nullable(),
+  etage: numeric(z.number().int().min(-5).max(50).optional().nullable()),
+  service_id: numeric(z.number().int().positive().optional().nullable()),
+  capacite: numeric(z.number().int().min(0).max(1000).optional().nullable()),
   description: z.string().max(1000).trim().optional().nullable(),
 });
 
 export const createLitSchema = z.object({
-  pavillon_id: z.number().int().positive(),
+  pavillon_id: numeric(z.number().int().positive()),
   numero: z.string().min(1).max(50).trim(),
   type_lit: z.string().max(50).trim().optional().nullable(),
 });
@@ -264,31 +282,31 @@ export const createConceptSchema = z.object({
   classe: z.enum(['diagnostic', 'symptome', 'test', 'medicament', 'procedure', 'finding', 'question', 'reponse', 'misc']),
   description: z.string().max(2000).trim().optional().nullable(),
   unite: z.string().max(50).trim().optional().nullable(),
-  valeur_min: z.number().optional().nullable(),
-  valeur_max: z.number().optional().nullable(),
+  valeur_min: numeric(z.number().optional().nullable()),
+  valeur_max: numeric(z.number().optional().nullable()),
 });
 
 export const createEncounterSchema = z.object({
-  patient_id: z.number().int().positive(),
-  encounter_type_id: z.number().int().positive(),
-  visite_id: z.number().int().positive().optional().nullable(),
-  service_id: z.number().int().positive().optional().nullable(),
+  patient_id: numeric(z.number().int().positive()),
+  encounter_type_id: numeric(z.number().int().positive()),
+  visite_id: numeric(z.number().int().positive().optional().nullable()),
+  service_id: numeric(z.number().int().positive().optional().nullable()),
   notes: z.string().max(5000).trim().optional().nullable(),
   observations: z.array(z.unknown()).optional().nullable(),
 });
 
 export const createOrderSchema = z.object({
-  patient_id: z.number().int().positive(),
-  encounter_id: z.number().int().positive().optional().nullable(),
-  concept_id: z.number().int().positive().optional().nullable(),
+  patient_id: numeric(z.number().int().positive()),
+  encounter_id: numeric(z.number().int().positive().optional().nullable()),
+  concept_id: numeric(z.number().int().positive().optional().nullable()),
   type_order: z.enum(['drug', 'lab', 'imaging', 'procedure', 'referral', 'observation']),
-  urgence: z.enum(['routine', 'urgent', 'stat']).optional().nullable(),
+  urgence: emptyToNull(z.enum(['routine', 'urgent', 'stat']).optional().nullable()),
   instructions: z.string().max(2000).trim().optional().nullable(),
   dosage: z.string().max(100).trim().optional().nullable(),
   frequence: z.string().max(100).trim().optional().nullable(),
   duree: z.string().max(100).trim().optional().nullable(),
   voie: z.string().max(50).trim().optional().nullable(),
-  quantite: z.number().int().min(0).max(100000).optional().nullable(),
+  quantite: numeric(z.number().int().min(0).max(100000).optional().nullable()),
 });
 
 export const createMedicamentSchema = z.object({
@@ -298,16 +316,16 @@ export const createMedicamentSchema = z.object({
   dosage_standard: z.string().max(100).trim().optional().nullable(),
   code_barre: z.string().max(100).trim().optional().nullable(),
   categorie: z.string().max(100).trim().optional().nullable(),
-  prix_unitaire: z.number().min(0).max(10_000_000).optional().nullable(),
+  prix_unitaire: numeric(z.number().min(0).max(10_000_000).optional().nullable()),
 });
 
 export const createStockSchema = z.object({
-  medicament_id: z.number().int().positive(),
+  medicament_id: numeric(z.number().int().positive()),
   lot: z.string().max(100).trim().optional().nullable(),
   date_expiration: z.string().optional().nullable(),
-  quantite: z.number().int().min(0).max(1_000_000),
-  quantite_min: z.number().int().min(0).max(1_000_000).optional().nullable(),
-  prix_achat: z.number().min(0).max(10_000_000).optional().nullable(),
+  quantite: numeric(z.number().int().min(0).max(1_000_000)),
+  quantite_min: numeric(z.number().int().min(0).max(1_000_000).optional().nullable()),
+  prix_achat: numeric(z.number().min(0).max(10_000_000).optional().nullable()),
   fournisseur: z.string().max(200).trim().optional().nullable(),
 });
 
@@ -320,9 +338,9 @@ export const createProgrammeSchema = z.object({
 // === WORKFLOW / ADMIN SCHEMAS ===
 
 export const createFileAttenteSchema = z.object({
-  patient_id: z.number().int().positive(),
-  service_id: z.number().int().positive().optional().nullable(),
-  priorite: z.enum(['normale', 'urgente', 'vitale']).optional().nullable(),
+  patient_id: numeric(z.number().int().positive()),
+  service_id: numeric(z.number().int().positive().optional().nullable()),
+  priorite: emptyToNull(z.enum(['normale', 'urgente', 'vitale']).optional().nullable()),
   notes: z.string().max(1000).trim().optional().nullable(),
 });
 
@@ -332,19 +350,19 @@ export const createListePatientsSchema = z.object({
 });
 
 export const addPatientToListeSchema = z.object({
-  patient_id: z.number().int().positive(),
+  patient_id: numeric(z.number().int().positive()),
 });
 
 export const createFormulaireSchema = z.object({
   nom: z.string().min(1).max(200).trim(),
   description: z.string().max(1000).trim().optional().nullable(),
   schema_json: z.unknown(), // JSON form schema, opaque
-  service_id: z.number().int().positive().optional().nullable(),
+  service_id: numeric(z.number().int().positive().optional().nullable()),
 });
 
 export const createReponseFormulaireSchema = z.object({
-  formulaire_id: z.number().int().positive(),
-  patient_id: z.number().int().positive(),
+  formulaire_id: numeric(z.number().int().positive()),
+  patient_id: numeric(z.number().int().positive()),
   donnees_json: z.unknown(),
 });
 
@@ -358,28 +376,28 @@ export const verifyOtpSchema = z.object({
 });
 
 export const bookRendezVousPortalSchema = z.object({
-  service_id: z.number().int().positive().optional().nullable(),
-  medecin_id: z.number().int().positive().optional().nullable(),
+  service_id: numeric(z.number().int().positive().optional().nullable()),
+  medecin_id: numeric(z.number().int().positive().optional().nullable()),
   date_rdv: z.string().min(1, 'Date requise'),
   motif: z.string().max(500).trim().optional().nullable(),
 });
 
 export const patientMergeSchema = z.object({
-  keep_id: z.number().int().positive(),
-  merge_id: z.number().int().positive(),
+  keep_id: numeric(z.number().int().positive()),
+  merge_id: numeric(z.number().int().positive()),
 }).refine(d => d.keep_id !== d.merge_id, { message: 'keep_id et merge_id doivent être différents' });
 
 export const createPlanningSchema = z.object({
-  medecin_id: z.number().int().positive(),
-  service_id: z.number().int().positive().optional().nullable(),
-  jour_semaine: z.number().int().min(0).max(6),
+  medecin_id: numeric(z.number().int().positive()),
+  service_id: numeric(z.number().int().positive().optional().nullable()),
+  jour_semaine: numeric(z.number().int().min(0).max(6)),
   heure_debut: z.string().regex(/^\d{2}:\d{2}(:\d{2})?$/, 'Format HH:MM'),
   heure_fin: z.string().regex(/^\d{2}:\d{2}(:\d{2})?$/, 'Format HH:MM'),
-  duree_creneau: z.number().int().min(5).max(240).optional().nullable(),
+  duree_creneau: numeric(z.number().int().min(5).max(240).optional().nullable()),
 });
 
 export const createBlocageSchema = z.object({
-  medecin_id: z.number().int().positive(),
+  medecin_id: numeric(z.number().int().positive()),
   date_debut: z.string().min(1),
   date_fin: z.string().min(1),
   motif: z.string().max(500).trim().optional().nullable(),
