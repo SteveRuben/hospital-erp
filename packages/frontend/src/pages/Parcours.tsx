@@ -7,6 +7,7 @@ import {
 } from '../services/api';
 import { useSnackbar } from '../components/Snackbar';
 import { useConfirm } from '../components/ConfirmDialog';
+import AddPatientToParcoursModal from '../components/AddPatientToParcoursModal';
 
 // Care-journey steps. Order drives the Kanban columns left → right.
 const STATUTS = ['triage', 'consultation', 'examens', 'traitement', 'sortie'] as const;
@@ -63,6 +64,7 @@ export default function Parcours() {
   const [rows, setRows] = useState<ParcoursRow[]>([]);
   const [stats, setStats] = useState<Record<string, number>>({});
   const [loading, setLoading] = useState(true);
+  const [showAdd, setShowAdd] = useState(false);
   const navigate = useNavigate();
   const { showSnackbar } = useSnackbar();
   const { confirm } = useConfirm();
@@ -115,15 +117,22 @@ export default function Parcours() {
 
   const cardsFor = (s: Statut) => rows.filter(r => r.statut === s);
   const activeCount = rows.filter(r => r.statut !== 'sortie').length;
+  // Patients with an in-progress parcours — blocked from re-adding (no dup cards).
+  const activePatientIds = new Set(rows.filter(r => r.statut !== 'sortie').map(r => r.patient_id));
 
   return (
     <div>
       <nav className="breadcrumb"><a href="/app">Accueil</a><span className="breadcrumb-separator">/</span><span>Parcours patients</span></nav>
       <div className="page-header">
         <h1 className="page-title">Parcours patients</h1>
-        <button className="btn-primary" onClick={() => navigate('/app/patients/nouveau')}>
-          <i className="bi bi-person-plus"></i> Nouveau patient
-        </button>
+        <div className="d-flex gap-1">
+          <button className="btn-secondary" onClick={() => setShowAdd(true)}>
+            <i className="bi bi-arrow-repeat"></i> Patient existant
+          </button>
+          <button className="btn-primary" onClick={() => navigate('/app/patients/nouveau')}>
+            <i className="bi bi-person-plus"></i> Nouveau patient
+          </button>
+        </div>
       </div>
 
       <div className="grid-3 mb-3">
@@ -196,6 +205,14 @@ export default function Parcours() {
           );
         })}
       </div>
+
+      {showAdd && (
+        <AddPatientToParcoursModal
+          activePatientIds={activePatientIds}
+          onClose={() => setShowAdd(false)}
+          onAdded={load}
+        />
+      )}
     </div>
   );
 }
