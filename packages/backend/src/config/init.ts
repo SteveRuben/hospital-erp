@@ -1258,6 +1258,16 @@ export const initDB = async (): Promise<void> => {
     //   - the legacy `actif` flag is kept as a denorm of statut='actif'
     //     so access-control's existing WHERE actif = TRUE keeps working.
     await client.query(`
+      CREATE TABLE IF NOT EXISTS patient_attributions (
+        id SERIAL PRIMARY KEY,
+        patient_id INTEGER REFERENCES patients(id) ON DELETE CASCADE,
+        medecin_user_id INTEGER REFERENCES users(id) ON DELETE CASCADE,
+        date_attribution TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+        actif BOOLEAN DEFAULT TRUE,
+        UNIQUE(patient_id, medecin_user_id)
+      );
+    `);
+    await client.query(`
       DO $$
       BEGIN
         IF NOT EXISTS (SELECT 1 FROM pg_type WHERE typname = 'AttributionStatut') THEN
