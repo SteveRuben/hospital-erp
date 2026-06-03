@@ -119,7 +119,7 @@ model Patient {
   ageEstime               Int?      @map("age_estime")
   lieuNaissance           String?   @map("lieu_naissance") @db.VarChar(100)
   nationalite             String?   @db.VarChar(100)
-  numeroIdentite          String?   @map("numero_identite") @db.VarChar(50)
+  numeroIdentite          String?   @map("numero_identite") @db.Text // encrypted at rest (AES-256-GCM) — TEXT to fit ciphertext overhead
   statutMatrimonial       StatutMatrimonial? @map("statut_matrimonial")
   groupeSanguin           GroupeSanguin?     @map("groupe_sanguin")
   pays                    String?   @db.VarChar(100)
@@ -131,9 +131,9 @@ model Patient {
   profession              String?   @db.VarChar(100)
   telephone               String?   @db.VarChar(20)
   email                   String?   @db.VarChar(150)
-  contactUrgenceNom       String?   @map("contact_urgence_nom") @db.VarChar(100)
+  contactUrgenceNom       String?   @map("contact_urgence_nom") @db.Text // encrypted at rest (AES-256-GCM) — TEXT to fit ciphertext overhead
   contactUrgenceRelation  String?   @map("contact_urgence_relation") @db.VarChar(50)
-  contactUrgenceTelephone String?   @map("contact_urgence_telephone") @db.VarChar(20)
+  contactUrgenceTelephone String?   @map("contact_urgence_telephone") @db.Text // encrypted at rest (AES-256-GCM) — TEXT to fit ciphertext overhead
   photoUrl                String?   @map("photo_url")
   archived                Boolean   @default(false)
   referenceId             String?   @unique @map("reference_id") @db.VarChar(30)

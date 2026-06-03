@@ -915,6 +915,17 @@ export const initDB = async (): Promise<void> => {
       ALTER TABLE patients ADD COLUMN IF NOT EXISTS reference_id VARCHAR(30) UNIQUE;
     `);
 
+    // PHI fields encrypted at rest (AES-256-GCM) grow by ~42 chars of
+    // iv:authTag:base64 overhead, which overflows the original VARCHAR
+    // lengths and throws Prisma P2000 ("value too long") on create/update.
+    // Widen the three encrypted patient columns to TEXT. Idempotent: TYPE
+    // TEXT is a no-op once already TEXT.
+    await client.query(`
+      ALTER TABLE patients ALTER COLUMN numero_identite TYPE TEXT;
+      ALTER TABLE patients ALTER COLUMN contact_urgence_nom TYPE TEXT;
+      ALTER TABLE patients ALTER COLUMN contact_urgence_telephone TYPE TEXT;
+    `);
+
     // Per-admin onboarding dismissal timestamp. Null = wizard pending.
     // Wizard re-prompts after a 7-day cooldown handled in the API layer.
     await client.query(`
