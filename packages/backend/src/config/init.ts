@@ -1975,58 +1975,59 @@ export const initDB = async (): Promise<void> => {
     // prerequisite. If it ever fails (permissions, an unforeseen edge), the
     // server must still boot — a broken chain is non-blocking noise, a crash
     // loop is an outage. Log and continue.
+    //
+    // CRITICAL: audit_log carries a WORM trigger (audit_log_immutable) that
+    // rejects every UPDATE/DELETE. The earlier attempt to disable it from
+    // inside the DO block (ALTER TABLE ... DISABLE TRIGGER) did NOT take effect
+    // in this deployment — the UPDATE was still blocked, the whole DO block
+    // raised, the transaction rolled back, the marker was never written, and
+    // initDB crash-looped on every boot. The robust fix: DROP the WORM trigger
+    // at the statement level *before* the re-baseline. It is unconditionally
+    // recreated further down in this same initDB run (see "Protect audit_log
+    // from modification"), so audit_log is never left writable past boot.
     try {
-    await client.query(`
-      DO $$
-      DECLARE
-        r RECORD;
-        last_hash TEXT := NULL;
-        new_hash TEXT;
-        has_worm BOOLEAN;
-      BEGIN
-        IF EXISTS (SELECT 1 FROM audit_chain_meta WHERE k = 'rebaseline_ms_v1') THEN
-          RETURN;
-        END IF;
+      const alreadyRebaselined = await client.query(
+        "SELECT 1 FROM audit_chain_meta WHERE k = 'rebaseline_ms_v1'"
+      );
+      if (alreadyRebaselined.rows.length === 0) {
+        // Remove the immutability guard so the one-time rewrite can run.
+        await client.query('DROP TRIGGER IF EXISTS audit_log_immutable ON audit_log;');
 
-        -- audit_log carries a WORM trigger (audit_log_immutable) that rejects
-        -- every UPDATE/DELETE. The re-baseline legitimately needs to rewrite
-        -- hash/prev_hash once, so disable it for the duration. Everything runs
-        -- inside this single DO block / transaction: if anything below raises,
-        -- the DISABLE rolls back with it and the WORM guard is never left off.
-        has_worm := EXISTS (SELECT 1 FROM pg_trigger WHERE tgname = 'audit_log_immutable');
-        IF has_worm THEN
-          EXECUTE 'ALTER TABLE audit_log DISABLE TRIGGER audit_log_immutable';
-        END IF;
+        await client.query(`
+          DO $$
+          DECLARE
+            r RECORD;
+            last_hash TEXT := NULL;
+            new_hash TEXT;
+          BEGIN
+            FOR r IN SELECT * FROM audit_log ORDER BY id ASC FOR UPDATE LOOP
+              new_hash := encode(digest(
+                COALESCE(r.user_id::text, '')    || '|' ||
+                COALESCE(r.action, '')           || '|' ||
+                COALESCE(r.table_name, '')       || '|' ||
+                COALESCE(r.record_id::text, '')  || '|' ||
+                COALESCE(r.details, '')          || '|' ||
+                to_char(r.created_at, 'YYYY-MM-DD HH24:MI:SS.MS') || '|' ||
+                COALESCE(last_hash, ''),
+                'sha256'), 'hex');
+              UPDATE audit_log SET prev_hash = last_hash, hash = new_hash WHERE id = r.id;
+              last_hash := new_hash;
+            END LOOP;
 
-        FOR r IN SELECT * FROM audit_log ORDER BY id ASC FOR UPDATE LOOP
-          new_hash := encode(digest(
-            COALESCE(r.user_id::text, '')    || '|' ||
-            COALESCE(r.action, '')           || '|' ||
-            COALESCE(r.table_name, '')       || '|' ||
-            COALESCE(r.record_id::text, '')  || '|' ||
-            COALESCE(r.details, '')          || '|' ||
-            to_char(r.created_at, 'YYYY-MM-DD HH24:MI:SS.MS') || '|' ||
-            COALESCE(last_hash, ''),
-            'sha256'), 'hex');
-          UPDATE audit_log SET prev_hash = last_hash, hash = new_hash WHERE id = r.id;
-          last_hash := new_hash;
-        END LOOP;
+            -- Tamper-evident record of the re-baseline itself (INSERT is not
+            -- blocked once the WORM trigger is dropped; the hash-chain INSERT
+            -- trigger still fires and chains it onto the recomputed tail).
+            INSERT INTO audit_log (user_id, action, table_name, record_id, details, created_at)
+            VALUES (NULL, 'system', 'audit_log', NULL,
+                    'Audit hash chain re-baselined (created_at ms-precision formula fix)',
+                    CURRENT_TIMESTAMP);
+          END $$;
+        `);
 
-        -- Tamper-evident record of the re-baseline itself (the INSERT trigger
-        -- chains it onto the freshly recomputed tail; INSERT is not blocked by
-        -- the WORM guard, which only covers UPDATE/DELETE).
-        INSERT INTO audit_log (user_id, action, table_name, record_id, details, created_at)
-        VALUES (NULL, 'system', 'audit_log', NULL,
-                'Audit hash chain re-baselined (created_at ms-precision formula fix)',
-                CURRENT_TIMESTAMP);
-
-        IF has_worm THEN
-          EXECUTE 'ALTER TABLE audit_log ENABLE TRIGGER audit_log_immutable';
-        END IF;
-
-        INSERT INTO audit_chain_meta (k, v) VALUES ('rebaseline_ms_v1', now()::text);
-      END $$;
-    `);
+        await client.query(
+          "INSERT INTO audit_chain_meta (k, v) VALUES ('rebaseline_ms_v1', now()::text) ON CONFLICT (k) DO NOTHING;"
+        );
+      }
     } catch (rebaselineErr) {
       console.error('[INIT] Audit chain re-baseline skipped (non-fatal):', rebaselineErr);
     }
