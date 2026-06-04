@@ -17,6 +17,9 @@ type ExamenAug = Examen & {
   paye?: boolean;
   date_paiement?: string | null;
   mode_paiement?: string | null;
+  demandeur_id?: number | null;
+  demandeur_nom?: string | null;
+  demandeur_prenom?: string | null;
 };
 
 const statutLabels: Record<string, { label: string; tag: string }> = {
@@ -140,6 +143,11 @@ export default function Laboratoire() {
                         {prio === 'prioritaire' && <span className="tag tag-orange" style={{ fontSize: '0.5625rem', whiteSpace: 'nowrap' }}>prioritaire</span>}
                       </div>
                       <p>{ex.type_examen}</p>
+                      {(ex.demandeur_prenom || ex.demandeur_nom) && (
+                        <p style={{ fontSize: '0.6875rem', color: 'var(--cds-text-secondary)' }} title="Médecin prescripteur">
+                          <i className="bi bi-person"></i> Dr. {ex.demandeur_prenom} {ex.demandeur_nom}
+                        </p>
+                      )}
                       <p style={{ fontSize: '0.6875rem', color: 'var(--cds-text-secondary)' }}>{dateLabel}</p>
                       {ex.montant != null && Number(ex.montant) > 0 && (
                         <p className="text-success fw-600" style={{ fontSize: '0.8125rem' }}>
@@ -171,6 +179,11 @@ export default function Laboratoire() {
                           {nextAction[s]} →
                         </button>
                       )}
+                      {s === 'resultat' && canLabWorkflow && (
+                        <button className="btn-ghost btn-sm mt-1" onClick={() => setResultModal(ex)} title="Corriger le résultat avant validation">
+                          <i className="bi bi-pencil"></i> Modifier le résultat
+                        </button>
+                      )}
                       {s !== 'a_payer' && s !== 'analyse' && nextStatut[s] &&
                         (canLabWorkflow || (isMedecin && s === 'resultat')) && (
                         <button className="btn-ghost btn-sm mt-1" onClick={() => changeStatut(ex, nextStatut[s])}>
@@ -190,7 +203,7 @@ export default function Laboratoire() {
           })}
         </div>
       ) : (
-        <table className="data-table"><thead><tr><th>Date</th><th>Patient</th><th>Type</th><th>Statut</th><th>Résultat</th><th>Montant</th><th></th></tr></thead>
+        <table className="data-table"><thead><tr><th>Date</th><th>Patient</th><th>Type</th><th>Prescripteur</th><th>Statut</th><th>Résultat</th><th>Montant</th><th></th></tr></thead>
           <tbody>
             {examens.map(ex => {
               const dt = ex.date_examen ? new Date(ex.date_examen) : null;
@@ -201,6 +214,7 @@ export default function Laboratoire() {
                   <td>{dateLabel}</td>
                   <td>{ex.patient_prenom} {ex.patient_nom}</td>
                   <td>{ex.type_examen}</td>
+                  <td>{(ex.demandeur_prenom || ex.demandeur_nom) ? `Dr. ${ex.demandeur_prenom ?? ''} ${ex.demandeur_nom ?? ''}`.trim() : '-'}</td>
                   <td><span className={`tag ${statutLabels[statut]?.tag}`}>{statutLabels[statut]?.label}</span></td>
                   <td>{ex.resultat || '-'}</td>
                   <td>{ex.montant ? money(Number(ex.montant)) : '-'}</td>
@@ -218,7 +232,7 @@ export default function Laboratoire() {
                 </tr>
               );
             })}
-            {examens.length === 0 && <tr><td colSpan={7} className="table-empty"><i className="bi bi-flask"></i>Aucun examen</td></tr>}
+            {examens.length === 0 && <tr><td colSpan={8} className="table-empty"><i className="bi bi-flask"></i>Aucun examen</td></tr>}
           </tbody>
         </table>
       )}
@@ -238,6 +252,9 @@ function ResultEntryModal({ examen, onClose, onDone }: { examen: ExamenAug; onCl
   const [resultat, setResultat] = useState(examen.resultat ?? '');
   const [saving, setSaving] = useState(false);
   const { showSnackbar } = useSnackbar();
+  // Correction d'un résultat déjà saisi (statut 'resultat') vs première saisie
+  // depuis 'analyse'. Le PUT reste idempotent (resultat -> resultat autorisé).
+  const isEditingResult = (examen.statut ?? '') === 'resultat';
 
   const submit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -257,7 +274,7 @@ function ResultEntryModal({ examen, onClose, onDone }: { examen: ExamenAug; onCl
   return (
     <div className="modal-overlay" onClick={onClose}>
       <div className="modal-container" onClick={e => e.stopPropagation()}>
-        <div className="modal-header"><h3>Saisir le résultat</h3><button className="btn-icon" onClick={onClose}><i className="bi bi-x-lg"></i></button></div>
+        <div className="modal-header"><h3>{isEditingResult ? 'Corriger le résultat' : 'Saisir le résultat'}</h3><button className="btn-icon" onClick={onClose}><i className="bi bi-x-lg"></i></button></div>
         <form onSubmit={submit}>
           <div className="modal-body">
             <p className="text-muted mb-2" style={{ fontSize: '0.8125rem' }}>
@@ -271,7 +288,7 @@ function ResultEntryModal({ examen, onClose, onDone }: { examen: ExamenAug; onCl
           </div>
           <div className="modal-footer">
             <button type="button" className="btn-secondary" onClick={onClose} disabled={saving}>Annuler</button>
-            <button type="submit" className="btn-primary" disabled={saving}>{saving ? '…' : 'Enregistrer et passer à « Résultat »'}</button>
+            <button type="submit" className="btn-primary" disabled={saving}>{saving ? '…' : (isEditingResult ? 'Enregistrer la correction' : 'Enregistrer et passer à « Résultat »')}</button>
           </div>
         </form>
       </div>

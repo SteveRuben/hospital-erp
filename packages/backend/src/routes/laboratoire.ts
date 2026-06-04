@@ -114,21 +114,33 @@ router.get('/', authenticate, async (req: AuthRequest, res: Response): Promise<v
       // so urgent (0) < prioritaire (1) < normal (2) lands naturally.
       orderBy: [{ priorite: 'asc' }, { dateExamen: 'desc' }, { id: 'desc' }],
     });
-    const mapped = rows.map(e => ({
-      ...e,
-      date_examen: e.dateExamen,
-      type_examen: e.typeExamen,
-      patient_id: e.patientId,
-      demandeur_id: e.demandeurId,
-      statut: e.statut,
-      priorite: e.priorite,
-      paye: e.paye,
-      date_paiement: e.datePaiement,
-      mode_paiement: e.modePaiement,
-      patient_nom: e.patient?.nom ?? null,
-      patient_prenom: e.patient?.prenom ?? null,
-      patient_telephone: e.patient?.telephone ?? null,
-    }));
+    // Résout le nom du médecin prescripteur (demandeur_id est un id user sans
+    // relation Prisma) pour l'afficher sur la page Laboratoire.
+    const demandeurIds = [...new Set(rows.map(e => e.demandeurId).filter((id): id is number => id != null))];
+    const demandeurs = demandeurIds.length
+      ? await prisma.user.findMany({ where: { id: { in: demandeurIds } }, select: { id: true, nom: true, prenom: true } })
+      : [];
+    const demandeurById = new Map(demandeurs.map(d => [d.id, d]));
+    const mapped = rows.map(e => {
+      const d = e.demandeurId != null ? demandeurById.get(e.demandeurId) : undefined;
+      return {
+        ...e,
+        date_examen: e.dateExamen,
+        type_examen: e.typeExamen,
+        patient_id: e.patientId,
+        demandeur_id: e.demandeurId,
+        demandeur_nom: d?.nom ?? null,
+        demandeur_prenom: d?.prenom ?? null,
+        statut: e.statut,
+        priorite: e.priorite,
+        paye: e.paye,
+        date_paiement: e.datePaiement,
+        mode_paiement: e.modePaiement,
+        patient_nom: e.patient?.nom ?? null,
+        patient_prenom: e.patient?.prenom ?? null,
+        patient_telephone: e.patient?.telephone ?? null,
+      };
+    });
     res.json(mapped);
   } catch (err) { res.status(500).json({ error: 'Erreur serveur' }); }
 });
