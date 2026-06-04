@@ -4,7 +4,7 @@ import api from '../services/api';
 
 interface Setting { id: number; cle: string; valeur: string; description: string; categorie: string }
 
-const CAT_LABELS: Record<string, string> = { general: 'Général', patients: 'Patients', lits: 'Lits', services: 'Services', securite: 'Sécurité' };
+const CAT_LABELS: Record<string, string> = { general: 'Général', patients: 'Patients', lits: 'Lits', services: 'Services', securite: 'Sécurité', paiement: 'Paiement', coordonnees: 'Coordonnées', legal: 'Légal', impressions: 'Impressions', retention: 'Conservation', branding: 'Marque' };
 
 export default function ParametresGeneraux() {
   const [settings, setSettings] = useState<Setting[]>([]);

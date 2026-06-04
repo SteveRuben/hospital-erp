@@ -85,6 +85,21 @@ router.post('/initiate', authenticate, authorize('admin', 'comptable', 'receptio
       },
     });
 
+    // Message Mobile Money configurable (Configuration → Paramètres, clé
+    // remita_instruction_mm). Placeholders : {ussd} = code USSD, {phone} =
+    // numéro du patient. Fallback sur le texte par défaut si non configuré.
+    let mmInstruction = `Composez ${ussd} sur le téléphone du patient${phone ? ` (${phone})` : ''} et validez avec le code PIN.`;
+    if (mode === 'mobile_money') {
+      const tpl = await prisma.setting.findUnique({ where: { cle: 'remita_instruction_mm' }, select: { valeur: true } });
+      if (tpl?.valeur?.trim()) {
+        mmInstruction = tpl.valeur
+          .replace(/\{ussd\}/g, ussd ?? '')
+          .replace(/\{phone\}/g, phone ? `(${phone})` : '')
+          .replace(/\s{2,}/g, ' ')
+          .trim();
+      }
+    }
+
     res.status(201).json({
       reference: intent.reference,
       ussd_code: intent.ussdCode,
@@ -93,7 +108,7 @@ router.post('/initiate', authenticate, authorize('admin', 'comptable', 'receptio
       // UX hint for the cashier modal. Remita-real would replace with
       // the operator's actual instruction text.
       instructions: mode === 'mobile_money'
-        ? `Composez ${ussd} sur le téléphone du patient${phone ? ` (${phone})` : ''} et validez avec le code PIN.`
+        ? mmInstruction
         : mode === 'carte'
           ? 'Insérez la carte dans le TPE, faites composer le PIN, puis confirmez quand l\'écran affiche « Approuvé ».'
           : mode === 'virement'

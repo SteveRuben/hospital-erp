@@ -1726,6 +1726,7 @@ export const initDB = async (): Promise<void> => {
       ['chat_retention_months', '72', 'Durée de conservation des messages de chat (mois). HIPAA §164.530(j) impose 6 ans (=72 mois).', 'retention'],
       ['notif_retention_days', '90', 'Durée de conservation des notifications lues (jours). Les notifs non lues ne sont jamais purgées.', 'retention'],
       ['session_timeout_minutes', '30', 'Timeout de session en minutes', 'securite'],
+      ['remita_instruction_mm', 'Composez {ussd} sur le téléphone du patient {phone} et validez avec le code PIN.', 'Message affiché au caissier pour le paiement Mobile Money (Remita). Placeholders : {ussd} = code USSD, {phone} = numéro du patient.', 'paiement'],
     ];
     for (const [cle, valeur, description, categorie] of defaultSettings) {
       await client.query('INSERT INTO settings (cle, valeur, description, categorie) SELECT $1::varchar, $2::text, $3::text, $4::varchar WHERE NOT EXISTS (SELECT 1 FROM settings WHERE cle = $1::varchar)', [cle, valeur, description, categorie]);
