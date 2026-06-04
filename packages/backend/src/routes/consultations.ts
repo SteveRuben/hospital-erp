@@ -67,6 +67,9 @@ router.get('/', authenticate, async (req: AuthRequest, res: Response): Promise<v
     const mapped = rows.map(c => ({
       ...c,
       patient_id: c.patientId,
+      medecin_id: c.medecinId,
+      service_id: c.serviceId,
+      date_consultation: c.dateConsultation,
       patient_nom: c.patient?.nom ?? null,
       patient_prenom: c.patient?.prenom ?? null,
       medecin_nom: c.medecin?.nom ?? null,
@@ -97,6 +100,10 @@ router.get('/:id', authenticate, async (req: AuthRequest, res: Response): Promis
     }
     res.json({
       ...c,
+      patient_id: c.patientId,
+      medecin_id: c.medecinId,
+      service_id: c.serviceId,
+      date_consultation: c.dateConsultation,
       patient_nom: c.patient?.nom ?? null,
       patient_prenom: c.patient?.prenom ?? null,
       medecin_nom: c.medecin?.nom ?? null,
