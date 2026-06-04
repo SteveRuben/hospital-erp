@@ -126,7 +126,14 @@ router.post('/', authenticate, authorize('admin', 'medecin'), validate(createCon
         notes: notes ?? null,
       },
     });
-    res.status(201).json(created);
+    const mapped = {
+      ...created,
+      patient_id: created.patientId,
+      medecin_id: created.medecinId,
+      service_id: created.serviceId,
+      date_consultation: created.dateConsultation,
+    };
+    res.status(201).json(mapped);
   } catch (err) { res.status(500).json({ error: 'Erreur serveur' }); }
 });
 
@@ -138,7 +145,14 @@ router.put('/:id', authenticate, authorize('admin', 'medecin'), async (req: Auth
         where: { id: Number(req.params.id) },
         data: { diagnostic, traitement, notes },
       });
-      res.json(updated);
+      const mapped = {
+        ...updated,
+        patient_id: updated.patientId,
+        medecin_id: updated.medecinId,
+        service_id: updated.serviceId,
+        date_consultation: updated.dateConsultation,
+      };
+      res.json(mapped);
     } catch {
       res.status(404).json({ error: 'Consultation non trouvée' });
     }

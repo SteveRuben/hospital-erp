@@ -42,7 +42,18 @@ router.post('/', authenticate, authorize('admin', 'medecin'), validate(createAll
       dateDebut: date_debut ? new Date(date_debut) : null,
     },
   });
-  res.status(201).json(created);
+  const mapped = {
+    id: created.id,
+    patient_id: created.patientId,
+    allergene: created.allergene,
+    type_allergie: created.typeAllergie,
+    severite: created.severite,
+    reaction: created.reaction,
+    active: created.active,
+    date_debut: created.dateDebut,
+    created_at: created.createdAt,
+  };
+  res.status(201).json(mapped);
 }));
 
 router.put('/:id', authenticate, authorize('admin', 'medecin'), requireResourceAccess('allergie'), asyncHandler(async (req, res) => {
@@ -52,7 +63,18 @@ router.put('/:id', authenticate, authorize('admin', 'medecin'), requireResourceA
       where: { id: Number(req.params.id) },
       data: { allergene, typeAllergie: type_allergie, severite, reaction, active },
     });
-    res.json(updated);
+    const mapped = {
+      id: updated.id,
+      patient_id: updated.patientId,
+      allergene: updated.allergene,
+      type_allergie: updated.typeAllergie,
+      severite: updated.severite,
+      reaction: updated.reaction,
+      active: updated.active,
+      date_debut: updated.dateDebut,
+      created_at: updated.createdAt,
+    };
+    res.json(mapped);
   } catch {
     res.status(404).json({ error: 'Non trouvé' });
   }

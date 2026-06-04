@@ -57,7 +57,24 @@ router.post('/', authenticate, authorize('admin', 'medecin'), validate(createVit
       notes: notes ?? null,
     },
   });
-  res.status(201).json(created);
+  const mapped = {
+    id: created.id,
+    patient_id: created.patientId,
+    medecin_id: created.medecinId,
+    temperature: created.temperature,
+    tension_systolique: created.tensionSystolique,
+    tension_diastolique: created.tensionDiastolique,
+    pouls: created.pouls,
+    frequence_respiratoire: created.frequenceRespiratoire,
+    saturation_o2: created.saturationO2,
+    poids: created.poids,
+    taille: created.taille,
+    glycemie: created.glycemie,
+    notes: created.notes,
+    date_mesure: created.dateMesure,
+    created_at: created.createdAt,
+  };
+  res.status(201).json(mapped);
 }));
 
 router.delete('/:id', authenticate, authorize('admin'), requireResourceAccess('vital'), asyncHandler(async (req, res) => {

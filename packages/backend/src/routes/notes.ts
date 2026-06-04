@@ -88,7 +88,17 @@ router.post('/', authenticate, validate(createNoteSchema), requirePatientAccess,
     console.error('[NOTES] mention fanout failed:', err);
   }
 
-  res.status(201).json(created);
+  res.status(201).json({
+    ...created,
+    created_at: created.createdAt,
+    type_note: created.typeNote,
+    patient_id: created.patientId,
+    auteur_id: created.auteurId,
+    auteur_nom: null,
+    auteur_prenom: null,
+    auteur_role: null,
+    mentions: [],
+  });
 }));
 
 router.delete('/:id', authenticate, requireResourceAccess('note'), asyncHandler(async (req, res) => {
