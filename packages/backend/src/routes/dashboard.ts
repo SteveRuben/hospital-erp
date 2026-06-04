@@ -151,6 +151,7 @@ router.get('/', authenticate, asyncHandler(async (_req, res) => {
       depensesMois,
       servicesActifs,
       medecinsActifs,
+      examensEnAttente,
     ] = await Promise.all([
       prisma.$queryRaw<Array<{ total: bigint }>>`SELECT COUNT(*)::bigint AS total FROM patients WHERE archived = FALSE`,
       prisma.$queryRaw<Array<{ total: bigint }>>`SELECT COUNT(*)::bigint AS total FROM patients WHERE created_at >= ${startOfMonth}::timestamp`,
@@ -177,6 +178,8 @@ router.get('/', authenticate, asyncHandler(async (_req, res) => {
         ORDER BY nb_consultations DESC
         LIMIT 5
       `,
+      // Examens en attente de résultat : pas encore validés/transmis.
+      prisma.$queryRaw<Array<{ total: bigint }>>`SELECT COUNT(*)::bigint AS total FROM examens WHERE statut::text NOT IN ('valide', 'transmis')`,
     ]);
 
     res.json({
@@ -185,6 +188,7 @@ router.get('/', authenticate, asyncHandler(async (_req, res) => {
         nouveaux: Number(patientsMois[0]?.total ?? 0),
       },
       consultations: { aujourdhui: Number(consultationsJour[0]?.total ?? 0) },
+      examens: { en_attente_resultat: Number(examensEnAttente[0]?.total ?? 0) },
       caisse: {
         jour: {
           recettes: parseFloat(recettesJour[0]?.total ?? '0'),

@@ -135,6 +135,10 @@ export default function Laboratoire() {
                   const dt = ex.date_examen ? new Date(ex.date_examen) : null;
                   const dateLabel = dt && !isNaN(dt.getTime()) ? dt.toLocaleDateString('fr-FR') : '—';
                   const prio = (ex as any).priorite as 'urgent' | 'prioritaire' | 'normal' | undefined;
+                  // Ancienneté pour les examens en attente de résultat (pas encore
+                  // d'analyse rendue). Au-delà de 2 j, on signale en orange.
+                  const ageDays = dt && !isNaN(dt.getTime()) ? Math.floor((Date.now() - dt.getTime()) / 86400000) : 0;
+                  const awaitingResult = s === 'prelevement' || s === 'analyse';
                   return (
                     <div className="kanban-card" key={ex.id} style={prio === 'urgent' ? { borderLeft: '4px solid var(--cds-support-error)' } : prio === 'prioritaire' ? { borderLeft: '4px solid var(--cds-support-warning)' } : undefined}>
                       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start' }}>
@@ -149,6 +153,11 @@ export default function Laboratoire() {
                         </p>
                       )}
                       <p style={{ fontSize: '0.6875rem', color: 'var(--cds-text-secondary)' }}>{dateLabel}</p>
+                      {awaitingResult && (
+                        <span className={`tag ${ageDays >= 2 ? 'tag-orange' : 'tag-blue'}`} style={{ fontSize: '0.5625rem' }} title="En attente de résultat">
+                          <i className="bi bi-hourglass-split"></i> en attente{ageDays > 0 ? ` ${ageDays}j` : ''}
+                        </span>
+                      )}
                       {ex.montant != null && Number(ex.montant) > 0 && (
                         <p className="text-success fw-600" style={{ fontSize: '0.8125rem' }}>
                           {money(Number(ex.montant))}

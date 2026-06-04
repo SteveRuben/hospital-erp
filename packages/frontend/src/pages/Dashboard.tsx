@@ -1,10 +1,12 @@
 import { useState, useEffect } from 'react';
+import { useNavigate } from 'react-router-dom';
 import { getDashboard } from '../services/api';
 import type { DashboardStats } from '../types';
 
 export default function Dashboard() {
   const [data, setData] = useState<DashboardStats | null>(null);
   const [loading, setLoading] = useState(true);
+  const navigate = useNavigate();
 
   useEffect(() => { loadData(); }, []);
 
@@ -29,6 +31,7 @@ export default function Dashboard() {
         <div className="col-md-3"><div className="stat-card"><div className="d-flex justify-content-between"><div><div className="stat-value">+{data?.patients.nouveaux || 0}</div><div className="stat-label">Nouveaux ce mois</div></div><div className="stat-icon bg-success bg-opacity-10 text-success"><i className="bi bi-person-plus"></i></div></div></div></div>
         <div className="col-md-3"><div className="stat-card"><div className="d-flex justify-content-between"><div><div className="stat-value">{data?.consultations.aujourdhui || 0}</div><div className="stat-label">Consultations aujourd'hui</div></div><div className="stat-icon bg-info bg-opacity-10 text-info"><i className="bi bi-clipboard-pulse"></i></div></div></div></div>
         <div className="col-md-3"><div className="stat-card"><div className="d-flex justify-content-between"><div><div className="stat-value">{formatCurrency(data?.caisse.jour.solde || 0)}</div><div className="stat-label">Caisse du jour</div></div><div className="stat-icon bg-warning bg-opacity-10 text-warning"><i className="bi bi-cash"></i></div></div></div></div>
+        <div className="col-md-3"><div className="stat-card" style={{ cursor: 'pointer' }} onClick={() => navigate('/app/laboratoire')} title="Voir le laboratoire"><div className="d-flex justify-content-between"><div><div className="stat-value">{data?.examens?.en_attente_resultat || 0}</div><div className="stat-label">Examens en attente de résultat</div></div><div className="stat-icon bg-warning bg-opacity-10 text-warning"><i className="bi bi-hourglass-split"></i></div></div></div></div>
       </div>
       <div className="row g-3">
         <div className="col-md-6"><div className="card"><div className="card-header">Services les plus actifs</div><div className="card-body p-0"><table className="table table-hover mb-0"><tbody>{data?.servicesActifs.map((s, i) => <tr key={i}><td>{s.nom}</td><td className="text-end"><span className="badge bg-primary">{s.nb_consultations}</span></td></tr>)}</tbody></table></div></div></div>

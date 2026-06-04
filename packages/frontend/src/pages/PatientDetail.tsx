@@ -101,6 +101,20 @@ export default function PatientDetail() {
         </div>
       </div>
 
+      {(() => {
+        // Alerte : examens en attente de résultat (statut pas encore validé/transmis).
+        const pending = (hist?.examens ?? []).filter((e: any) => e.statut && !['valide', 'transmis'].includes(e.statut));
+        return pending.length > 0 ? (
+          <div className="notification notification-warning mb-2" role="status" style={{ alignItems: 'center' }}>
+            <i className="bi bi-hourglass-split"></i>
+            <span>
+              Ce patient a <strong>{pending.length}</strong> examen{pending.length > 1 ? 's' : ''} en attente de résultat.{' '}
+              <a style={{ textDecoration: 'underline', cursor: 'pointer' }} onClick={() => setTab('examens')}>Voir les examens</a>
+            </span>
+          </div>
+        ) : null;
+      })()}
+
       <div className="tabs" style={{overflowX:'auto',flexWrap:'nowrap'}}>
         {tabs.map(t => <button key={t} className={`tab-item ${tab === t ? 'active' : ''}`} onClick={() => setTab(t)}>{tabLabels[t]}</button>)}
       </div>

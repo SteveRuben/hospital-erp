@@ -116,6 +116,7 @@ export interface Examen {
 export interface DashboardStats {
   patients: { total: number; nouveaux: number };
   consultations: { aujourdhui: number };
+  examens?: { en_attente_resultat: number };
   caisse: {
     jour: { recettes: number; depenses: number; solde: number };
     mois: { recettes: number; depenses: number; solde: number };
