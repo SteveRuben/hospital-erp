@@ -204,6 +204,11 @@ export default function Laboratoire() {
                           ← {statutLabels[prevStatut[s]]?.label}
                         </button>
                       )}
+                      {canLabWorkflow && (
+                        <button className="btn-ghost btn-sm mt-1" style={{ color: 'var(--cds-text-secondary)' }} title="Consulter / corriger l'examen (type, montant, date, priorité, prescripteur, résultat)" onClick={() => navigate(`/app/laboratoire/${ex.id}/modifier`)}>
+                          <i className="bi bi-pencil-square"></i> Modifier l'examen
+                        </button>
+                      )}
                     </div>
                   );
                 })}
