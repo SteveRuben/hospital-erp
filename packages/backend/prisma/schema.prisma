@@ -385,6 +385,13 @@ model Recette {
   modePaiement    String?   @map("mode_paiement") @db.VarChar(50)
   dateRecette     DateTime  @default(now()) @map("date_recette") @db.Date
   description     String?
+  // Provenance d'une recette auto-générée (facturation automatique). Clé
+  // d'idempotence robuste, remplace l'ancien marqueur description LIKE.
+  // L'unicité (recette auto vivante par source) est posée par un index UNIQUE
+  // PARTIEL en SQL (cf. migration 20260605000000_recette_source) — Prisma ne
+  // sait pas exprimer un index partiel, ne pas ajouter @@unique ici.
+  sourceKind      String?   @map("source_kind") @db.VarChar(20)
+  sourceId        Int?      @map("source_id")
   annulee         Boolean?  @default(false)
   dateAnnulation  DateTime? @map("date_annulation")
   annuleePar      Int?      @map("annulee_par")

@@ -1900,6 +1900,13 @@ export const initDB = async (): Promise<void> => {
       ALTER TABLE recettes ADD COLUMN IF NOT EXISTS annulee BOOLEAN DEFAULT FALSE;
       ALTER TABLE recettes ADD COLUMN IF NOT EXISTS date_annulation TIMESTAMP;
       ALTER TABLE recettes ADD COLUMN IF NOT EXISTS annulee_par INTEGER REFERENCES users(id);
+      -- Provenance facturation auto + idempotence (cf. billing.ts). Index
+      -- unique partiel : une seule recette auto vivante par source.
+      ALTER TABLE recettes ADD COLUMN IF NOT EXISTS source_kind VARCHAR(20);
+      ALTER TABLE recettes ADD COLUMN IF NOT EXISTS source_id INTEGER;
+      CREATE UNIQUE INDEX IF NOT EXISTS uniq_recette_source_live
+        ON recettes (source_kind, source_id)
+        WHERE source_kind IS NOT NULL AND (annulee = false OR annulee IS NULL);
       ALTER TABLE depenses ADD COLUMN IF NOT EXISTS annulee BOOLEAN DEFAULT FALSE;
       ALTER TABLE depenses ADD COLUMN IF NOT EXISTS date_annulation TIMESTAMP;
       ALTER TABLE depenses ADD COLUMN IF NOT EXISTS annulee_par INTEGER REFERENCES users(id);

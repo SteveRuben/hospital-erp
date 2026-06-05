@@ -51,26 +51,44 @@ export async function recordActeRevenue(opts: RecordActeOptions): Promise<number
 
     const marker = autoMarker(opts.kind, opts.sourceId);
 
-    // Idempotence guard: skip if this acte already produced a live recette.
-    const existing = await prisma.recette.findFirst({
+    // Idempotence par colonnes dédiées (source_kind, source_id) plutôt qu'un
+    // LIKE sur description (fragile + scan). Un index UNIQUE PARTIEL garantit
+    // l'unicité même en cas de concurrence.
+    const findLive = () => prisma.recette.findFirst({
       where: {
-        description: { contains: marker },
+        sourceKind: opts.kind,
+        sourceId: opts.sourceId,
         OR: [{ annulee: false }, { annulee: null }],
       },
       select: { id: true },
     });
+
+    const existing = await findLive();
     if (existing) return existing.id;
 
-    const created = await prisma.recette.create({
-      data: {
-        patientId: opts.patientId,
-        serviceId: opts.serviceId ?? null,
-        typeActe: opts.typeActe.substring(0, 100),
-        montant,
-        modePaiement: (opts.modePaiement ?? 'especes').substring(0, 50),
-        description: marker,
-      },
-    });
+    let created;
+    try {
+      created = await prisma.recette.create({
+        data: {
+          patientId: opts.patientId,
+          serviceId: opts.serviceId ?? null,
+          typeActe: opts.typeActe.substring(0, 100),
+          montant,
+          modePaiement: (opts.modePaiement ?? 'especes').substring(0, 50),
+          sourceKind: opts.kind,
+          sourceId: opts.sourceId,
+          description: marker, // lisible pour l'humain ; l'idempotence vient des colonnes
+        },
+      });
+    } catch (err: any) {
+      // Course : un autre process a inséré la même source entre le find et le
+      // create → l'index unique partiel rejette (P2002). On récupère l'existant.
+      if (err?.code === 'P2002') {
+        const live = await findLive();
+        if (live) return live.id;
+      }
+      throw err;
+    }
 
     await logAudit({
       userId: opts.userId, action: 'create', tableName: 'recettes', recordId: created.id,
