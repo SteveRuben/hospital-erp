@@ -10,6 +10,28 @@ import { extractMentions, resolveMentions } from '../services/mention.js';
 
 const router = Router();
 
+// Mappe une note Prisma (camelCase) vers le snake_case du frontend. Source
+// unique pour GET/POST ; `mentions` est calculé à part (résolution @-mentions).
+type NoteRow = NonNullable<Awaited<ReturnType<typeof prisma.note.findFirst>>>;
+function toNoteDTO(
+  n: NoteRow & { auteur?: { nom: string | null; prenom: string | null; role: string } | null },
+  mentions: unknown[] = [],
+) {
+  return {
+    id: n.id,
+    patient_id: n.patientId,
+    auteur_id: n.auteurId,
+    titre: n.titre,
+    contenu: n.contenu,
+    type_note: n.typeNote,
+    created_at: n.createdAt,
+    auteur_nom: n.auteur?.nom ?? null,
+    auteur_prenom: n.auteur?.prenom ?? null,
+    auteur_role: n.auteur?.role ?? null,
+    mentions,
+  };
+}
+
 router.get('/:patientId', authenticate, requirePatientAccess, asyncHandler(async (req, res) => {
   const rows = await prisma.note.findMany({
     where: { patientId: Number(req.params.patientId) },
@@ -34,19 +56,7 @@ router.get('/:patientId', authenticate, requirePatientAccess, asyncHandler(async
   const mapped = rows.map(n => {
     const usernames = extractMentions(n.contenu);
     const mentions = usernames.map(u => userByHandle.get(u)).filter((u): u is NonNullable<typeof u> => u != null);
-    return {
-      ...n,
-      // Frontend expects snake_case; Prisma returns camelCase. The note's
-      // own timestamp was the source of the "Invalid Date" the user saw.
-      created_at: n.createdAt,
-      type_note: n.typeNote,
-      patient_id: n.patientId,
-      auteur_id: n.auteurId,
-      auteur_nom: n.auteur?.nom ?? null,
-      auteur_prenom: n.auteur?.prenom ?? null,
-      auteur_role: n.auteur?.role ?? null,
-      mentions,
-    };
+    return toNoteDTO(n, mentions);
   });
   res.json(mapped);
 }));
@@ -88,17 +98,13 @@ router.post('/', authenticate, validate(createNoteSchema), requirePatientAccess,
     console.error('[NOTES] mention fanout failed:', err);
   }
 
-  res.status(201).json({
-    ...created,
-    created_at: created.createdAt,
-    type_note: created.typeNote,
-    patient_id: created.patientId,
-    auteur_id: created.auteurId,
-    auteur_nom: null,
-    auteur_prenom: null,
-    auteur_role: null,
-    mentions: [],
+  // Recharge avec l'auteur pour renvoyer son nom/rôle (l'auteur est
+  // l'utilisateur courant) plutôt que null jusqu'au prochain refresh.
+  const withAuthor = await prisma.note.findUnique({
+    where: { id: created.id },
+    include: { auteur: { select: { nom: true, prenom: true, role: true } } },
   });
+  res.status(201).json(toNoteDTO(withAuthor ?? created));
 }));
 
 router.delete('/:id', authenticate, requireResourceAccess('note'), asyncHandler(async (req, res) => {

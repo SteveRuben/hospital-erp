@@ -8,14 +8,12 @@ import { requireResourceAccess } from '../middleware/resource-access.js';
 
 const router = Router();
 
-router.get('/:patientId', authenticate, requirePatientAccess, asyncHandler(async (req, res) => {
-  const rows = await prisma.allergie.findMany({
-    where: { patientId: Number(req.params.patientId) },
-    orderBy: { createdAt: 'desc' },
-  });
-  // Mappe en snake_case : le brut renvoyait typeAllergie (camelCase) alors que
-  // le frontend lit a.type_allergie -> la colonne Type restait vide.
-  const mapped = rows.map(a => ({
+// Mappe une allergie Prisma (camelCase) vers le snake_case du frontend.
+// Source unique pour GET/POST/PUT (le brut renvoyait typeAllergie -> colonne
+// Type vide).
+type AllergieRow = NonNullable<Awaited<ReturnType<typeof prisma.allergie.findFirst>>>;
+function toAllergieDTO(a: AllergieRow) {
+  return {
     id: a.id,
     patient_id: a.patientId,
     allergene: a.allergene,
@@ -25,8 +23,15 @@ router.get('/:patientId', authenticate, requirePatientAccess, asyncHandler(async
     active: a.active,
     date_debut: a.dateDebut,
     created_at: a.createdAt,
-  }));
-  res.json(mapped);
+  };
+}
+
+router.get('/:patientId', authenticate, requirePatientAccess, asyncHandler(async (req, res) => {
+  const rows = await prisma.allergie.findMany({
+    where: { patientId: Number(req.params.patientId) },
+    orderBy: { createdAt: 'desc' },
+  });
+  res.json(rows.map(toAllergieDTO));
 }));
 
 router.post('/', authenticate, authorize('admin', 'medecin'), validate(createAllergieSchema), requirePatientAccess, asyncHandler(async (req, res) => {
@@ -42,18 +47,7 @@ router.post('/', authenticate, authorize('admin', 'medecin'), validate(createAll
       dateDebut: date_debut ? new Date(date_debut) : null,
     },
   });
-  const mapped = {
-    id: created.id,
-    patient_id: created.patientId,
-    allergene: created.allergene,
-    type_allergie: created.typeAllergie,
-    severite: created.severite,
-    reaction: created.reaction,
-    active: created.active,
-    date_debut: created.dateDebut,
-    created_at: created.createdAt,
-  };
-  res.status(201).json(mapped);
+  res.status(201).json(toAllergieDTO(created));
 }));
 
 router.put('/:id', authenticate, authorize('admin', 'medecin'), requireResourceAccess('allergie'), asyncHandler(async (req, res) => {
@@ -63,18 +57,7 @@ router.put('/:id', authenticate, authorize('admin', 'medecin'), requireResourceA
       where: { id: Number(req.params.id) },
       data: { allergene, typeAllergie: type_allergie, severite, reaction, active },
     });
-    const mapped = {
-      id: updated.id,
-      patient_id: updated.patientId,
-      allergene: updated.allergene,
-      type_allergie: updated.typeAllergie,
-      severite: updated.severite,
-      reaction: updated.reaction,
-      active: updated.active,
-      date_debut: updated.dateDebut,
-      created_at: updated.createdAt,
-    };
-    res.json(mapped);
+    res.json(toAllergieDTO(updated));
   } catch {
     res.status(404).json({ error: 'Non trouvé' });
   }

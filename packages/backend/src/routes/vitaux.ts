@@ -8,16 +8,12 @@ import { requireResourceAccess } from '../middleware/resource-access.js';
 
 const router = Router();
 
-router.get('/:patientId', authenticate, requirePatientAccess, asyncHandler(async (req, res) => {
-  const rows = await prisma.vital.findMany({
-    where: { patientId: Number(req.params.patientId) },
-    include: { medecin: { select: { nom: true, prenom: true } } },
-    orderBy: { dateMesure: 'desc' },
-  });
-  // Mappe en snake_case attendu par le frontend. Le spread brut renvoyait du
-  // camelCase Prisma (saturationO2, tensionSystolique, dateMesure...) -> SpO2,
-  // TA et date n'apparaissaient pas dans l'onglet Signes vitaux.
-  const mapped = rows.map(v => ({
+// Mappe un signe vital Prisma (camelCase) vers le snake_case attendu par le
+// frontend. Source unique pour GET/POST — évite la divergence (un champ
+// renvoyé au GET mais oublié au POST, comme saturationO2 auparavant).
+type VitalRow = NonNullable<Awaited<ReturnType<typeof prisma.vital.findFirst>>>;
+function toVitalDTO(v: VitalRow & { medecin?: { nom: string | null; prenom: string | null } | null }) {
+  return {
     id: v.id,
     patient_id: v.patientId,
     medecin_id: v.medecinId,
@@ -35,8 +31,16 @@ router.get('/:patientId', authenticate, requirePatientAccess, asyncHandler(async
     created_at: v.createdAt,
     medecin_nom: v.medecin?.nom ?? null,
     medecin_prenom: v.medecin?.prenom ?? null,
-  }));
-  res.json(mapped);
+  };
+}
+
+router.get('/:patientId', authenticate, requirePatientAccess, asyncHandler(async (req, res) => {
+  const rows = await prisma.vital.findMany({
+    where: { patientId: Number(req.params.patientId) },
+    include: { medecin: { select: { nom: true, prenom: true } } },
+    orderBy: { dateMesure: 'desc' },
+  });
+  res.json(rows.map(toVitalDTO));
 }));
 
 router.post('/', authenticate, authorize('admin', 'medecin'), validate(createVitalSchema), requirePatientAccess, asyncHandler(async (req, res) => {
@@ -57,24 +61,7 @@ router.post('/', authenticate, authorize('admin', 'medecin'), validate(createVit
       notes: notes ?? null,
     },
   });
-  const mapped = {
-    id: created.id,
-    patient_id: created.patientId,
-    medecin_id: created.medecinId,
-    temperature: created.temperature,
-    tension_systolique: created.tensionSystolique,
-    tension_diastolique: created.tensionDiastolique,
-    pouls: created.pouls,
-    frequence_respiratoire: created.frequenceRespiratoire,
-    saturation_o2: created.saturationO2,
-    poids: created.poids,
-    taille: created.taille,
-    glycemie: created.glycemie,
-    notes: created.notes,
-    date_mesure: created.dateMesure,
-    created_at: created.createdAt,
-  };
-  res.status(201).json(mapped);
+  res.status(201).json(toVitalDTO(created));
 }));
 
 router.delete('/:id', authenticate, authorize('admin'), requireResourceAccess('vital'), asyncHandler(async (req, res) => {
