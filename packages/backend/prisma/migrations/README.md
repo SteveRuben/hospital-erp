@@ -43,6 +43,25 @@ For staging/prod:
 DATABASE_URL=... npx prisma migrate deploy
 ```
 
+## Bootstrap automatique au boot (`scripts/migrate-bootstrap.ts`)
+
+Au démarrage, `migrate-bootstrap` tourne avant `prisma migrate deploy` :
+
+- Base **fraîche** (pas de table `patients`) → ne fait rien, `migrate deploy`
+  applique toutes les migrations.
+- Base **existante** (init.ts a déjà construit le schéma) → marque comme
+  appliquées **uniquement** les migrations jusqu'à `BASELINE_MIGRATION`
+  (constante dans le script). Tout ce qui est **postérieur** à la baseline est
+  laissé à `migrate deploy`, qui les joue réellement.
+
+**Règle pour toute nouvelle migration (postérieure à la baseline) :** tant
+qu'`init.ts` duplique encore le DDL, écrire la migration de façon **rejouable**
+(`CREATE TABLE IF NOT EXISTS`, `ALTER TABLE ... ADD COLUMN IF NOT EXISTS`,
+`DO $$ ... EXCEPTION WHEN duplicate_object`), pour qu'elle n'entre pas en
+conflit sur une base où init.ts a déjà créé l'objet. Mettre à jour
+`BASELINE_MIGRATION` n'est PAS nécessaire — au contraire, le laisser figé est
+ce qui permet aux nouvelles migrations d'être réellement déployées.
+
 ## Retiring init.ts
 
 The `src/config/init.ts` script still runs on boot to seed data (default users,

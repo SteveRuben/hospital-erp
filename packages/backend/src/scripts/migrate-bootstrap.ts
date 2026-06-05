@@ -15,15 +15,18 @@
  *      shape — copied from the Prisma source so subsequent `migrate
  *      deploy` recognises it).
  *   3. Detect whether init.ts has already bootstrapped the schema
- *      (heuristic: `patients` table exists). If yes AND
- *      _prisma_migrations is empty, mark every existing migration
- *      directory as applied — this prevents `migrate deploy` from
- *      trying to re-run the baseline migration (CREATE TABLE without
- *      IF NOT EXISTS) against the already-populated schema.
+ *      (heuristic: `patients` table exists). If yes, mark only the
+ *      migrations UP TO AND INCLUDING the baseline (see
+ *      BASELINE_MIGRATION) as applied — preventing `migrate deploy`
+ *      from re-running the baseline DDL against the populated schema.
+ *      Migrations AFTER the baseline are left untouched so
+ *      `migrate deploy` actually runs them (that's the whole point of
+ *      moving to Prisma migrations).
  *   4. On a truly fresh DB (no patients table), do nothing — let
- *      `prisma migrate deploy` apply migrations normally.
+ *      `prisma migrate deploy` apply every migration normally.
  *
- * Idempotent: re-runs do nothing once _prisma_migrations is populated.
+ * Idempotent: re-runs skip already-tracked migrations and never mark
+ * post-baseline ones, so new migrations always reach migrate deploy.
  *
  * Foot-gun: if a developer manually created the `patients` table
  * without running migrations, this script will mark all migrations as
@@ -43,6 +46,19 @@ const __dirname = path.dirname(fileURLToPath(import.meta.url));
 // migrations directory is three levels up. In dev (tsx) it's the same
 // relative path (src/scripts/ ↔ prisma/migrations/).
 const MIGRATIONS_DIR = path.resolve(__dirname, '..', '..', 'prisma', 'migrations');
+
+// Baseline : nom de la dernière migration dont les effets sont déjà présents
+// dans tout schéma bootstrappé par init.ts (ou déployé avant ce correctif).
+// Sur une base EXISTANTE, on ne marque comme « appliquées » que les migrations
+// <= baseline ; tout ce qui est POSTÉRIEUR est laissé à `prisma migrate deploy`
+// pour exécution réelle. Sans ce garde, chaque nouvelle migration était
+// auto-marquée à chaque boot et n'était jamais jouée en prod.
+//
+// IMPORTANT : les migrations postérieures à la baseline DOIVENT être
+// rejouables (CREATE TABLE IF NOT EXISTS, DO $$ ... EXCEPTION WHEN
+// duplicate_object) tant qu'init.ts duplique encore le DDL, pour ne pas
+// entrer en conflit sur une base existante.
+const BASELINE_MIGRATION = '20260603120000_examen_consultation_link';
 
 async function main(): Promise<void> {
   const databaseUrl = process.env.DATABASE_URL;
@@ -105,8 +121,12 @@ async function main(): Promise<void> {
       .sort();
 
     let marked = 0;
+    let deferred = 0;
     for (const dir of dirs) {
       if (applied.has(dir)) continue;
+      // Migrations postérieures à la baseline : NE PAS auto-marquer. On les
+      // laisse à `prisma migrate deploy` qui les jouera réellement.
+      if (dir > BASELINE_MIGRATION) { deferred += 1; continue; }
       const sqlPath = path.join(MIGRATIONS_DIR, dir, 'migration.sql');
       if (!fs.existsSync(sqlPath)) continue;
       const sql = fs.readFileSync(sqlPath, 'utf8');
@@ -122,9 +142,12 @@ async function main(): Promise<void> {
     }
 
     if (marked > 0) {
-      console.log(`[MIGRATE_BOOTSTRAP] Marked ${marked} migration(s) as applied on existing schema`);
+      console.log(`[MIGRATE_BOOTSTRAP] Marked ${marked} baseline migration(s) (<= ${BASELINE_MIGRATION}) as applied on existing schema`);
     } else {
-      console.log('[MIGRATE_BOOTSTRAP] All migrations already tracked — nothing to do');
+      console.log('[MIGRATE_BOOTSTRAP] No baseline migration to mark — already tracked');
+    }
+    if (deferred > 0) {
+      console.log(`[MIGRATE_BOOTSTRAP] ${deferred} post-baseline migration(s) left for prisma migrate deploy to run`);
     }
   } finally {
     await client.end();
