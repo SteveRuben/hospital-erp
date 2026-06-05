@@ -8,7 +8,7 @@ import { prisma } from '../config/db.js';
 
 export interface AuditEntry {
   userId: number;
-  action: 'create' | 'update' | 'delete' | 'login' | 'logout' | 'impersonate' | 'password_change' | 'mfa_setup' | 'mfa_verify' | 'export' | 'access_denied';
+  action: 'create' | 'update' | 'delete' | 'login' | 'logout' | 'impersonate' | 'password_change' | 'mfa_setup' | 'mfa_verify' | 'export' | 'access_denied' | 'system' | 'audit_verify';
   tableName: string;
   recordId?: number;
   details?: string;

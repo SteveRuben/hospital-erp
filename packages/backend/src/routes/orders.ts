@@ -89,6 +89,28 @@ router.get('/', authenticate, async (req: AuthRequest, res: Response): Promise<v
   } catch (err) { console.error(err); res.status(500).json({ error: 'Erreur serveur' }); }
 });
 
+// Recharge un order avec ses jointures (concept, prescripteur) et le mappe en
+// snake_case — réutilisé par POST/PUT pour renvoyer la même forme que le GET,
+// au lieu de forcer concept_nom/orderer_nom à null (qui affichait « — » en
+// attendant le prochain refresh).
+async function fetchOrderDTO(id: number) {
+  const o = await prisma.order.findUnique({
+    where: { id },
+    include: {
+      concept: { select: { nom: true, code: true } },
+      orderer: { select: { nom: true, prenom: true } },
+    },
+  });
+  if (!o) return null;
+  return {
+    ...o,
+    concept_nom: o.concept?.nom ?? null,
+    concept_code: o.concept?.code ?? null,
+    orderer_nom: o.orderer?.nom ?? null,
+    orderer_prenom: o.orderer?.prenom ?? null,
+  };
+}
+
 // Create order
 router.post('/', authenticate, authorize('admin', 'medecin'), validate(createOrderSchema), async (req: AuthRequest, res: Response): Promise<void> => {
   try {
@@ -113,7 +135,7 @@ router.post('/', authenticate, authorize('admin', 'medecin'), validate(createOrd
         quantite: n(quantite) as number | null,
       },
     });
-    res.status(201).json(created);
+    res.status(201).json(await fetchOrderDTO(created.id));
   } catch (err) { console.error(err); res.status(500).json({ error: 'Erreur serveur' }); }
 });
 
@@ -136,8 +158,8 @@ router.put('/:id/statut', authenticate, async (req: AuthRequest, res: Response):
       data.dateResultat = new Date();
     }
     try {
-      const updated = await prisma.order.update({ where: { id }, data });
-      res.json(updated);
+      await prisma.order.update({ where: { id }, data });
+      res.json(await fetchOrderDTO(id));
     } catch {
       res.status(404).json({ error: 'Non trouvé' });
     }

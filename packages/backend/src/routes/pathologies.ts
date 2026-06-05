@@ -8,12 +8,30 @@ import { requireResourceAccess } from '../middleware/resource-access.js';
 
 const router = Router();
 
+// Mappe une pathologie Prisma (camelCase) vers le snake_case lu par le
+// frontend (code_cim, date_debut...). Sans ça, GET/POST renvoyaient du brut
+// et les colonnes CIM / dates restaient vides (même bug que vitaux/allergies).
+type PathologieRow = Awaited<ReturnType<typeof prisma.pathologie.findFirst>>;
+function toPathologieDTO(p: NonNullable<PathologieRow>) {
+  return {
+    id: p.id,
+    patient_id: p.patientId,
+    nom: p.nom,
+    code_cim: p.codeCim,
+    statut: p.statut,
+    date_debut: p.dateDebut,
+    date_fin: p.dateFin,
+    notes: p.notes,
+    created_at: p.createdAt,
+  };
+}
+
 router.get('/:patientId', authenticate, requirePatientAccess, asyncHandler(async (req, res) => {
   const rows = await prisma.pathologie.findMany({
     where: { patientId: Number(req.params.patientId) },
     orderBy: { dateDebut: 'desc' },
   });
-  res.json(rows);
+  res.json(rows.map(toPathologieDTO));
 }));
 
 router.post('/', authenticate, authorize('admin', 'medecin'), validate(createPathologieSchema), requirePatientAccess, asyncHandler(async (req, res) => {
@@ -29,7 +47,7 @@ router.post('/', authenticate, authorize('admin', 'medecin'), validate(createPat
       notes,
     },
   });
-  res.status(201).json(created);
+  res.status(201).json(toPathologieDTO(created));
 }));
 
 router.put('/:id', authenticate, authorize('admin', 'medecin'), requireResourceAccess('pathologie'), asyncHandler(async (req, res) => {
@@ -46,7 +64,7 @@ router.put('/:id', authenticate, authorize('admin', 'medecin'), requireResourceA
         notes,
       },
     });
-    res.json(updated);
+    res.json(toPathologieDTO(updated));
   } catch {
     res.status(404).json({ error: 'Non trouvé' });
   }
@@ -55,8 +73,12 @@ router.put('/:id', authenticate, authorize('admin', 'medecin'), requireResourceA
 router.delete('/:id', authenticate, authorize('admin'), requireResourceAccess('pathologie'), asyncHandler(async (req, res) => {
   try {
     await prisma.pathologie.delete({ where: { id: Number(req.params.id) } });
-  } catch { /* ignore not found */ }
-  res.json({ message: 'Supprimé' });
+    res.json({ message: 'Supprimé' });
+  } catch (err: any) {
+    if (err?.code === 'P2025') { res.status(404).json({ error: 'Pathologie non trouvée' }); return; }
+    if (err?.code === 'P2003') { res.status(409).json({ error: 'Suppression impossible : des données sont rattachées à cette pathologie' }); return; }
+    throw err;
+  }
 }));
 
 export default router;

@@ -83,8 +83,12 @@ router.put('/:id', authenticate, authorize('admin', 'medecin'), requireResourceA
 router.delete('/:id', authenticate, authorize('admin'), requireResourceAccess('allergie'), asyncHandler(async (req, res) => {
   try {
     await prisma.allergie.delete({ where: { id: Number(req.params.id) } });
-  } catch { /* ignore */ }
-  res.json({ message: 'Supprimé' });
+    res.json({ message: 'Supprimé' });
+  } catch (err: any) {
+    if (err?.code === 'P2025') { res.status(404).json({ error: 'Allergie non trouvée' }); return; }
+    if (err?.code === 'P2003') { res.status(409).json({ error: 'Suppression impossible : des données sont rattachées à cette allergie' }); return; }
+    throw err;
+  }
 }));
 
 export default router;

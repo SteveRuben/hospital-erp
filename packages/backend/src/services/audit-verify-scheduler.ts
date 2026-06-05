@@ -32,7 +32,7 @@ async function runOnce(): Promise<void> {
     // alarm is also chained; that's by design.
     await prisma.auditLog.create({
       data: {
-        action: 'access_denied',
+        action: 'audit_verify',
         tableName: 'audit_log',
         details: `Audit chain integrity check FAILED: scanned=${result.scanned}, breaks=${result.breaks}, first issues: ${result.issues.slice(0, 5).join('; ')}`,
       },
