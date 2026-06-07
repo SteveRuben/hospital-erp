@@ -145,6 +145,27 @@ router.get('/channels/:id/messages', authenticate, asyncHandler(async (req: Auth
   res.json(enriched);
 }));
 
+// Accusés de réception : pour chaque membre du canal, son last_read_at. Le
+// client en déduit « lu par X » sur ses propres messages (lu = last_read_at du
+// membre >= createdAt du message).
+router.get('/channels/:id/receipts', authenticate, asyncHandler(async (req: AuthRequest, res: Response) => {
+  const channelId = Number(req.params.id);
+  if (!(await isMember(channelId, req.user!.id))) {
+    res.status(403).json({ error: 'Accès refusé — non membre de ce canal' });
+    return;
+  }
+  const members = await prisma.channelMember.findMany({
+    where: { channelId },
+    include: { user: { select: { id: true, nom: true, prenom: true } } },
+  });
+  res.json(members.map(m => ({
+    user_id: m.userId,
+    nom: m.user?.nom ?? null,
+    prenom: m.user?.prenom ?? null,
+    last_read_at: m.lastReadAt,
+  })));
+}));
+
 // Post a message. Fans out to channel members via Socket.IO + creates
 // notifications for @mentions and (for DM/critical channels) for offline members.
 router.post('/channels/:id/messages', authenticate, asyncHandler(async (req: AuthRequest, res: Response) => {

@@ -545,6 +545,8 @@ export const getMessages = (channelId: number, before?: string, limit = 50) =>
 export const postMessage = (channelId: number, content: string) =>
   api.post<ChatMessage>(`/chat/channels/${channelId}/messages`, { content });
 export const markChannelRead = (channelId: number) => api.post(`/chat/channels/${channelId}/read`);
+export interface ChannelReceipt { user_id: number; nom: string | null; prenom: string | null; last_read_at: string | null }
+export const getChannelReceipts = (channelId: number) => api.get<ChannelReceipt[]>(`/chat/channels/${channelId}/receipts`);
 export const deleteChatMessage = (id: number) => api.delete(`/chat/messages/${id}`);
 
 // Quick search

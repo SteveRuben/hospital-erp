@@ -7,8 +7,8 @@ import MentionTextarea from '../components/MentionTextarea';
 import MentionContent from '../components/MentionContent';
 import {
   listMyChannels, getMessages, postMessage, markChannelRead, deleteChatMessage,
-  createChannel, lookupUsers,
-  type ChatChannel, type ChatMessage, type UserLookup,
+  createChannel, lookupUsers, getChannelReceipts,
+  type ChatChannel, type ChatMessage, type UserLookup, type ChannelReceipt,
 } from '../services/api';
 
 /**
@@ -25,6 +25,7 @@ export default function Chat() {
   const [channels, setChannels] = useState<ChatChannel[]>([]);
   const [activeId, setActiveId] = useState<number | null>(channelIdParam ? Number(channelIdParam) : null);
   const [messages, setMessages] = useState<ChatMessage[]>([]);
+  const [receipts, setReceipts] = useState<ChannelReceipt[]>([]);
   const [draft, setDraft] = useState('');
   const [showNewChannel, setShowNewChannel] = useState(false);
   const socketRef = useRef<Socket | null>(null);
@@ -82,6 +83,19 @@ export default function Chat() {
     })();
   }, [activeId, refreshChannels]);
 
+  // Accusés de réception : last_read_at des membres, rafraîchi périodiquement
+  // (l'autre lit sans déclencher d'event socket de notre côté).
+  useEffect(() => {
+    if (!activeId) { setReceipts([]); return; }
+    let alive = true;
+    const fetchReceipts = () => getChannelReceipts(activeId)
+      .then(r => { if (alive) setReceipts(r.data); })
+      .catch(() => { /* ignore */ });
+    fetchReceipts();
+    const t = setInterval(fetchReceipts, 12000);
+    return () => { alive = false; clearInterval(t); };
+  }, [activeId, messages.length]);
+
   // Auto-scroll to bottom on new messages
   useEffect(() => { messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' }); }, [messages]);
 
@@ -108,6 +122,11 @@ export default function Chat() {
 
   const activeChannel = channels.find(c => c.id === activeId);
   const ordered = [...messages].sort((a, b) => new Date(a.createdAt).getTime() - new Date(b.createdAt).getTime());
+  // Accusé de réception affiché sous mon dernier message uniquement.
+  const others = receipts.filter(r => r.user_id !== user?.id);
+  const myLastId = [...ordered].reverse().find(m => m.author.id === user?.id)?.id;
+  const readByCount = (createdAt: string) =>
+    others.filter(r => r.last_read_at && new Date(r.last_read_at).getTime() >= new Date(createdAt).getTime()).length;
 
   return (
     <div>
@@ -158,6 +177,19 @@ export default function Chat() {
                       <div style={{ fontSize: '0.875rem' }}><MentionContent content={m.content} mentions={m.mentions} /></div>
                       <div style={{ fontSize: '0.625rem', opacity: 0.7, marginTop: '0.25rem' }}>{new Date(m.createdAt).toLocaleTimeString('fr-FR', { hour: '2-digit', minute: '2-digit' })}</div>
                     </div>
+                    {m.id === myLastId && m.author.id === user?.id && others.length > 0 && (() => {
+                      const n = readByCount(m.createdAt);
+                      const total = others.length;
+                      const allRead = n === total;
+                      const txt = total === 1
+                        ? (n === 1 ? 'Lu' : 'Envoyé')
+                        : (n === 0 ? 'Envoyé' : allRead ? `Lu par tous (${total})` : `Lu par ${n}/${total}`);
+                      return (
+                        <div style={{ fontSize: '0.625rem', opacity: 0.7, marginTop: '0.125rem' }} title="Accusé de réception">
+                          <i className={`bi ${allRead ? 'bi-check2-all' : 'bi-check2'}`}></i> {txt}
+                        </div>
+                      );
+                    })()}
                     {(m.author.id === user?.id || user?.role === 'admin') && (
                       <button onClick={() => handleDelete(m.id)} className="btn-icon" style={{ fontSize: '0.625rem', opacity: 0.5, marginTop: '0.125rem' }} title="Supprimer"><i className="bi bi-trash"></i></button>
                     )}
