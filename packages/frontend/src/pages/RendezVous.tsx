@@ -1,6 +1,6 @@
 import { useState, useEffect, useRef } from 'react';
 import { useSearchParams } from 'react-router-dom';
-import { getRendezVous, createRendezVous, updateRendezVousStatut, deleteRendezVous, getMedecins, getServices, searchPatientsForOrdering, getPatient } from '../services/api';
+import { getRendezVous, createRendezVous, updateRendezVousStatut, deleteRendezVous, getMedecins, getServices, searchPatientsForOrdering, getPatient, getMedecinCreneaux } from '../services/api';
 import { coerceRdvPayload } from '../lib/formCoerce';
 import type { RendezVous as RDV, Medecin, Service } from '../types';
 
@@ -25,6 +25,22 @@ export default function RendezVous() {
   const [loading, setLoading] = useState(true);
   const [showModal, setShowModal] = useState(false);
   const [form, setForm] = useState({ patient_id: '', medecin_id: '', service_id: '', date_rdv: '', motif: '', notes: '', priorite: 'normal' as 'urgent' | 'prioritaire' | 'normal' });
+
+  // Créneaux libres du médecin sélectionné pour la date choisie. Chargés quand
+  // médecin + date sont renseignés ; cliquer une puce remplit l'heure.
+  const [creneaux, setCreneaux] = useState<string[]>([]);
+  const [loadingCreneaux, setLoadingCreneaux] = useState(false);
+  const datePart = form.date_rdv ? form.date_rdv.split('T')[0] : '';
+  useEffect(() => {
+    if (!form.medecin_id || !datePart) { setCreneaux([]); return; }
+    let alive = true;
+    setLoadingCreneaux(true);
+    getMedecinCreneaux(Number(form.medecin_id), datePart)
+      .then(r => { if (alive) setCreneaux(r.data.creneaux); })
+      .catch(() => { if (alive) setCreneaux([]); })
+      .finally(() => { if (alive) setLoadingCreneaux(false); });
+    return () => { alive = false; };
+  }, [form.medecin_id, datePart]);
 
   // Patient typeahead state — replaces the old dropdown that loaded every
   // patient at once. Lets the receptionist find anyone by name or reference,
@@ -204,6 +220,35 @@ export default function RendezVous() {
                   <div className="form-group"><label className="form-label">Service</label><select className="form-select" value={form.service_id} onChange={e => setForm({...form, service_id: e.target.value})}><option value="">Sélectionner...</option>{services.map(s => <option key={s.id} value={s.id}>{s.nom}</option>)}</select></div>
                   <div className="form-group"><label className="form-label">Date et heure *</label><input type="datetime-local" className="form-input" value={form.date_rdv} onChange={e => setForm({...form, date_rdv: e.target.value})} required /></div>
                 </div>
+                {form.medecin_id && datePart && (
+                  <div className="form-group">
+                    <label className="form-label">Créneaux libres du médecin</label>
+                    {loadingCreneaux ? (
+                      <div className="text-muted" style={{ fontSize: '0.8125rem' }}>Chargement…</div>
+                    ) : creneaux.length === 0 ? (
+                      <div className="notification notification-warning" style={{ fontSize: '0.8125rem' }}>
+                        <i className="bi bi-exclamation-triangle"></i>
+                        <span>Aucun créneau libre ce jour (médecin absent, agenda non défini, ou journée complète).</span>
+                      </div>
+                    ) : (
+                      <div className="d-flex gap-1" style={{ flexWrap: 'wrap' }}>
+                        {creneaux.map(c => {
+                          const active = form.date_rdv === `${datePart}T${c}`;
+                          return (
+                            <button
+                              type="button"
+                              key={c}
+                              className={active ? 'btn-primary btn-sm' : 'btn-ghost btn-sm'}
+                              onClick={() => setForm(f => ({ ...f, date_rdv: `${datePart}T${c}` }))}
+                            >
+                              {c}
+                            </button>
+                          );
+                        })}
+                      </div>
+                    )}
+                  </div>
+                )}
                 <div className="form-group"><label className="form-label">Motif</label><input type="text" className="form-input" value={form.motif} onChange={e => setForm({...form, motif: e.target.value})} /></div>
                 <div className="form-group">
                   <label className="form-label">Priorité</label>

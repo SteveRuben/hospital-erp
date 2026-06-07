@@ -145,6 +145,8 @@ export const addMedecinException = (medecinId: number, data: { date: string; typ
   api.post(`/medecin-agenda/${medecinId}/exceptions`, data);
 export const deleteMedecinException = (medecinId: number, exId: number) =>
   api.delete(`/medecin-agenda/${medecinId}/exceptions/${exId}`);
+export const getMedecinCreneaux = (medecinId: number, date: string) =>
+  api.get<{ date: string; creneaux: string[] }>(`/medecin-agenda/${medecinId}/creneaux`, { params: { date } });
 export const getMedecin = (id: number) => api.get<Medecin>(`/medecins/${id}`);
 export const createMedecin = (data: unknown) => api.post<Medecin>('/medecins', data);
 export const updateMedecin = (id: number, data: unknown) => api.put<Medecin>(`/medecins/${id}`, data);

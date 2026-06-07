@@ -2,6 +2,7 @@ import { Router, Response } from 'express';
 import { prisma } from '../config/db.js';
 import { authenticate, AuthRequest } from '../middleware/auth.js';
 import { asyncHandler } from '../middleware/asyncHandler.js';
+import { listFreeSlots } from '../services/medecin-availability.js';
 
 const router = Router();
 
@@ -28,6 +29,17 @@ router.get('/:medecinId', authenticate, asyncHandler(async (req: AuthRequest, re
       id: e.id, date: e.date, type: e.type, heure_debut: e.heureDebut, heure_fin: e.heureFin, motif: e.motif,
     })),
   });
+}));
+
+// GET /:medecinId/creneaux?date=YYYY-MM-DD — créneaux libres ce jour (agenda
+// moins RDV déjà pris). Lisible par tout utilisateur authentifié (prise de RDV).
+router.get('/:medecinId/creneaux', authenticate, asyncHandler(async (req: AuthRequest, res: Response) => {
+  const medecinId = Number(req.params.medecinId);
+  const date = String(req.query.date ?? '');
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(date)) { res.status(400).json({ error: 'Paramètre date (YYYY-MM-DD) requis' }); return; }
+  const duree = req.query.duree ? Math.max(5, Math.min(240, Number(req.query.duree))) : 30;
+  const creneaux = await listFreeSlots(medecinId, date, duree);
+  res.json({ date, creneaux });
 }));
 
 // PUT /:medecinId/disponibilites — remplace l'ensemble des créneaux récurrents.
