@@ -118,6 +118,10 @@ export default function Layout({ children }: { children: React.ReactNode }) {
 
   const handleLogout = () => { logout(); navigate('/login'); };
 
+  // Tiroir de navigation mobile. Fermé par défaut ; ouvert via le hamburger,
+  // refermé au clic sur un lien ou sur le voile.
+  const [sidebarOpen, setSidebarOpen] = useState(false);
+
   // Banner stays visible whenever the establishment is unconfigured AND the
   // wizard isn't currently open — gives admins a way back into the wizard
   // even after a dismissal.
@@ -137,6 +141,9 @@ export default function Layout({ children }: { children: React.ReactNode }) {
       )}
 
       <header className="header" style={impersonating ? { top: '36px' } : {}}>
+        <button className="menu-toggle" onClick={() => setSidebarOpen(o => !o)} aria-label="Menu" title="Menu">
+          <i className="bi bi-list"></i>
+        </button>
         <div className="header-logo">
           {branding.logo_url
             ? <img src={branding.logo_url} alt="" style={{ height: '24px', width: 'auto', objectFit: 'contain' }} />
@@ -181,7 +188,13 @@ export default function Layout({ children }: { children: React.ReactNode }) {
         </div>
       </header>
 
-      <nav className="sidebar" style={impersonating ? { top: `calc(var(--cds-header-height) + 36px)` } : {}}>
+      {sidebarOpen && <div className="sidebar-overlay" onClick={() => setSidebarOpen(false)} />}
+
+      <nav
+        className={`sidebar ${sidebarOpen ? 'open' : ''}`}
+        style={impersonating ? { top: `calc(var(--cds-header-height) + 36px)` } : {}}
+        onClick={(e) => { if ((e.target as HTMLElement).closest('a')) setSidebarOpen(false); }}
+      >
         <div style={{ flex: 1, overflowY: 'auto' }}>
           {menuGroups.map((group, gi) => {
             // Build the parent → children index for this group. An item with

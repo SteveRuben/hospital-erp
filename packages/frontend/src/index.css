@@ -75,6 +75,15 @@ body {
 .header-user { display: flex; align-items: center; gap: 0.5rem; padding: 0 0.5rem; cursor: pointer; }
 .header-user:hover { background: #353535; }
 .header-user span { font-size: 0.75rem; color: #c6c6c6; }
+/* Hamburger : caché sur desktop, affiché en mobile (cf. @media). */
+.menu-toggle {
+  display: none; background: none; border: none; color: #fff; cursor: pointer;
+  width: 36px; height: 36px; align-items: center; justify-content: center;
+  font-size: 1.25rem; margin-right: 0.25rem;
+}
+.menu-toggle:hover { background: #353535; }
+/* Voile derrière le tiroir en mobile (caché par défaut). */
+.sidebar-overlay { display: none; }
 
 /* ===== SIDEBAR ===== */
 .sidebar {
@@ -410,9 +419,33 @@ body {
 
 /* ===== RESPONSIVE ===== */
 @media (max-width: 768px) {
-  .sidebar { display: none; }
-  .main-content { margin-left: 0; }
+  /* Hamburger visible, navigation en tiroir off-canvas (au lieu d'une sidebar
+     simplement cachée — l'utilisateur mobile ne pouvait plus naviguer). */
+  .menu-toggle { display: flex; }
+  .sidebar {
+    transform: translateX(-100%);
+    transition: transform 0.2s ease;
+    z-index: 150;
+    box-shadow: 2px 0 12px rgba(0, 0, 0, 0.25);
+  }
+  .sidebar.open { transform: translateX(0); }
+  .sidebar-overlay {
+    display: block; position: fixed; left: 0; right: 0; bottom: 0;
+    top: var(--cds-header-height); background: rgba(0, 0, 0, 0.45); z-index: 140;
+  }
+
+  .main-content { margin-left: 0; padding: 1rem; }
   .grid-2, .grid-3, .grid-4 { grid-template-columns: 1fr; }
+
+  /* Tables larges : scroll horizontal au lieu de déborder/casser la mise en page. */
+  .data-table { display: block; overflow-x: auto; white-space: nowrap; }
+
+  /* Header compact + on masque le nom (l'avatar suffit) pour gagner de la place. */
+  .header { padding: 0 0.5rem; }
+  .header-user span { display: none; }
+
+  /* Modales quasi pleine largeur. */
+  .modal-container { max-width: 100%; margin: 0 0.5rem; }
 }
 
 
