@@ -5,6 +5,7 @@ import { validate, createRendezVousSchema } from '../middleware/validation.js';
 import { Prisma, RendezVousStatut, Priorite } from '@prisma/client';
 import { patientAccessScope, canAccessPatient } from '../services/access-control.js';
 import { assertTransition, WorkflowError } from '../services/workflow.js';
+import { checkMedecinAvailability } from '../services/medecin-availability.js';
 
 const router = Router();
 
@@ -115,6 +116,13 @@ router.post('/', authenticate, authorize('admin', 'medecin', 'reception'), valid
       return;
     }
 
+    // Blocage strict : le RDV doit tomber dans les disponibilités du médecin.
+    const dispo = await checkMedecinAvailability(Number(medecin_id), new Date(date_rdv));
+    if (!dispo.available) {
+      res.status(400).json({ error: `Médecin indisponible à ce créneau. ${dispo.reason ?? ''}`.trim(), code: 'MEDECIN_INDISPONIBLE' });
+      return;
+    }
+
     const created = await prisma.rendezVous.create({
       data: {
         patientId: Number(patient_id),
@@ -138,6 +146,15 @@ router.put('/:id', authenticate, authorize('admin', 'medecin', 'reception'), asy
   try {
     const id = Number(req.params.id);
     const { patient_id, medecin_id, service_id, date_rdv, motif, notes, statut, priorite } = req.body;
+
+    // Reprogrammation : revérifier la disponibilité si médecin + date fournis.
+    if (medecin_id && date_rdv) {
+      const dispo = await checkMedecinAvailability(Number(medecin_id), new Date(date_rdv));
+      if (!dispo.available) {
+        res.status(400).json({ error: `Médecin indisponible à ce créneau. ${dispo.reason ?? ''}`.trim(), code: 'MEDECIN_INDISPONIBLE' });
+        return;
+      }
+    }
 
     const data: Prisma.RendezVousUpdateInput = {
       patient: { connect: { id: Number(patient_id) } },

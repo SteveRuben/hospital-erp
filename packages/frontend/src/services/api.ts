@@ -133,6 +133,18 @@ export const getMedecins = (params?: { search?: string; specialite?: string; tel
 export const searchMedecins = (params: { search?: string; specialite?: string; telephone?: string; page?: number; limit?: number }) =>
   api.get<{ data: Medecin[]; total: number; page: number; limit: number; totalPages: number }>('/medecins', { params });
 export const getMedecinSpecialites = () => api.get<string[]>('/medecins/specialites');
+
+// Agenda médecin : disponibilités récurrentes + exceptions datées.
+export interface DispoSlot { id?: number; jour_semaine: number; heure_debut: string; heure_fin: string }
+export interface AgendaException { id: number; date: string; type: 'absence' | 'presence'; heure_debut: string | null; heure_fin: string | null; motif: string | null }
+export const getMedecinAgenda = (medecinId: number) =>
+  api.get<{ disponibilites: DispoSlot[]; exceptions: AgendaException[] }>(`/medecin-agenda/${medecinId}`);
+export const saveMedecinDisponibilites = (medecinId: number, items: DispoSlot[]) =>
+  api.put(`/medecin-agenda/${medecinId}/disponibilites`, items);
+export const addMedecinException = (medecinId: number, data: { date: string; type: 'absence' | 'presence'; heure_debut?: string; heure_fin?: string; motif?: string }) =>
+  api.post(`/medecin-agenda/${medecinId}/exceptions`, data);
+export const deleteMedecinException = (medecinId: number, exId: number) =>
+  api.delete(`/medecin-agenda/${medecinId}/exceptions/${exId}`);
 export const getMedecin = (id: number) => api.get<Medecin>(`/medecins/${id}`);
 export const createMedecin = (data: unknown) => api.post<Medecin>('/medecins', data);
 export const updateMedecin = (id: number, data: unknown) => api.put<Medecin>(`/medecins/${id}`, data);

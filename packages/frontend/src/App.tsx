@@ -26,6 +26,7 @@ const PatientDetail = lazy(() => import('./pages/PatientDetail'));
 const Parcours = lazy(() => import('./pages/Parcours'));
 const Medecins = lazy(() => import('./pages/Medecins'));
 const MedecinForm = lazy(() => import('./pages/MedecinForm'));
+const AgendaMedecin = lazy(() => import('./pages/AgendaMedecin'));
 const Services = lazy(() => import('./pages/Services'));
 const ServiceForm = lazy(() => import('./pages/ServiceForm'));
 const Consultations = lazy(() => import('./pages/Consultations'));
@@ -177,6 +178,7 @@ function App() {
                         <Route path="/medecins" element={<RoleGuard roles={['admin','medecin']}><Medecins /></RoleGuard>} />
                         <Route path="/medecins/nouveau" element={<RoleGuard roles={['admin']}><MedecinForm /></RoleGuard>} />
                         <Route path="/medecins/:id/modifier" element={<RoleGuard roles={['admin']}><MedecinForm /></RoleGuard>} />
+                        <Route path="/medecins/:id/agenda" element={<RoleGuard roles={['admin','medecin']}><AgendaMedecin /></RoleGuard>} />
                         <Route path="/services" element={<RoleGuard roles={['admin']}><Services /></RoleGuard>} />
                         <Route path="/services/nouveau" element={<RoleGuard roles={['admin']}><ServiceForm /></RoleGuard>} />
                         <Route path="/services/:id/modifier" element={<RoleGuard roles={['admin']}><ServiceForm /></RoleGuard>} />

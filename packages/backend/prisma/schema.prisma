@@ -68,6 +68,9 @@ model User {
   consultationsAsMedecin    Consultation[]    @relation("ConsultationMedecin")
   rendezVousAsMedecin       RendezVous[]      @relation("RendezVousMedecin")
   vitauxAsMedecin           Vital[]           @relation("VitalMedecin")
+  // Agenda du médecin : disponibilités récurrentes (par jour) + exceptions datées.
+  disponibilites            MedecinDisponibilite[] @relation("MedecinDispo")
+  exceptionsAgenda          MedecinException[]     @relation("MedecinException")
   prescriptionsAsMedecin    Prescription[]    @relation("PrescriptionMedecin")
   ordonnancesAsMedecin      Ordonnance[]      @relation("OrdonnanceMedecin")
   vaccinationsAsMedecin     Vaccination[]     @relation("VaccinationMedecin")
@@ -493,6 +496,38 @@ model RendezVous {
   medecin   User?            @relation("RendezVousMedecin", fields: [medecinId], references: [id])
   service   Service?         @relation(fields: [serviceId], references: [id])
   @@map("rendez_vous")
+}
+
+// Agenda médecin — disponibilités RÉCURRENTES par jour de semaine.
+// jourSemaine : 0=dimanche … 6=samedi (convention JS Date.getDay()).
+// heures au format "HH:MM" (string, pas de fuseau à gérer).
+model MedecinDisponibilite {
+  id            Int      @id @default(autoincrement())
+  medecinUserId Int      @map("medecin_user_id")
+  jourSemaine   Int      @map("jour_semaine")
+  heureDebut    String   @map("heure_debut") @db.VarChar(5)
+  heureFin      String   @map("heure_fin") @db.VarChar(5)
+  createdAt     DateTime @default(now()) @map("created_at")
+  medecin       User     @relation("MedecinDispo", fields: [medecinUserId], references: [id], onDelete: Cascade)
+  @@index([medecinUserId])
+  @@map("medecin_disponibilites")
+}
+
+// Agenda médecin — EXCEPTIONS datées. type='absence' (indispo ce jour) ou
+// 'presence' (dispo exceptionnelle hors récurrent). Heures nulles = journée
+// entière. Une exception prime sur le récurrent pour cette date.
+model MedecinException {
+  id            Int      @id @default(autoincrement())
+  medecinUserId Int      @map("medecin_user_id")
+  date          DateTime @db.Date
+  type          String   @db.VarChar(10)
+  heureDebut    String?  @map("heure_debut") @db.VarChar(5)
+  heureFin      String?  @map("heure_fin") @db.VarChar(5)
+  motif         String?  @db.VarChar(255)
+  createdAt     DateTime @default(now()) @map("created_at")
+  medecin       User     @relation("MedecinException", fields: [medecinUserId], references: [id], onDelete: Cascade)
+  @@index([medecinUserId, date])
+  @@map("medecin_exceptions")
 }
 
 model Vital {

@@ -97,7 +97,8 @@ export default function RendezVous() {
     let payload: Record<string, unknown>;
     try { payload = coerceRdvPayload(form); }
     catch { alert('Champs requis manquants'); return; }
-    try { await createRendezVous(payload); setShowModal(false); resetForm(); loadData(); } catch { alert('Erreur'); }
+    try { await createRendezVous(payload); setShowModal(false); resetForm(); loadData(); }
+    catch (err: any) { alert(err.response?.data?.error || 'Erreur lors de la création du rendez-vous'); }
   };
 
   const changeStatut = async (id: number, statut: string) => {

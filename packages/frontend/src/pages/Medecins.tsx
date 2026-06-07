@@ -110,6 +110,7 @@ export default function Medecins() {
                   <td>{m.specialite ? <span className="tag tag-blue">{m.specialite}</span> : '-'}</td>
                   <td>{m.telephone ? formatPhone(m.telephone, branding.code_pays) : '-'}</td>
                   <td>
+                    <button className="btn-icon" title="Agenda / disponibilités" onClick={() => navigate(`/app/medecins/${m.id}/agenda`)}><i className="bi bi-calendar-week"></i></button>
                     <button className="btn-icon" onClick={() => navigate(`/app/medecins/${m.id}/modifier`)}><i className="bi bi-pencil"></i></button>
                     <button className="btn-icon" onClick={() => handleDelete(m.id)}><i className="bi bi-trash"></i></button>
                   </td>
