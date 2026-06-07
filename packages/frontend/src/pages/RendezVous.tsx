@@ -231,21 +231,34 @@ export default function RendezVous() {
                         <span>Aucun créneau libre ce jour (médecin absent, agenda non défini, ou journée complète).</span>
                       </div>
                     ) : (
-                      <div className="d-flex gap-1" style={{ flexWrap: 'wrap' }}>
-                        {creneaux.map(c => {
-                          const active = form.date_rdv === `${datePart}T${c}`;
-                          return (
-                            <button
-                              type="button"
-                              key={c}
-                              className={active ? 'btn-primary btn-sm' : 'btn-ghost btn-sm'}
-                              onClick={() => setForm(f => ({ ...f, date_rdv: `${datePart}T${c}` }))}
-                            >
-                              {c}
-                            </button>
-                          );
-                        })}
-                      </div>
+                      (() => {
+                        const renderGroup = (titre: string, list: string[]) => list.length === 0 ? null : (
+                          <div style={{ marginBottom: '0.5rem' }}>
+                            <div className="text-muted" style={{ fontSize: '0.6875rem', textTransform: 'uppercase', letterSpacing: '0.03em', marginBottom: '0.25rem' }}>{titre}</div>
+                            <div className="d-flex gap-1" style={{ flexWrap: 'wrap' }}>
+                              {list.map(c => {
+                                const active = form.date_rdv === `${datePart}T${c}`;
+                                return (
+                                  <button
+                                    type="button"
+                                    key={c}
+                                    className={active ? 'btn-primary btn-sm' : 'btn-ghost btn-sm'}
+                                    onClick={() => setForm(f => ({ ...f, date_rdv: `${datePart}T${c}` }))}
+                                  >
+                                    {c}
+                                  </button>
+                                );
+                              })}
+                            </div>
+                          </div>
+                        );
+                        return (
+                          <>
+                            {renderGroup('Matin', creneaux.filter(c => c < '12:00'))}
+                            {renderGroup('Après-midi', creneaux.filter(c => c >= '12:00'))}
+                          </>
+                        );
+                      })()
                     )}
                   </div>
                 )}
