@@ -70,6 +70,22 @@ export default function Chat() {
     return () => { s.emit('chat:unsubscribe', activeId); };
   }, [activeId]);
 
+  // Accusés de réception en temps réel : quand un membre marque le canal lu,
+  // le serveur émet 'chat_read'. Effet dépendant d'activeId pour capturer la
+  // bonne valeur (closure).
+  useEffect(() => {
+    const s = socketRef.current;
+    if (!s) return;
+    const onRead = (p: { channelId: number; userId: number; lastReadAt: string }) => {
+      if (p.channelId !== activeId) return;
+      setReceipts(prev => prev.some(r => r.user_id === p.userId)
+        ? prev.map(r => r.user_id === p.userId ? { ...r, last_read_at: p.lastReadAt } : r)
+        : [...prev, { user_id: p.userId, nom: null, prenom: null, last_read_at: p.lastReadAt }]);
+    };
+    s.on('chat_read', onRead);
+    return () => { s.off('chat_read', onRead); };
+  }, [activeId]);
+
   // Load messages when the active channel changes, and mark as read
   useEffect(() => {
     if (!activeId) { setMessages([]); return; }
@@ -92,7 +108,9 @@ export default function Chat() {
       .then(r => { if (alive) setReceipts(r.data); })
       .catch(() => { /* ignore */ });
     fetchReceipts();
-    const t = setInterval(fetchReceipts, 12000);
+    // Le temps réel (event 'chat_read') gère la mise à jour immédiate ; ce poll
+    // n'est qu'un filet de sécurité (membre pas connecté au moment où on a lu).
+    const t = setInterval(fetchReceipts, 30000);
     return () => { alive = false; clearInterval(t); };
   }, [activeId, messages.length]);
 

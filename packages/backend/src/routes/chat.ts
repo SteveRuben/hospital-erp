@@ -266,10 +266,14 @@ router.post('/channels/:id/messages', authenticate, asyncHandler(async (req: Aut
 // Mark a channel as read for this user (called when the client opens it).
 router.post('/channels/:id/read', authenticate, asyncHandler(async (req: AuthRequest, res: Response) => {
   const channelId = Number(req.params.id);
+  const lastReadAt = new Date();
   await prisma.channelMember.updateMany({
     where: { channelId, userId: req.user!.id },
-    data: { lastReadAt: new Date() },
+    data: { lastReadAt },
   });
+  // Temps réel : prévient les autres membres du canal pour mettre à jour les
+  // accusés de réception sans attendre le prochain poll.
+  emitToChannel(channelId, 'chat_read', { channelId, userId: req.user!.id, lastReadAt: lastReadAt.toISOString() });
   res.json({ ok: true });
 }));
 
