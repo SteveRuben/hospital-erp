@@ -130,7 +130,7 @@ export default function RendezVous() {
   return (
     <div>
       <nav className="breadcrumb"><a href="/app">Accueil</a><span className="breadcrumb-separator">/</span><span>Rendez-vous</span></nav>
-      <div className="page-header"><h1 className="page-title">Rendez-vous</h1><button className="btn-primary" onClick={() => setShowModal(true)}><i className="bi bi-plus"></i> Nouveau RDV</button></div>
+      <div className="page-header"><h1 className="page-title">Rendez-vous</h1><button className="btn-primary" onClick={() => { loadData(); setShowModal(true); }}><i className="bi bi-plus"></i> Nouveau RDV</button></div>
 
       <div className="grid-4 mb-3">
         <div className="tile stat-tile"><div className="stat-value">{rdvsToday.length}</div><div className="stat-label">Aujourd'hui</div></div>
