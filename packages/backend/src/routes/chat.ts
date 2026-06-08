@@ -20,7 +20,7 @@ import { authenticate, authorize, AuthRequest } from '../middleware/auth.js';
 import { asyncHandler } from '../middleware/asyncHandler.js';
 import { logAudit } from '../services/audit.js';
 import { notifyMany } from '../services/notify.js';
-import { emitToChannel } from '../services/realtime.js';
+import { emitToChannel, emitToUser } from '../services/realtime.js';
 import { extractMentions, resolveMentions, BROADCAST_HANDLES } from '../services/mention.js';
 
 const router = Router();
@@ -214,6 +214,10 @@ router.post('/channels/:id/messages', authenticate, asyncHandler(async (req: Aut
     if (!channel) return;
     const channelMemberIds = new Set(channel.members.map(m => m.userId));
 
+    // Rafraîchit la liste des canaux (compteurs de non-lus) en temps réel pour
+    // chaque membre, même si le canal n'est pas ouvert (room utilisateur).
+    for (const mid of channelMemberIds) emitToUser(mid, 'channels_dirty', { channelId });
+
     // @tous / @all in group channels broadcasts to every member. Suppressed
     // in DM (the other party is already notified through the dm branch below)
     // — avoids a noisy duplicate notif.
@@ -274,6 +278,9 @@ router.post('/channels/:id/read', authenticate, asyncHandler(async (req: AuthReq
   // Temps réel : prévient les autres membres du canal pour mettre à jour les
   // accusés de réception sans attendre le prochain poll.
   emitToChannel(channelId, 'chat_read', { channelId, userId: req.user!.id, lastReadAt: lastReadAt.toISOString() });
+  // La lecture remet à zéro le compteur de non-lus du lecteur : rafraîchit sa
+  // liste des canaux (utile pour ses autres onglets/appareils).
+  emitToUser(req.user!.id, 'channels_dirty', { channelId });
   res.json({ ok: true });
 }));
 

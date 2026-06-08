@@ -57,6 +57,8 @@ export default function Chat() {
     socket.on('chat_message_deleted', (payload: { id: number }) => {
       setMessages(prev => prev.filter(m => m.id !== payload.id));
     });
+    // Liste des canaux à rafraîchir (nouveau message / lecture) même canal fermé.
+    socket.on('channels_dirty', () => { refreshChannels(); });
     return () => { socket.disconnect(); socketRef.current = null; };
     // activeId / refreshChannels intentionally not in deps — we manage subscription explicitly below.
     // eslint-disable-next-line react-hooks/exhaustive-deps
