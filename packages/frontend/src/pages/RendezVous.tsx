@@ -26,6 +26,12 @@ export default function RendezVous() {
   const [showModal, setShowModal] = useState(false);
   const [form, setForm] = useState({ patient_id: '', medecin_id: '', service_id: '', date_rdv: '', motif: '', notes: '', priorite: 'normal' as 'urgent' | 'prioritaire' | 'normal' });
 
+  // Vue : liste classique ou planning (médecins × RDV + disponibilités d'un jour).
+  const [view, setView] = useState<'liste' | 'planning'>('liste');
+  const [planningDate, setPlanningDate] = useState(() => new Date().toISOString().split('T')[0]);
+  const [planningSlots, setPlanningSlots] = useState<Record<number, string[]>>({});
+  const [loadingPlanning, setLoadingPlanning] = useState(false);
+
   // Créneaux libres du médecin sélectionné pour la date choisie. Chargés quand
   // médecin + date sont renseignés ; cliquer une puce remplit l'heure.
   const [creneaux, setCreneaux] = useState<string[]>([]);
@@ -41,6 +47,21 @@ export default function RendezVous() {
       .finally(() => { if (alive) setLoadingCreneaux(false); });
     return () => { alive = false; };
   }, [form.medecin_id, datePart]);
+
+  // Planning : créneaux libres de chaque médecin pour la date choisie.
+  useEffect(() => {
+    if (view !== 'planning' || medecins.length === 0) { return; }
+    let alive = true;
+    setLoadingPlanning(true);
+    Promise.all(medecins.map(m =>
+      getMedecinCreneaux(m.id, planningDate)
+        .then(r => [m.id, r.data.creneaux] as const)
+        .catch(() => [m.id, [] as string[]] as const),
+    ))
+      .then(entries => { if (alive) setPlanningSlots(Object.fromEntries(entries)); })
+      .finally(() => { if (alive) setLoadingPlanning(false); });
+    return () => { alive = false; };
+  }, [view, planningDate, medecins]);
 
   // Patient typeahead state — replaces the old dropdown that loaded every
   // patient at once. Lets the receptionist find anyone by name or reference,
@@ -140,9 +161,55 @@ export default function RendezVous() {
       </div>
 
       <div className="tabs mb-2">
-        <button className="tab-item active">Aujourd'hui</button>
+        <button className={`tab-item ${view === 'liste' ? 'active' : ''}`} onClick={() => setView('liste')}>Liste</button>
+        <button className={`tab-item ${view === 'planning' ? 'active' : ''}`} onClick={() => setView('planning')}>Planning</button>
       </div>
 
+      {view === 'planning' && (
+        <div className="tile" style={{ padding: '1.25rem' }}>
+          <div className="d-flex gap-1 mb-2" style={{ alignItems: 'center' }}>
+            <label className="form-label" style={{ marginBottom: 0 }}>Jour</label>
+            <input type="date" className="form-input" style={{ width: '170px' }} value={planningDate} onChange={e => setPlanningDate(e.target.value)} />
+            {loadingPlanning && <span className="text-muted" style={{ fontSize: '0.8125rem' }}>Chargement…</span>}
+          </div>
+          {(() => {
+            const dayRdvs = rdvs.filter(r => String(r.date_rdv).startsWith(planningDate));
+            return medecins.map(m => {
+              const booked = dayRdvs
+                .filter(r => (r as any).medecin_id === m.id && r.statut !== 'annule')
+                .sort((a, b) => new Date(a.date_rdv).getTime() - new Date(b.date_rdv).getTime());
+              const free = planningSlots[m.id] ?? [];
+              return (
+                <div key={m.id} style={{ display: 'flex', gap: '1rem', padding: '0.5rem 0', borderBottom: '1px solid var(--cds-ui-03)', alignItems: 'flex-start' }}>
+                  <div style={{ width: '160px', fontWeight: 600, fontSize: '0.8125rem', paddingTop: '0.25rem' }}>Dr {m.prenom} {m.nom}</div>
+                  <div style={{ flex: 1, display: 'flex', flexWrap: 'wrap', gap: '0.375rem' }}>
+                    {booked.length === 0 && free.length === 0 && (
+                      <span className="text-muted" style={{ fontSize: '0.75rem' }}>Indisponible / aucun agenda ce jour</span>
+                    )}
+                    {booked.map(r => (
+                      <span key={r.id} className="tag tag-blue" style={{ fontSize: '0.6875rem' }} title={`${r.patient_prenom ?? ''} ${r.patient_nom ?? ''} — ${statutConfig[r.statut]?.label ?? r.statut}`}>
+                        <i className="bi bi-calendar-check"></i> {new Date(r.date_rdv).toLocaleTimeString('fr-FR', { hour: '2-digit', minute: '2-digit' })} {r.patient_prenom} {r.patient_nom}
+                      </span>
+                    ))}
+                    {free.map(c => (
+                      <span key={c} className="tag tag-green" style={{ fontSize: '0.6875rem', opacity: 0.85 }} title="Créneau libre">
+                        {c}
+                      </span>
+                    ))}
+                  </div>
+                </div>
+              );
+            });
+          })()}
+          {medecins.length === 0 && <div className="text-muted" style={{ fontSize: '0.8125rem' }}>Aucun médecin.</div>}
+          <div className="text-muted" style={{ fontSize: '0.6875rem', marginTop: '0.75rem' }}>
+            <span className="tag tag-blue" style={{ fontSize: '0.625rem' }}>RDV</span> rendez-vous pris &nbsp;
+            <span className="tag tag-green" style={{ fontSize: '0.625rem' }}>libre</span> créneau disponible
+          </div>
+        </div>
+      )}
+
+      {view === 'liste' && (
       <table className="data-table">
         <thead><tr><th>Heure</th><th>Patient</th><th>Médecin</th><th>Service</th><th>Motif</th><th>Statut</th><th>Actions</th></tr></thead>
         <tbody>
@@ -172,6 +239,7 @@ export default function RendezVous() {
           {rdvs.length === 0 && <tr><td colSpan={7} className="table-empty"><i className="bi bi-calendar-event"></i>Aucun rendez-vous</td></tr>}
         </tbody>
       </table>
+      )}
 
       {showModal && (
         <div className="modal-overlay" onClick={() => { setShowModal(false); resetForm(); }}>

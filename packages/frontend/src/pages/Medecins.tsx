@@ -1,6 +1,7 @@
-import { useState, useEffect, useCallback } from 'react';
+import { useState, useEffect, useCallback, useContext } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { searchMedecins, getMedecinSpecialites, deleteMedecin } from '../services/api';
+import { AuthContext } from '../App';
+import { searchMedecins, getMedecinSpecialites, deleteMedecin, getMedecin } from '../services/api';
 import { useConfirm } from '../components/ConfirmDialog';
 import { useBranding } from '../components/BrandingProvider';
 import { formatPhone } from '../components/format';
@@ -18,6 +19,11 @@ export default function Medecins() {
   const navigate = useNavigate();
   const { confirm } = useConfirm();
   const { branding } = useBranding();
+  const { user } = useContext(AuthContext);
+  // Un médecin ne voit pas l'annuaire complet : il accède seulement à son
+  // propre espace (profil + agenda). La liste/recherche reste réservée à l'admin.
+  const isMedecin = user?.role === 'medecin';
+  const [selfMedecin, setSelfMedecin] = useState<Medecin | null>(null);
   const [filters, setFilters] = useState({ search: '', specialite: '', telephone: '' });
   const [specialites, setSpecialites] = useState<string[]>([]);
   const [medecins, setMedecins] = useState<Medecin[]>([]);
@@ -30,7 +36,13 @@ export default function Medecins() {
     getMedecinSpecialites().then(({ data }) => setSpecialites(data)).catch(() => {});
   }, []);
 
+  // Vue médecin : charge uniquement sa propre fiche.
+  useEffect(() => {
+    if (isMedecin && user?.id) getMedecin(user.id).then(({ data }) => setSelfMedecin(data)).catch(() => {});
+  }, [isMedecin, user?.id]);
+
   const load = useCallback(async () => {
+    if (isMedecin) { setLoading(false); return; } // pas d'annuaire pour les médecins
     setLoading(true);
     try {
       const { data } = await searchMedecins({ ...filters, page, limit: LIMIT });
@@ -41,7 +53,7 @@ export default function Medecins() {
     } finally {
       setLoading(false);
     }
-  }, [filters, page]);
+  }, [filters, page, isMedecin]);
 
   // Debounce the search so typing doesn't fire on every keystroke.
   useEffect(() => {
@@ -61,6 +73,32 @@ export default function Medecins() {
   const clearFilters = () => setFilters({ search: '', specialite: '', telephone: '' });
   const hasFilters = filters.search || filters.specialite || filters.telephone;
   const totalPages = Math.max(1, Math.ceil(total / LIMIT));
+
+  // Vue dédiée médecin : son propre espace, sans annuaire des autres médecins.
+  if (isMedecin) {
+    return (
+      <div>
+        <nav className="breadcrumb"><a href="/app">Accueil</a><span className="breadcrumb-separator">/</span><span>Mon espace médecin</span></nav>
+        <div className="page-header"><h1 className="page-title">Mon espace médecin</h1></div>
+        <div className="tile" style={{ padding: '1.5rem', maxWidth: '520px' }}>
+          {selfMedecin ? (
+            <>
+              <h3 style={{ fontSize: '1.125rem', fontWeight: 600 }}>Dr {selfMedecin.prenom} {selfMedecin.nom}</h3>
+              <p className="text-muted" style={{ marginTop: '0.25rem' }}>
+                {selfMedecin.specialite || 'Médecin'}
+                {selfMedecin.telephone ? ` · ${formatPhone(selfMedecin.telephone, branding.code_pays)}` : ''}
+              </p>
+              <div className="d-flex gap-1" style={{ marginTop: '1rem' }}>
+                <button className="btn-primary" onClick={() => navigate(`/app/medecins/${selfMedecin.id}/agenda`)}>
+                  <i className="bi bi-calendar-week"></i> Mon agenda / disponibilités
+                </button>
+              </div>
+            </>
+          ) : <div className="loading"><div className="spinner"></div></div>}
+        </div>
+      </div>
+    );
+  }
 
   return (
     <div>
