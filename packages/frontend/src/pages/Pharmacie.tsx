@@ -146,11 +146,15 @@ export default function Pharmacie() {
 
       {tab === 'mouvements' && (
         <table className="data-table"><thead><tr><th>Date</th><th>Médicament</th><th>Type</th><th>Quantité</th><th>Lot</th><th>Motif</th><th>Par</th><th>Statut</th>{role === 'admin' && <th>Actions</th>}</tr></thead>
-          <tbody>{mouvements.map((m: any) => <tr key={m.id}>
+          <tbody>{mouvements.map((m: any) => <tr key={m.id} style={m.orphelin ? { background: '#ffd7d9' } : undefined}>
             <td>{new Date(m.created_at).toLocaleString('fr-FR')}</td>
             <td>{m.medicament_nom}</td>
             <td><span className={`tag ${m.type_mouvement === 'entree' ? 'tag-green' : m.type_mouvement === 'sortie' ? 'tag-red' : m.type_mouvement === 'perime' ? 'tag-purple' : 'tag-yellow'}`}>{m.type_mouvement}</span></td>
-            <td>{m.quantite}</td><td>{m.lot || '-'}</td><td>{m.motif || '-'}</td><td>{m.user_prenom} {m.user_nom}</td>
+            <td>{m.quantite}</td>
+            <td className={m.orphelin ? 'text-danger fw-600' : ''} title={m.orphelin ? `Aucun lot "${m.lot}" en stock — ce mouvement n'a pas modifié le stock, à corriger` : undefined}>
+              {m.lot || '-'}{m.orphelin && <i className="bi bi-exclamation-triangle-fill" style={{ marginLeft: '0.35rem' }}></i>}
+            </td>
+            <td>{m.motif || '-'}</td><td>{m.user_prenom} {m.user_nom}</td>
             <td><span className={`tag ${m.statut === 'valide' ? 'tag-green' : m.statut === 'rejete' ? 'tag-red' : 'tag-yellow'}`}>{m.statut === 'valide' ? 'Validé' : m.statut === 'rejete' ? 'Rejeté' : 'En attente'}</span></td>
             {role === 'admin' && <td>{m.statut === 'en_attente' && <div className="d-flex gap-05">
               <button className="btn-sm btn-secondary" title="Approuver" onClick={() => handleApprouverMvt(m.id)}><i className="bi bi-check-lg"></i></button>

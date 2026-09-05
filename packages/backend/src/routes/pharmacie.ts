@@ -203,12 +203,18 @@ router.get('/mouvements', authenticate, async (_req: AuthRequest, res: Response)
     const rows = await prisma.stockMouvement.findMany({ orderBy: { createdAt: 'desc' }, take: 100 });
     const medIds = Array.from(new Set(rows.map(s => s.medicamentId).filter((v): v is number => v != null)));
     const userIds = Array.from(new Set(rows.map(s => s.userId).filter((v): v is number => v != null)));
-    const [meds, users] = await Promise.all([
+    const [meds, users, stockRows] = await Promise.all([
       medIds.length > 0 ? prisma.medicament.findMany({ where: { id: { in: medIds } }, select: { id: true, nom: true } }) : Promise.resolve([]),
       userIds.length > 0 ? prisma.user.findMany({ where: { id: { in: userIds } }, select: { id: true, nom: true, prenom: true } }) : Promise.resolve([]),
+      medIds.length > 0 ? prisma.stock.findMany({ where: { medicamentId: { in: medIds } }, select: { medicamentId: true, lot: true } }) : Promise.resolve([]),
     ]);
     const medMap = new Map(meds.map(m => [m.id, m]));
     const userMap = new Map(users.map(u => [u.id, u]));
+    // Lots that currently exist in stock, per medicament — used to flag
+    // movements filed against a lot that never (or no longer) exists, which
+    // silently failed to touch stock under the pre-fix code (see below).
+    const knownLots = new Set(stockRows.map(s => `${s.medicamentId}|${s.lot ?? ''}`));
+
     // Was `{ ...s, ... }` — spread the raw Prisma row (camelCase: typeMouvement,
     // createdAt) while the frontend table reads type_mouvement/created_at,
     // so the type tag never rendered and the date showed "Invalid Date".
@@ -222,6 +228,12 @@ router.get('/mouvements', authenticate, async (_req: AuthRequest, res: Response)
       user_id: s.userId,
       created_at: s.createdAt,
       statut: s.statut,
+      // A lot was named but doesn't match any current stock row for this
+      // medicament — before the sufficiency-check fix, this silently
+      // updated zero rows (0 rows matched the raw SQL WHERE), so the
+      // movement got logged as "valide" while stock never moved. Surfaced
+      // so it can be spotted and corrected instead of trusted at face value.
+      orphelin: !!(s.lot && s.medicamentId != null && !knownLots.has(`${s.medicamentId}|${s.lot}`)),
       medicament_nom: s.medicamentId != null ? (medMap.get(s.medicamentId)?.nom ?? null) : null,
       user_nom: s.userId != null ? (userMap.get(s.userId)?.nom ?? null) : null,
       user_prenom: s.userId != null ? (userMap.get(s.userId)?.prenom ?? null) : null,
