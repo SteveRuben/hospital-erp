@@ -64,6 +64,15 @@ const Garde = lazy(() => import('./pages/Garde'));
 const Assurances = lazy(() => import('./pages/Assurances'));
 const ParametresGeneraux = lazy(() => import('./pages/ParametresGeneraux'));
 const ListesReference = lazy(() => import('./pages/ListesReference'));
+const Facilities = lazy(() => import('./pages/Facilities'));
+const FacilityForm = lazy(() => import('./pages/FacilityForm'));
+const FacilityDetail = lazy(() => import('./pages/FacilityDetail'));
+const UtilisateurForm = lazy(() => import('./pages/UtilisateurForm'));
+const PharmacieMedicamentForm = lazy(() => import('./pages/PharmacieMedicamentForm'));
+const TarifForm = lazy(() => import('./pages/TarifForm'));
+const FactureForm = lazy(() => import('./pages/FactureForm'));
+const AssuranceForm = lazy(() => import('./pages/AssuranceForm'));
+const RendezVousForm = lazy(() => import('./pages/RendezVousForm'));
 
 const PageLoader = () => <div className="loading"><div className="spinner"></div></div>;
 
@@ -170,55 +179,71 @@ function App() {
                       <Routes>
                         <Route path="/" element={<Dashboard />} />
                         <Route path="/recherche" element={<Recherche />} />
-                        <Route path="/parcours" element={<RoleGuard roles={['admin','medecin','reception','infirmier']}><Parcours /></RoleGuard>} />
-                        <Route path="/patients" element={<RoleGuard roles={['admin','medecin','reception']}><Patients /></RoleGuard>} />
-                        <Route path="/patients/nouveau" element={<RoleGuard roles={['admin','medecin','reception']}><PatientForm /></RoleGuard>} />
-                        <Route path="/patients/:id/modifier" element={<RoleGuard roles={['admin','medecin','reception']}><PatientForm /></RoleGuard>} />
-                        <Route path="/patients/:id" element={<RoleGuard roles={['admin','medecin','reception']}><PatientDetail /></RoleGuard>} />
-                        <Route path="/medecins" element={<RoleGuard roles={['admin','medecin']}><Medecins /></RoleGuard>} />
-                        <Route path="/medecins/nouveau" element={<RoleGuard roles={['admin']}><MedecinForm /></RoleGuard>} />
-                        <Route path="/medecins/:id/modifier" element={<RoleGuard roles={['admin']}><MedecinForm /></RoleGuard>} />
-                        <Route path="/medecins/:id/agenda" element={<RoleGuard roles={['admin','medecin']}><AgendaMedecin /></RoleGuard>} />
-                        <Route path="/services" element={<RoleGuard roles={['admin']}><Services /></RoleGuard>} />
-                        <Route path="/services/nouveau" element={<RoleGuard roles={['admin']}><ServiceForm /></RoleGuard>} />
-                        <Route path="/services/:id/modifier" element={<RoleGuard roles={['admin']}><ServiceForm /></RoleGuard>} />
-                        <Route path="/consultations" element={<RoleGuard roles={['admin','medecin']}><Consultations /></RoleGuard>} />
-                        <Route path="/consultations/nouvelle" element={<RoleGuard roles={['admin','medecin']}><ConsultationForm /></RoleGuard>} />
-                        <Route path="/consultations/:id/modifier" element={<RoleGuard roles={['admin','medecin']}><ConsultationForm /></RoleGuard>} />
-                        <Route path="/finances" element={<RoleGuard roles={['admin','comptable']}><Finances /></RoleGuard>} />
-                        <Route path="/laboratoire" element={<RoleGuard roles={['admin','laborantin','medecin']}><Laboratoire /></RoleGuard>} />
-                        <Route path="/laboratoire/nouveau" element={<RoleGuard roles={['admin','laborantin','medecin']}><ExamenForm /></RoleGuard>} />
-                        <Route path="/laboratoire/:id/modifier" element={<RoleGuard roles={['admin','laborantin']}><ExamenForm /></RoleGuard>} />
-                        <Route path="/rendezvous" element={<RoleGuard roles={['admin','medecin','reception']}><RendezVous /></RoleGuard>} />
-                        <Route path="/visites" element={<RoleGuard roles={['admin','medecin','reception']}><Visites /></RoleGuard>} />
-                        <Route path="/file-attente" element={<RoleGuard roles={['admin','medecin','reception']}><FileAttente /></RoleGuard>} />
-                        <Route path="/listes-patients" element={<RoleGuard roles={['admin','medecin']}><ListesPatients /></RoleGuard>} />
+                        <Route path="/parcours" element={<RoleGuard roles={['admin','medecin','reception','infirmier','super_admin','chef_pole']}><Parcours /></RoleGuard>} />
+                        <Route path="/patients" element={<RoleGuard roles={['admin','medecin','reception','super_admin','chef_pole']}><Patients /></RoleGuard>} />
+                        <Route path="/patients/nouveau" element={<RoleGuard roles={['admin','medecin','reception','super_admin','chef_pole']}><PatientForm /></RoleGuard>} />
+                        <Route path="/patients/:id/modifier" element={<RoleGuard roles={['admin','medecin','reception','super_admin','chef_pole']}><PatientForm /></RoleGuard>} />
+                        <Route path="/patients/:id" element={<RoleGuard roles={['admin','medecin','reception','super_admin','chef_pole']}><PatientDetail /></RoleGuard>} />
+                        <Route path="/medecins" element={<RoleGuard roles={['admin','medecin','super_admin','chef_pole']}><Medecins /></RoleGuard>} />
+                        <Route path="/medecins/nouveau" element={<RoleGuard roles={['admin','super_admin']}><MedecinForm /></RoleGuard>} />
+                        <Route path="/medecins/:id/modifier" element={<RoleGuard roles={['admin','super_admin']}><MedecinForm /></RoleGuard>} />
+                        <Route path="/medecins/:id/agenda" element={<RoleGuard roles={['admin','medecin','super_admin','chef_pole']}><AgendaMedecin /></RoleGuard>} />
+                        <Route path="/services" element={<RoleGuard roles={['admin','super_admin']}><Services /></RoleGuard>} />
+                        <Route path="/services/nouveau" element={<RoleGuard roles={['admin','super_admin']}><ServiceForm /></RoleGuard>} />
+                        <Route path="/services/:id/modifier" element={<RoleGuard roles={['admin','super_admin']}><ServiceForm /></RoleGuard>} />
+                        <Route path="/consultations" element={<RoleGuard roles={['admin','medecin','super_admin','chef_pole']}><Consultations /></RoleGuard>} />
+                        <Route path="/consultations/nouvelle" element={<RoleGuard roles={['admin','medecin','super_admin','chef_pole']}><ConsultationForm /></RoleGuard>} />
+                        <Route path="/consultations/:id/modifier" element={<RoleGuard roles={['admin','medecin','super_admin','chef_pole']}><ConsultationForm /></RoleGuard>} />
+                        <Route path="/finances" element={<RoleGuard roles={['admin','comptable','super_admin','chef_pole']}><Finances /></RoleGuard>} />
+                        <Route path="/laboratoire" element={<RoleGuard roles={['admin','laborantin','medecin','super_admin','chef_pole']}><Laboratoire /></RoleGuard>} />
+                        <Route path="/laboratoire/nouveau" element={<RoleGuard roles={['admin','laborantin','medecin','super_admin','chef_pole']}><ExamenForm /></RoleGuard>} />
+                        <Route path="/laboratoire/:id/modifier" element={<RoleGuard roles={['admin','laborantin','super_admin','chef_pole']}><ExamenForm /></RoleGuard>} />
+                        <Route path="/rendezvous" element={<RoleGuard roles={['admin','medecin','reception','super_admin','chef_pole']}><RendezVous /></RoleGuard>} />
+                        <Route path="/visites" element={<RoleGuard roles={['admin','medecin','reception','super_admin','chef_pole']}><Visites /></RoleGuard>} />
+                        <Route path="/file-attente" element={<RoleGuard roles={['admin','medecin','reception','super_admin','chef_pole']}><FileAttente /></RoleGuard>} />
+                        <Route path="/listes-patients" element={<RoleGuard roles={['admin','medecin','super_admin','chef_pole']}><ListesPatients /></RoleGuard>} />
                         <Route path="/documentation" element={<Documentation />} />
-                        <Route path="/utilisateurs" element={<RoleGuard roles={['admin']}><Utilisateurs /></RoleGuard>} />
-                        <Route path="/habilitations" element={<RoleGuard roles={['admin']}><Habilitations /></RoleGuard>} />
+                        <Route path="/utilisateurs" element={<RoleGuard roles={['admin','super_admin']}><Utilisateurs /></RoleGuard>} />
+                        <Route path="/habilitations" element={<RoleGuard roles={['admin','super_admin']}><Habilitations /></RoleGuard>} />
                         <Route path="/configuration" element={<RoleGuard roles={['admin']}><Configuration /></RoleGuard>} />
                         <Route path="/securite" element={<RoleGuard roles={['admin']}><Securite /></RoleGuard>} />
                         <Route path="/import" element={<RoleGuard roles={['admin']}><Import /></RoleGuard>} />
-                        <Route path="/lits" element={<RoleGuard roles={['admin','medecin']}><Lits /></RoleGuard>} />
-                        <Route path="/lits/admission" element={<RoleGuard roles={['admin','medecin']}><AdmissionForm /></RoleGuard>} />
-                        <Route path="/programmes" element={<RoleGuard roles={['admin','medecin']}><Programmes /></RoleGuard>} />
-                        <Route path="/facturation" element={<RoleGuard roles={['admin','comptable']}><Facturation /></RoleGuard>} />
-                        <Route path="/imagerie" element={<RoleGuard roles={['admin','medecin']}><Imagerie /></RoleGuard>} />
+                        <Route path="/lits" element={<RoleGuard roles={['admin','medecin','super_admin','chef_pole']}><Lits /></RoleGuard>} />
+                        <Route path="/lits/admission" element={<RoleGuard roles={['admin','medecin','super_admin','chef_pole']}><AdmissionForm /></RoleGuard>} />
+                        <Route path="/programmes" element={<RoleGuard roles={['admin','medecin','super_admin','chef_pole']}><Programmes /></RoleGuard>} />
+                        <Route path="/facturation" element={<RoleGuard roles={['admin','comptable','super_admin','chef_pole']}><Facturation /></RoleGuard>} />
+                        <Route path="/imagerie" element={<RoleGuard roles={['admin','medecin','super_admin','chef_pole']}><Imagerie /></RoleGuard>} />
                         <Route path="/concepts" element={<RoleGuard roles={['admin']}><Concepts /></RoleGuard>} />
-                        <Route path="/orders" element={<RoleGuard roles={['admin','medecin','laborantin']}><Orders /></RoleGuard>} />
-                        <Route path="/pharmacie" element={<RoleGuard roles={['admin','medecin','pharmacien']}><Pharmacie /></RoleGuard>} />
+                        <Route path="/orders" element={<RoleGuard roles={['admin','medecin','laborantin','super_admin','chef_pole']}><Orders /></RoleGuard>} />
+                        <Route path="/pharmacie" element={<RoleGuard roles={['admin','medecin','pharmacien','super_admin','chef_pole']}><Pharmacie /></RoleGuard>} />
                         <Route path="/patient-merge" element={<RoleGuard roles={['admin']}><PatientMerge /></RoleGuard>} />
                         <Route path="/rapports" element={<RoleGuard roles={['admin','comptable']}><Rapports /></RoleGuard>} />
                         <Route path="/chat" element={<Chat />} />
                         <Route path="/chat/:channelId" element={<Chat />} />
-                        <Route path="/formulaires" element={<RoleGuard roles={['admin','medecin']}><Formulaires /></RoleGuard>} />
+                        <Route path="/formulaires" element={<RoleGuard roles={['admin','medecin','super_admin','chef_pole']}><Formulaires /></RoleGuard>} />
                         <Route path="/profil" element={<Profil />} />
-                        <Route path="/catalogue-examens" element={<RoleGuard roles={['admin','comptable']}><CatalogueExamens /></RoleGuard>} />
-                        <Route path="/impressions" element={<RoleGuard roles={['admin']}><Impressions /></RoleGuard>} />
-                        <Route path="/garde" element={<RoleGuard roles={['admin','medecin']}><Garde /></RoleGuard>} />
-                        <Route path="/assurances" element={<RoleGuard roles={['admin','comptable']}><Assurances /></RoleGuard>} />
-                        <Route path="/parametres-generaux" element={<RoleGuard roles={['admin']}><ParametresGeneraux /></RoleGuard>} />
-                        <Route path="/listes-reference" element={<RoleGuard roles={['admin']}><ListesReference /></RoleGuard>} />
+                        <Route path="/catalogue-examens" element={<RoleGuard roles={['admin','comptable','super_admin','chef_pole']}><CatalogueExamens /></RoleGuard>} />
+                        <Route path="/impressions" element={<RoleGuard roles={['admin','super_admin']}><Impressions /></RoleGuard>} />
+                        <Route path="/garde" element={<RoleGuard roles={['admin','medecin','super_admin','chef_pole']}><Garde /></RoleGuard>} />
+                        <Route path="/assurances" element={<RoleGuard roles={['admin','comptable','super_admin','chef_pole']}><Assurances /></RoleGuard>} />
+                        <Route path="/parametres-generaux" element={<RoleGuard roles={['admin','super_admin']}><ParametresGeneraux /></RoleGuard>} />
+                        <Route path="/listes-reference" element={<RoleGuard roles={['admin','super_admin']}><ListesReference /></RoleGuard>} />
+                        <Route path="/facilities" element={<RoleGuard roles={['super_admin']}><Facilities /></RoleGuard>} />
+                        <Route path="/etablissements" element={<RoleGuard roles={['super_admin']}><Facilities /></RoleGuard>} />
+                        <Route path="/etablissements/nouveau" element={<RoleGuard roles={['super_admin']}><FacilityForm /></RoleGuard>} />
+                        <Route path="/etablissements/:id" element={<RoleGuard roles={['super_admin']}><FacilityDetail /></RoleGuard>} />
+                        <Route path="/etablissements/:id/modifier" element={<RoleGuard roles={['super_admin']}><FacilityForm /></RoleGuard>} />
+                        <Route path="/utilisateurs/nouveau" element={<RoleGuard roles={['admin','super_admin']}><UtilisateurForm /></RoleGuard>} />
+                        <Route path="/utilisateurs/:id/modifier" element={<RoleGuard roles={['admin','super_admin']}><UtilisateurForm /></RoleGuard>} />
+                        <Route path="/pharmacie/nouveau" element={<RoleGuard roles={['admin','pharmacien']}><PharmacieMedicamentForm /></RoleGuard>} />
+                        <Route path="/pharmacie/:id" element={<RoleGuard roles={['admin','pharmacien']}><PharmacieMedicamentForm /></RoleGuard>} />
+                        <Route path="/pharmacie/:id/modifier" element={<RoleGuard roles={['admin','pharmacien']}><PharmacieMedicamentForm /></RoleGuard>} />
+                        <Route path="/facturation/tarifs/nouveau" element={<RoleGuard roles={['admin','comptable']}><TarifForm /></RoleGuard>} />
+                        <Route path="/facturation/tarifs/:id/modifier" element={<RoleGuard roles={['admin','comptable']}><TarifForm /></RoleGuard>} />
+                        <Route path="/facturation/factures/nouvelle" element={<RoleGuard roles={['admin','comptable']}><FactureForm /></RoleGuard>} />
+                        <Route path="/assurances/nouvelle" element={<RoleGuard roles={['admin','comptable']}><AssuranceForm /></RoleGuard>} />
+                        <Route path="/assurances/:id/modifier" element={<RoleGuard roles={['admin','comptable']}><AssuranceForm /></RoleGuard>} />
+                        <Route path="/rendezvous/nouveau" element={<RoleGuard roles={['admin','medecin','reception','super_admin','chef_pole']}><RendezVousForm /></RoleGuard>} />
                       </Routes>
                     </Suspense>
                   </Layout>

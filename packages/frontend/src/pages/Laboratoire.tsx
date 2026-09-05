@@ -3,6 +3,7 @@ import { useNavigate } from 'react-router-dom';
 import { AuthContext } from '../App';
 import { getExamens, updateExamen, deleteExamen, getPatients } from '../services/api';
 import { useSnackbar } from '../components/Snackbar';
+import { useConfirm } from '../components/ConfirmDialog';
 import { useBranding } from '../components/BrandingProvider';
 import { formatMoney } from '../components/format';
 import ExamenFichiers from '../components/ExamenFichiers';
@@ -67,6 +68,7 @@ export default function Laboratoire() {
   const [resultModal, setResultModal] = useState<ExamenAug | null>(null);
   const navigate = useNavigate();
   const { showSnackbar } = useSnackbar();
+  const { confirm } = useConfirm();
   const { branding } = useBranding();
   const { user } = useContext(AuthContext);
   const money = (n: number) => formatMoney(n, branding.devise);
@@ -240,7 +242,7 @@ export default function Laboratoire() {
                       <button className="btn-icon" onClick={() => navigate(`/app/laboratoire/${ex.id}/modifier`)}><i className="bi bi-pencil"></i></button>
                     )}
                     {user?.role === 'admin' && (
-                      <button className="btn-icon" onClick={async () => { if (confirm('Supprimer ?')) { await deleteExamen(ex.id); loadData(); }}}><i className="bi bi-trash"></i></button>
+                      <button className="btn-icon" onClick={async () => { const ok = await confirm({ message: 'Supprimer cet examen ?', variant: 'danger' }); if (ok) { await deleteExamen(ex.id); loadData(); }}}><i className="bi bi-trash"></i></button>
                     )}
                   </td>
                 </tr>

@@ -1,12 +1,14 @@
 import { useState, useEffect, useRef } from 'react';
 import { getMedecins } from '../services/api';
 import PatientTypeahead from '../components/PatientTypeahead';
+import { useSnackbar } from '../components/Snackbar';
 import api from '../services/api';
 import type { Medecin } from '../types';
 
 interface RefItem { code: string; libelle: string }
 
 export default function Imagerie() {
+  const { showSnackbar } = useSnackbar();
   const [images, setImages] = useState<any[]>([]);
   const [medecins, setMedecins] = useState<Medecin[]>([]);
   const [typeExamens, setTypeExamens] = useState<RefItem[]>([]);
@@ -41,7 +43,7 @@ export default function Imagerie() {
   const handleUpload = async (e: React.FormEvent) => {
     e.preventDefault();
     const file = fileRef.current?.files?.[0];
-    if (!file || !form.patient_id) { alert('Patient et fichier requis'); return; }
+    if (!file || !form.patient_id) { showSnackbar('Patient et fichier requis', 'warning'); return; }
     const formData = new FormData();
     formData.append('file', file);
     Object.entries(form).forEach(([k, v]) => { if (v) formData.append(k, v); });
@@ -49,7 +51,7 @@ export default function Imagerie() {
       await api.post('/imagerie', formData, { headers: { 'Content-Type': 'multipart/form-data' } });
       setShowModal(false); setForm({ patient_id: '', type_examen: '', description: '', date_examen: '', medecin_id: '' });
       if (selectedPatient) loadImages();
-    } catch (err: any) { alert(err.response?.data?.error || 'Erreur'); }
+    } catch (err: any) { showSnackbar(err.response?.data?.error || 'Erreur', 'error'); }
   };
 
   const isImage = (type: string) => type?.startsWith('image/');

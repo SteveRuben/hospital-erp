@@ -107,9 +107,9 @@ export const authorize = (...roles: UserRole[]) => {
 // can gate the session until the forced first-login change is done. Omitted
 // when false to keep the token small and avoid a stale claim after the change
 // (change-password issues a fresh token without it).
-export const generateToken = (user: { id: number; username: string; role: UserRole }, mustChangePassword = false): string => {
+export const generateToken = (user: { id: number; username: string; role: UserRole; facilityId?: number }, mustChangePassword = false): string => {
   return jwt.sign(
-    { id: user.id, username: user.username, role: user.role, ...(mustChangePassword ? { mcp: true } : {}) },
+    { id: user.id, username: user.username, role: user.role, facilityId: user.facilityId, ...(mustChangePassword ? { mcp: true } : {}) },
     JWT_SECRET,
     {
       algorithm: JWT_ALGORITHM,

@@ -1,6 +1,7 @@
 import { useState, useEffect } from 'react';
 import { getFileAttente, getFileAttenteStats, addToFileAttente, updateFileAttenteStatut, getServices } from '../services/api';
 import PatientTypeahead from '../components/PatientTypeahead';
+import { useSnackbar } from '../components/Snackbar';
 import type { Service } from '../types';
 
 const prioriteConfig: Record<string, { label: string; tag: string }> = {
@@ -16,6 +17,7 @@ const statutConfig: Record<string, { label: string; tag: string }> = {
 };
 
 export default function FileAttente() {
+  const { showSnackbar } = useSnackbar();
   const [queue, setQueue] = useState<any[]>([]);
   const [stats, setStats] = useState<any>(null);
   const [services, setServices] = useState<Service[]>([]);
@@ -39,11 +41,11 @@ export default function FileAttente() {
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     try { await addToFileAttente(form); setShowModal(false); setForm({ patient_id: '', service_id: '', priorite: 'normal', notes: '' }); loadData(); }
-    catch (err: any) { alert(err.response?.data?.error || 'Erreur'); }
+    catch (err: any) { showSnackbar(err.response?.data?.error || 'Erreur', 'error'); }
   };
 
   const changeStatut = async (id: number, statut: string) => {
-    try { await updateFileAttenteStatut(id, statut); loadData(); } catch { alert('Erreur'); }
+    try { await updateFileAttenteStatut(id, statut); loadData(); } catch { showSnackbar('Erreur', 'error'); }
   };
 
   const elapsed = (date: string) => {

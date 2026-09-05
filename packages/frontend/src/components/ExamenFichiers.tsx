@@ -3,6 +3,7 @@ import {
   getExamenFichiers, uploadExamenFichier, deleteExamenFichier,
   type ExamenFichierRow,
 } from '../services/api';
+import { useConfirm } from './ConfirmDialog';
 
 interface Props {
   examenId: number;
@@ -39,6 +40,7 @@ export default function ExamenFichiers({ examenId, canUpload, variant = 'compact
   const [loading, setLoading] = useState(true);
   const [uploading, setUploading] = useState(false);
   const [err, setErr] = useState<string | null>(null);
+  const { confirm } = useConfirm();
   const inputRef = useRef<HTMLInputElement>(null);
 
   useEffect(() => { void load(); }, [examenId]);
@@ -69,7 +71,8 @@ export default function ExamenFichiers({ examenId, canUpload, variant = 'compact
   };
 
   const handleDelete = async (fid: number) => {
-    if (!confirm('Supprimer ce fichier ?')) return;
+    const ok = await confirm({ message: 'Supprimer ce fichier ?', variant: 'danger' });
+    if (!ok) return;
     try {
       await deleteExamenFichier(examenId, fid);
       await load();

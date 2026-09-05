@@ -2,8 +2,12 @@ import { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { getProgrammes, getProgramme, createProgramme, addPatientToProgramme, deleteProgramme } from '../services/api';
 import PatientTypeahead from '../components/PatientTypeahead';
+import { useSnackbar } from '../components/Snackbar';
+import { useConfirm } from '../components/ConfirmDialog';
 
 export default function Programmes() {
+  const { showSnackbar } = useSnackbar();
+  const { confirm } = useConfirm();
   const [programmes, setProgrammes] = useState<any[]>([]);
   const [selected, setSelected] = useState<any>(null);
   const [loading, setLoading] = useState(true);
@@ -25,11 +29,11 @@ export default function Programmes() {
 
   const selectProg = async (id: number) => { try { const { data } = await getProgramme(id); setSelected(data); } catch (err) { console.error(err); } };
 
-  const handleCreate = async (e: React.FormEvent) => { e.preventDefault(); try { await createProgramme(createForm); setShowCreate(false); setCreateForm({ nom: '', description: '', type_programme: '' }); loadData(); } catch { alert('Erreur'); } };
+  const handleCreate = async (e: React.FormEvent) => { e.preventDefault(); try { await createProgramme(createForm); setShowCreate(false); setCreateForm({ nom: '', description: '', type_programme: '' }); loadData(); } catch { showSnackbar('Erreur', 'error'); } };
 
-  const handleAddPatient = async (e: React.FormEvent) => { e.preventDefault(); if (!selected || !addPatientId) return; try { await addPatientToProgramme(selected.id, Number(addPatientId)); setShowAdd(false); setAddPatientId(''); selectProg(selected.id); loadData(); } catch (err: any) { alert(err.response?.data?.error || 'Erreur'); } };
+  const handleAddPatient = async (e: React.FormEvent) => { e.preventDefault(); if (!selected || !addPatientId) return; try { await addPatientToProgramme(selected.id, Number(addPatientId)); setShowAdd(false); setAddPatientId(''); selectProg(selected.id); loadData(); } catch (err: any) { showSnackbar(err.response?.data?.error || 'Erreur', 'error'); } };
 
-  const handleDelete = async (id: number) => { if (!confirm('Supprimer ce programme ?')) return; try { await deleteProgramme(id); setSelected(null); loadData(); } catch { alert('Erreur'); } };
+  const handleDelete = async (id: number) => { const ok = await confirm({ message: 'Supprimer ce programme ?', variant: 'danger' }); if (!ok) return; try { await deleteProgramme(id); setSelected(null); loadData(); } catch { showSnackbar('Erreur', 'error'); } };
 
   if (loading) return <div className="loading"><div className="spinner"></div></div>;
 

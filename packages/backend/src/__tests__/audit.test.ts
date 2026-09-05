@@ -14,7 +14,7 @@
 
 import { describe, it, expect, beforeEach, jest } from '@jest/globals';
 
-type CreateArgs = { data: { userId: number; action: string; tableName: string; recordId: number | null; details: string | null } };
+type CreateArgs = { data: { userId: number; action: string; tableName: string; recordId: number | null; details: string | null; ipAddress: string | null; route: string | null } };
 const mockCreate = jest.fn<(args: CreateArgs) => Promise<unknown>>();
 
 jest.unstable_mockModule('../config/db.js', () => ({
@@ -51,6 +51,8 @@ describe('logAudit — basic create', () => {
       tableName: 'patients',
       recordId: 100,
       details: 'Created patient X',
+      ipAddress: null,
+      route: null,
     });
   });
 
@@ -229,12 +231,12 @@ describe('audit helpers', () => {
 
   it('auditCreate sends action=create', async () => {
     await auditCreate(7, 'patients', 99, 'Created');
-    expect(lastData()).toEqual({ userId: 7, action: 'create', tableName: 'patients', recordId: 99, details: 'Created' });
+    expect(lastData()).toEqual({ userId: 7, action: 'create', tableName: 'patients', recordId: 99, details: 'Created', ipAddress: null, route: null });
   });
 
   it('auditDelete sends action=delete', async () => {
     await auditDelete(7, 'patients', 99, 'Archived');
-    expect(lastData()).toEqual({ userId: 7, action: 'delete', tableName: 'patients', recordId: 99, details: 'Archived' });
+    expect(lastData()).toEqual({ userId: 7, action: 'delete', tableName: 'patients', recordId: 99, details: 'Archived', ipAddress: null, route: null });
   });
 
   it('auditUpdate sends action=update with computed diff', async () => {

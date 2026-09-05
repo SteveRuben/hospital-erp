@@ -3,6 +3,7 @@ import { useNavigate, useParams } from 'react-router-dom';
 import { io, type Socket } from 'socket.io-client';
 import { AuthContext } from '../App';
 import { useSnackbar } from '../components/Snackbar';
+import { useConfirm } from '../components/ConfirmDialog';
 import MentionTextarea from '../components/MentionTextarea';
 import MentionContent from '../components/MentionContent';
 import {
@@ -22,6 +23,7 @@ export default function Chat() {
   const { channelId: channelIdParam } = useParams<{ channelId?: string }>();
   const navigate = useNavigate();
   const { showSnackbar } = useSnackbar();
+  const { confirm } = useConfirm();
   const [channels, setChannels] = useState<ChatChannel[]>([]);
   const [activeId, setActiveId] = useState<number | null>(channelIdParam ? Number(channelIdParam) : null);
   const [messages, setMessages] = useState<ChatMessage[]>([]);
@@ -135,7 +137,8 @@ export default function Chat() {
   };
 
   const handleDelete = async (id: number) => {
-    if (!confirm('Supprimer ce message ?')) return;
+    const ok = await confirm({ message: 'Supprimer ce message ?', variant: 'danger' });
+    if (!ok) return;
     try { await deleteChatMessage(id); setMessages(prev => prev.filter(m => m.id !== id)); }
     catch { showSnackbar('Erreur', 'error'); }
   };

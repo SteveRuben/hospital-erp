@@ -7,6 +7,7 @@ import { generatePatientReferenceId } from '../services/reference.js';
 import { canAccessPatient, accessiblePatientIds } from '../services/access-control.js';
 import { validate, createPatientSchema } from '../middleware/validation.js';
 import { encryptFields, decryptFields, PATIENT_ENCRYPTED_FIELDS } from '../services/encryption.js';
+import { facilityScope, facilityWhere } from '../services/facility-scope.js';
 import { ParcoursStatut } from '@prisma/client';
 
 // OWASP A02: encrypt sensitive PHI at rest. Encryption is a passthrough when
@@ -42,7 +43,11 @@ const router = Router();
 router.get('/', authenticate, async (req: AuthRequest, res: Response): Promise<void> => {
   try {
     const { search, archived = 'false', page = '1', limit = '20' } = req.query;
+    const scope = facilityScope(req.user!, req.headers['x-facility-id']);
     const where: Prisma.PatientWhereInput = { archived: archived === 'true' };
+
+    // Facility-scoped access for super_admin
+    facilityWhere(scope, where as Record<string, unknown>);
 
     if (search) {
       const s = String(search);
@@ -258,6 +263,7 @@ router.post('/', authenticate, authorize('admin', 'medecin', 'reception'), valid
 
     const n = <T,>(v: T): T | null => (v === '' || v === undefined ? null : v) as T | null;
     const reference_id = await generatePatientReferenceId(nom, prenom);
+    const scope = facilityScope(req.user!, req.headers['x-facility-id']);
 
     const data: Prisma.PatientCreateInput = {
       referenceId: reference_id,
@@ -283,6 +289,7 @@ router.post('/', authenticate, authorize('admin', 'medecin', 'reception'), valid
       contactUrgenceNom: n(contact_urgence_nom),
       contactUrgenceRelation: n(contact_urgence_relation),
       contactUrgenceTelephone: n(contact_urgence_telephone),
+      ...(scope.kind === 'restricted' ? { facility: { connect: { id: scope.facilityId } } } : {}),
     };
     if (date_naissance) data.dateNaissance = new Date(date_naissance);
 

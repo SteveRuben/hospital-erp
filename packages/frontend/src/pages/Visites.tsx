@@ -1,6 +1,7 @@
 import { useState, useEffect } from 'react';
 import api, { getVisites, getVisitesStats, createVisite, terminerVisite, getServices } from '../services/api';
 import PatientTypeahead from '../components/PatientTypeahead';
+import { useSnackbar } from '../components/Snackbar';
 import type { Service } from '../types';
 
 interface RefItem { code: string; libelle: string }
@@ -14,6 +15,7 @@ const TYPE_TAG: Record<string, string> = {
 };
 
 export default function Visites() {
+  const { showSnackbar } = useSnackbar();
   const [visites, setVisites] = useState<any[]>([]);
   const [stats, setStats] = useState<any>(null);
   const [services, setServices] = useState<Service[]>([]);
@@ -43,11 +45,11 @@ export default function Visites() {
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     try { await createVisite(form); setShowModal(false); setForm({ patient_id: '', service_id: '', type_visite: 'ambulatoire', notes: '' }); loadData(); }
-    catch (err: any) { alert(err.response?.data?.error || 'Erreur'); }
+    catch (err: any) { showSnackbar(err.response?.data?.error || 'Erreur', 'error'); }
   };
 
   const handleTerminer = async (id: number) => {
-    try { await terminerVisite(id); loadData(); } catch { alert('Erreur'); }
+    try { await terminerVisite(id); loadData(); } catch { showSnackbar('Erreur', 'error'); }
   };
 
   const elapsed = (date: string) => {

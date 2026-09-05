@@ -1,7 +1,11 @@
 import { useState, useEffect } from 'react';
 import { getPatientDuplicates, mergePatients } from '../services/api';
+import { useSnackbar } from '../components/Snackbar';
+import { useConfirm } from '../components/ConfirmDialog';
 
 export default function PatientMerge() {
+  const { showSnackbar } = useSnackbar();
+  const { confirm } = useConfirm();
   const [duplicates, setDuplicates] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
 
@@ -14,9 +18,10 @@ export default function PatientMerge() {
   };
 
   const handleMerge = async (keepId: number, mergeId: number) => {
-    if (!confirm(`Fusionner le patient #${mergeId} dans #${keepId} ? Cette action est irréversible.`)) return;
-    try { await mergePatients(keepId, mergeId); loadDuplicates(); alert('Fusion effectuée'); }
-    catch (err: any) { alert(err.response?.data?.error || 'Erreur'); }
+    const ok = await confirm({ message: `Fusionner le patient #${mergeId} dans #${keepId} ? Cette action est irréversible.`, variant: 'warning' });
+    if (!ok) return;
+    try { await mergePatients(keepId, mergeId); loadDuplicates(); showSnackbar('Fusion effectuée', 'success'); }
+    catch (err: any) { showSnackbar(err.response?.data?.error || 'Erreur', 'error'); }
   };
 
   if (loading) return <div className="loading"><div className="spinner"></div></div>;

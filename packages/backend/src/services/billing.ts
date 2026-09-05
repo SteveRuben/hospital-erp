@@ -22,7 +22,7 @@
 import { prisma } from '../config/db.js';
 import { logAudit } from './audit.js';
 
-export type ActeKind = 'consultation' | 'examen' | 'hospitalisation';
+export type ActeKind = 'consultation' | 'examen' | 'hospitalisation' | 'pharmacie' | 'dispensation' | 'imagerie' | 'vaccination' | 'paiement';
 
 function autoMarker(kind: ActeKind, sourceId: number): string {
   return `[auto:${kind}:${sourceId}]`;
@@ -132,4 +132,93 @@ export async function billConsultation(consultationId: number, userId: number): 
     console.error('[BILLING] billConsultation failed:', err);
     return null;
   }
+}
+
+/**
+ * Bill a pharmacy sale. Creates a recette for the total amount.
+ */
+export async function billPharmacie(opts: { patientId: number | null; serviceId?: number | null; montant: number; typeActe: string; sourceId: number; userId: number; facilityId?: number | null }): Promise<number | null> {
+  return recordActeRevenue({
+    kind: 'pharmacie',
+    sourceId: opts.sourceId,
+    patientId: opts.patientId,
+    serviceId: opts.serviceId ?? null,
+    typeActe: opts.typeActe,
+    montant: opts.montant,
+    userId: opts.userId,
+  });
+}
+
+/**
+ * Bill a medication dispensation (prescription fulfillment).
+ */
+export async function billDispensation(opts: { patientId: number; montant: number; sourceId: number; userId: number }): Promise<number | null> {
+  return recordActeRevenue({
+    kind: 'dispensation',
+    sourceId: opts.sourceId,
+    patientId: opts.patientId,
+    typeActe: 'Dispensation medicaments',
+    montant: opts.montant,
+    userId: opts.userId,
+  });
+}
+
+/**
+ * Bill an imaging exam.
+ */
+export async function billImagerie(opts: { patientId: number; serviceId?: number | null; montant: number; sourceId: number; userId: number }): Promise<number | null> {
+  return recordActeRevenue({
+    kind: 'imagerie',
+    sourceId: opts.sourceId,
+    patientId: opts.patientId,
+    serviceId: opts.serviceId ?? null,
+    typeActe: 'Imagerie medicale',
+    montant: opts.montant,
+    userId: opts.userId,
+  });
+}
+
+/**
+ * Bill a vaccination.
+ */
+export async function billVaccination(opts: { patientId: number; montant: number; sourceId: number; userId: number }): Promise<number | null> {
+  return recordActeRevenue({
+    kind: 'vaccination',
+    sourceId: opts.sourceId,
+    patientId: opts.patientId,
+    typeActe: 'Vaccination',
+    montant: opts.montant,
+    userId: opts.userId,
+  });
+}
+
+/**
+ * Bill a hospitalisation stay. Called on discharge.
+ */
+export async function billHospitalisation(opts: { patientId: number; serviceId?: number | null; montant: number; sourceId: number; userId: number; nbNuits: number }): Promise<number | null> {
+  return recordActeRevenue({
+    kind: 'hospitalisation',
+    sourceId: opts.sourceId,
+    patientId: opts.patientId,
+    serviceId: opts.serviceId ?? null,
+    typeActe: `Hospitalisation — ${opts.nbNuits} nuit(s)`,
+    montant: opts.montant,
+    userId: opts.userId,
+  });
+}
+
+/**
+ * Bridge: when a paiement is recorded against a facture, also create a recette
+ * so the revenue appears in the Finances/Dashboard/Bilan aggregates.
+ */
+export async function billPaiement(opts: { patientId: number | null; montant: number; sourceId: number; userId: number; modePaiement?: string | null }): Promise<number | null> {
+  return recordActeRevenue({
+    kind: 'paiement',
+    sourceId: opts.sourceId,
+    patientId: opts.patientId,
+    typeActe: 'Paiement facture',
+    montant: opts.montant,
+    modePaiement: opts.modePaiement,
+    userId: opts.userId,
+  });
 }

@@ -1,7 +1,7 @@
 import { useEffect, useState, useContext } from 'react';
 import { useNavigate } from 'react-router-dom';
 import {
-  getAssurancesAdmin, createAssurance, updateAssurance,
+  getAssurancesAdmin,
   getPrisesEnCharge, updatePECStatut,
   type AssuranceAdminRow, type PriseEnChargeRow,
 } from '../services/api';
@@ -39,9 +39,6 @@ export default function Assurances() {
 
   // Registre
   const [assurances, setAssurances] = useState<AssuranceAdminRow[]>([]);
-  const [showAddAss, setShowAddAss] = useState(false);
-  const [newAss, setNewAss] = useState({ nom: '', code: '', contact: '', taux_defaut: '80' });
-  const [editAss, setEditAss] = useState<AssuranceAdminRow | null>(null);
 
   const isAdmin = user?.role === 'admin';
   const canEdit = user?.role === 'admin' || user?.role === 'comptable';
@@ -60,42 +57,6 @@ export default function Assurances() {
       ]);
       setAssurances(a.data); setPec(p.data);
     } finally { setLoading(false); }
-  };
-
-  const submitAddAssurance = async () => {
-    if (!newAss.nom.trim()) { showSnackbar('Nom requis', 'warning'); return; }
-    try {
-      await createAssurance({
-        nom: newAss.nom.trim(),
-        code: newAss.code.trim() || undefined,
-        contact: newAss.contact.trim() || undefined,
-        taux_defaut: Number(newAss.taux_defaut) || 80,
-      });
-      setShowAddAss(false);
-      setNewAss({ nom: '', code: '', contact: '', taux_defaut: '80' });
-      await loadAll();
-      showSnackbar('Assurance ajoutée', 'success');
-    } catch (err: any) {
-      showSnackbar(err.response?.data?.error || 'Erreur', 'error');
-    }
-  };
-
-  const submitEditAssurance = async () => {
-    if (!editAss) return;
-    try {
-      await updateAssurance(editAss.id, {
-        nom: editAss.nom,
-        code: editAss.code,
-        contact: editAss.contact,
-        taux_defaut: editAss.tauxDefaut != null ? Number(editAss.tauxDefaut) : undefined,
-        actif: editAss.actif,
-      });
-      setEditAss(null);
-      await loadAll();
-      showSnackbar('Assurance mise à jour', 'success');
-    } catch (err: any) {
-      showSnackbar(err.response?.data?.error || 'Erreur', 'error');
-    }
   };
 
   const submitChangeStatut = async () => {
@@ -221,7 +182,7 @@ export default function Assurances() {
               Compagnies acceptées par l'établissement. Le taux par défaut hydrate la part « assurance » dans le modal de paiement.
             </p>
             {isAdmin && (
-              <button className="btn-primary btn-sm" onClick={() => setShowAddAss(true)}><i className="bi bi-plus"></i> Nouvelle assurance</button>
+              <button className="btn-primary btn-sm" onClick={() => navigate('/app/assurances/nouvelle')}><i className="bi bi-plus"></i> Nouvelle assurance</button>
             )}
           </div>
           <table className="data-table" style={{ fontSize: '0.8125rem' }}>
@@ -242,7 +203,7 @@ export default function Assurances() {
                   <td className="text-success fw-600">{fmt(a.montant_recouvre)}</td>
                   <td>
                     {isAdmin && (
-                      <button className="btn-icon" title="Modifier" onClick={() => setEditAss(a)}><i className="bi bi-pencil"></i></button>
+                      <button className="btn-icon" title="Modifier" onClick={() => navigate(`/app/assurances/${a.id}/modifier`)}><i className="bi bi-pencil"></i></button>
                     )}
                   </td>
                 </tr>
@@ -290,57 +251,6 @@ export default function Assurances() {
         </div>
       )}
 
-      {/* Modal — ajouter une assurance */}
-      {showAddAss && (
-        <div className="modal-overlay" onClick={() => setShowAddAss(false)}>
-          <div className="modal-container" onClick={e => e.stopPropagation()} style={{ maxWidth: '480px' }}>
-            <div className="modal-header">
-              <h3>Nouvelle assurance</h3>
-              <button className="btn-icon" onClick={() => setShowAddAss(false)}><i className="bi bi-x-lg"></i></button>
-            </div>
-            <div className="modal-body">
-              <div className="form-group"><label className="form-label">Nom *</label><input type="text" className="form-input" value={newAss.nom} onChange={e => setNewAss({ ...newAss, nom: e.target.value })} autoFocus /></div>
-              <div className="grid-2">
-                <div className="form-group"><label className="form-label">Code court</label><input type="text" className="form-input" value={newAss.code} onChange={e => setNewAss({ ...newAss, code: e.target.value.toUpperCase() })} placeholder="ex: MN" /></div>
-                <div className="form-group"><label className="form-label">Taux défaut (%)</label><input type="number" className="form-input" value={newAss.taux_defaut} onChange={e => setNewAss({ ...newAss, taux_defaut: e.target.value })} min={0} max={100} /></div>
-              </div>
-              <div className="form-group"><label className="form-label">Contact</label><input type="text" className="form-input" value={newAss.contact} onChange={e => setNewAss({ ...newAss, contact: e.target.value })} placeholder="email ou téléphone" /></div>
-            </div>
-            <div className="modal-footer">
-              <button className="btn-secondary" onClick={() => setShowAddAss(false)}>Annuler</button>
-              <button className="btn-primary" onClick={submitAddAssurance}>Créer</button>
-            </div>
-          </div>
-        </div>
-      )}
-
-      {/* Modal — modifier une assurance */}
-      {editAss && (
-        <div className="modal-overlay" onClick={() => setEditAss(null)}>
-          <div className="modal-container" onClick={e => e.stopPropagation()} style={{ maxWidth: '480px' }}>
-            <div className="modal-header">
-              <h3>Modifier {editAss.nom}</h3>
-              <button className="btn-icon" onClick={() => setEditAss(null)}><i className="bi bi-x-lg"></i></button>
-            </div>
-            <div className="modal-body">
-              <div className="form-group"><label className="form-label">Nom *</label><input type="text" className="form-input" value={editAss.nom} onChange={e => setEditAss({ ...editAss, nom: e.target.value })} /></div>
-              <div className="grid-2">
-                <div className="form-group"><label className="form-label">Code</label><input type="text" className="form-input" value={editAss.code ?? ''} onChange={e => setEditAss({ ...editAss, code: e.target.value.toUpperCase() })} /></div>
-                <div className="form-group"><label className="form-label">Taux défaut (%)</label><input type="number" className="form-input" value={editAss.tauxDefaut ?? ''} onChange={e => setEditAss({ ...editAss, tauxDefaut: e.target.value })} min={0} max={100} /></div>
-              </div>
-              <div className="form-group"><label className="form-label">Contact</label><input type="text" className="form-input" value={editAss.contact ?? ''} onChange={e => setEditAss({ ...editAss, contact: e.target.value })} /></div>
-              <label style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', fontSize: '0.8125rem', cursor: 'pointer' }}>
-                <input type="checkbox" checked={editAss.actif} onChange={e => setEditAss({ ...editAss, actif: e.target.checked })} />
-                <span>Actif (visible dans le picker du modal de paiement)</span>
-              </label>
-            </div>
-            <div className="modal-footer">
-              <button className="btn-secondary" onClick={() => setEditAss(null)}>Annuler</button>
-              <button className="btn-primary" onClick={submitEditAssurance}>Enregistrer</button>
-            </div>
-          </div>
-        </div>
-      )}
     </div>
   );
 }

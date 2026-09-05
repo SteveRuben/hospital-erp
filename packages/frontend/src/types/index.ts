@@ -1,4 +1,4 @@
-export type UserRole = 'admin' | 'medecin' | 'comptable' | 'laborantin' | 'reception' | 'pharmacien' | 'infirmier';
+export type UserRole = 'admin' | 'medecin' | 'comptable' | 'laborantin' | 'reception' | 'pharmacien' | 'infirmier' | 'super_admin' | 'chef_pole';
 
 export interface User {
   id: number;
@@ -15,6 +15,25 @@ export interface User {
   onboarding_dismissed_at?: string | null;
   // Custom @-mention handle. Null = use username as the mention shortcut.
   mention_handle?: string | null;
+  facilityId?: number | null;
+}
+
+export interface Facility {
+  id: number;
+  nom: string;
+  code?: string | null;
+  typeFacility?: string | null;
+  parentId?: number | null;
+  adresse?: string | null;
+  ville?: string | null;
+  telephone?: string | null;
+  email?: string | null;
+  actif: boolean;
+  created_at: string;
+  children?: Facility[];
+  branches?: Facility[];
+  parent?: { id: number; nom: string } | null;
+  _count?: { users: number; patients: number; services: number };
 }
 
 export interface Patient {
@@ -119,7 +138,7 @@ export interface DashboardStats {
   examens?: { en_attente_resultat: number };
   caisse: {
     jour: { recettes: number; depenses: number; solde: number };
-    mois: { recettes: number; depenses: number; solde: number };
+    mois: { recettes: number; depenses: number; solde: number; month: string };
   };
   servicesActifs: Array<{ nom: string; nb_consultations: number }>;
   medecinsActifs: Array<{ nom: string; prenom: string; specialite?: string; nb_consultations: number }>;

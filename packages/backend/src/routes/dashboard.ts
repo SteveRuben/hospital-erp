@@ -3,6 +3,7 @@ import { prisma } from '../config/db.js';
 import { authenticate, AuthRequest } from '../middleware/auth.js';
 import { asyncHandler } from '../middleware/asyncHandler.js';
 import { patientAccessScope } from '../services/access-control.js';
+import { facilityScope, facilityWhere } from '../services/facility-scope.js';
 
 const router = Router();
 
@@ -18,7 +19,7 @@ const router = Router();
  */
 router.get('/garde', authenticate, asyncHandler(async (req: AuthRequest, res) => {
   const user = req.user!;
-  if (user.role !== 'medecin' && user.role !== 'admin') {
+  if (user.role !== 'medecin' && user.role !== 'admin' && user.role !== 'super_admin' && user.role !== 'chef_pole') {
     res.status(403).json({ error: 'Dashboard de garde réservé aux médecins' });
     return;
   }
@@ -137,9 +138,22 @@ router.get('/garde', authenticate, asyncHandler(async (req: AuthRequest, res) =>
   });
 }));
 
-router.get('/', authenticate, asyncHandler(async (_req, res) => {
+router.get('/', authenticate, asyncHandler(async (req: AuthRequest, res) => {
   const today = new Date().toISOString().split('T')[0];
-    const startOfMonth = `${today.slice(0, 7)}-01`;
+    const currentMonthStart = `${today.slice(0, 7)}-01`;
+    // ?month=YYYY-MM lets the dashboard's "caisse du mois" section browse a
+    // past month (defaults to the current one). Bounding the upper end
+    // matters: the old unbounded "date_recette >= start" only worked by
+    // accident for the current month (nothing after "today" exists yet) —
+    // for any past month it would have summed every month since, forever.
+    const monthParam = typeof req.query.month === 'string' && /^\d{4}-(0[1-9]|1[0-2])$/.test(req.query.month)
+      ? req.query.month
+      : today.slice(0, 7);
+    const startOfMonth = `${monthParam}-01`;
+    const [moisAnnee, moisNum] = monthParam.split('-').map(Number);
+    const endOfMonth = new Date(moisAnnee, moisNum, 1).toISOString().split('T')[0]; // 1er du mois suivant (exclusif)
+    const scope = facilityScope(req.user!, req.headers['x-facility-id']);
+    const facilityFilter = scope.kind === 'restricted' ? scope.facilityId : null;
 
     const [
       totalPatients,
@@ -153,13 +167,17 @@ router.get('/', authenticate, asyncHandler(async (_req, res) => {
       medecinsActifs,
       examensEnAttente,
     ] = await Promise.all([
-      prisma.$queryRaw<Array<{ total: bigint }>>`SELECT COUNT(*)::bigint AS total FROM patients WHERE archived = FALSE`,
-      prisma.$queryRaw<Array<{ total: bigint }>>`SELECT COUNT(*)::bigint AS total FROM patients WHERE created_at >= ${startOfMonth}::timestamp`,
+      facilityFilter
+        ? prisma.$queryRaw<Array<{ total: bigint }>>`SELECT COUNT(*)::bigint AS total FROM patients WHERE archived = FALSE AND facility_id = ${facilityFilter}`
+        : prisma.$queryRaw<Array<{ total: bigint }>>`SELECT COUNT(*)::bigint AS total FROM patients WHERE archived = FALSE`,
+      facilityFilter
+        ? prisma.$queryRaw<Array<{ total: bigint }>>`SELECT COUNT(*)::bigint AS total FROM patients WHERE created_at >= ${currentMonthStart}::timestamp AND facility_id = ${facilityFilter}`
+        : prisma.$queryRaw<Array<{ total: bigint }>>`SELECT COUNT(*)::bigint AS total FROM patients WHERE created_at >= ${currentMonthStart}::timestamp`,
       prisma.$queryRaw<Array<{ total: bigint }>>`SELECT COUNT(*)::bigint AS total FROM consultations WHERE DATE(date_consultation) = ${today}::date`,
-      prisma.$queryRaw<Array<{ total: string }>>`SELECT COALESCE(SUM(montant), 0)::text AS total FROM recettes WHERE date_recette = ${today}::date AND mode_paiement = 'especes'`,
+      prisma.$queryRaw<Array<{ total: string }>>`SELECT COALESCE(SUM(montant), 0)::text AS total FROM recettes WHERE date_recette = ${today}::date`,
       prisma.$queryRaw<Array<{ total: string }>>`SELECT COALESCE(SUM(montant), 0)::text AS total FROM depenses WHERE date_depense = ${today}::date`,
-      prisma.$queryRaw<Array<{ total: string }>>`SELECT COALESCE(SUM(montant), 0)::text AS total FROM recettes WHERE date_recette >= ${startOfMonth}::date`,
-      prisma.$queryRaw<Array<{ total: string }>>`SELECT COALESCE(SUM(montant), 0)::text AS total FROM depenses WHERE date_depense >= ${startOfMonth}::date`,
+      prisma.$queryRaw<Array<{ total: string }>>`SELECT COALESCE(SUM(montant), 0)::text AS total FROM recettes WHERE date_recette >= ${startOfMonth}::date AND date_recette < ${endOfMonth}::date`,
+      prisma.$queryRaw<Array<{ total: string }>>`SELECT COALESCE(SUM(montant), 0)::text AS total FROM depenses WHERE date_depense >= ${startOfMonth}::date AND date_depense < ${endOfMonth}::date`,
       prisma.$queryRaw<Array<{ nom: string; nb_consultations: bigint }>>`
         SELECT s.nom, COUNT(c.id)::bigint AS nb_consultations
         FROM services s
@@ -199,6 +217,7 @@ router.get('/', authenticate, asyncHandler(async (_req, res) => {
           recettes: parseFloat(recettesMois[0]?.total ?? '0'),
           depenses: parseFloat(depensesMois[0]?.total ?? '0'),
           solde: parseFloat(recettesMois[0]?.total ?? '0') - parseFloat(depensesMois[0]?.total ?? '0'),
+          month: monthParam,
         },
       },
       servicesActifs: servicesActifs.map(s => ({ ...s, nb_consultations: Number(s.nb_consultations) })),

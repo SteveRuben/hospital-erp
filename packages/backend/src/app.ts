@@ -13,6 +13,7 @@ import dotenv from 'dotenv';
 import path from 'path';
 import { fileURLToPath } from 'url';
 import { enforceHttps, sanitizeInput, globalRateLimit, authRateLimit, validateContentType, errorHandler } from './middleware/security.js';
+import { runWithRequestContext } from './services/request-context.js';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 dotenv.config({ path: path.resolve(__dirname, '../.env') });
@@ -62,6 +63,7 @@ import referenceListsRoutes from './routes/reference-lists.js';
 import adminRoutes from './routes/admin.js';
 import inboxRoutes from './routes/inbox.js';
 import chatRoutes from './routes/chat.js';
+import facilityRoutes from './routes/facilities.js';
 import fhirRoutes from './routes/fhir.js';
 import formulairesRoutes from './routes/formulaires.js';
 import parcoursRoutes from './routes/parcours.js';
@@ -70,6 +72,14 @@ const app = express();
 
 // Trust Railway reverse proxy
 app.set('trust proxy', 1);
+
+// Request context (AsyncLocalStorage): makes client IP + route available to
+// services/audit.ts for every audit entry without threading `req` through
+// 80+ call sites. Must run before every other middleware/route so the store
+// is live for the whole request lifecycle.
+app.use((req, res, next) => {
+  runWithRequestContext({ ip: req.ip, method: req.method, route: req.originalUrl }, next);
+});
 
 // OWASP A05 - CORS (must be BEFORE helmet)
 const allowedOrigins = (process.env.FRONTEND_URL || 'http://localhost:3000').split(',').map(s => s.trim());
@@ -183,6 +193,7 @@ app.use('/api/reference-lists', referenceListsRoutes);
 app.use('/api/admin', adminRoutes);
 app.use('/api/inbox', inboxRoutes);
 app.use('/api/chat', chatRoutes);
+app.use('/api/facilities', facilityRoutes);
 // FHIR R4 facade — mounted at /fhir (not /api/fhir) so the URLs match the
 // FHIR convention and external clients can use them as base URLs directly.
 app.use('/fhir', fhirRoutes);

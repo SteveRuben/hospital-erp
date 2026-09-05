@@ -1,11 +1,13 @@
 import { useState, useEffect } from 'react';
 import { getConcepts, createConcept, getConcept } from '../services/api';
+import { useSnackbar } from '../components/Snackbar';
 
 const classes = ['diagnostic', 'symptome', 'test', 'medicament', 'procedure', 'finding', 'question', 'reponse', 'misc'];
 const datatypes = ['numeric', 'coded', 'text', 'date', 'boolean', 'datetime', 'document'];
 const classeLabels: Record<string, { label: string; tag: string }> = { diagnostic: { label: 'Diagnostic', tag: 'tag-red' }, symptome: { label: 'Symptôme', tag: 'tag-orange' }, test: { label: 'Test', tag: 'tag-purple' }, medicament: { label: 'Médicament', tag: 'tag-blue' }, procedure: { label: 'Procédure', tag: 'tag-teal' }, finding: { label: 'Observation', tag: 'tag-green' }, question: { label: 'Question', tag: 'tag-gray' }, reponse: { label: 'Réponse', tag: 'tag-gray' }, misc: { label: 'Divers', tag: 'tag-gray' } };
 
 export default function Concepts() {
+  const { showSnackbar } = useSnackbar();
   const [concepts, setConcepts] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
   const [showModal, setShowModal] = useState(false);
@@ -25,12 +27,12 @@ export default function Concepts() {
   const handleCreate = async (e: React.FormEvent) => {
     e.preventDefault();
     try { await createConcept({ ...form, valeur_min: form.valeur_min ? Number(form.valeur_min) : null, valeur_max: form.valeur_max ? Number(form.valeur_max) : null }); setShowModal(false); setForm({ nom: '', code: '', datatype: 'text', classe: 'finding', description: '', unite: '', valeur_min: '', valeur_max: '' }); loadConcepts(); }
-    catch (err: any) { alert(err.response?.data?.error || 'Erreur'); }
+    catch (err: any) { showSnackbar(err.response?.data?.error || 'Erreur', 'error'); }
   };
 
   const viewDetail = async (id: number) => {
     try { const { data } = await getConcept(id); setShowDetail(data); }
-    catch { alert('Erreur'); }
+    catch { showSnackbar('Erreur', 'error'); }
   };
 
   return (

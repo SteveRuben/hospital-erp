@@ -732,6 +732,8 @@ export const initDB = async (): Promise<void> => {
       // chart, vitals capture, queue management, file d'attente, and
       // the visite / hospitalisation views to see who is in the unit.
       infirmier: ['dashboard','patients','consultations','visites','file-attente','lits','listes-patients','documentation','programmes','imagerie','formulaires','parcours'],
+      super_admin: modules,
+      chef_pole: ['dashboard','patients','medecins','consultations','rendezvous','laboratoire','visites','file-attente','finances','services','listes-patients','documentation','lits','programmes','facturation','imagerie','orders','pharmacie','rapports','garde','assurances','parcours'],
     };
     for (const [role, mods] of Object.entries(roleAccess)) {
       for (const mod of modules) {
@@ -1004,37 +1006,49 @@ export const initDB = async (): Promise<void> => {
     // joined the two by (nom, prenom) string match — fragile to typos
     // and renames. Now a Medecin carries an explicit user_id FK; the
     // name-match join remains as a fallback for unmigrated rows.
-    await client.query(`
-      ALTER TABLE medecins ADD COLUMN IF NOT EXISTS user_id INTEGER;
-      DO $$
-      BEGIN
-        IF NOT EXISTS (SELECT 1 FROM pg_constraint WHERE conname = 'medecins_user_id_fkey') THEN
-          ALTER TABLE medecins
-            ADD CONSTRAINT medecins_user_id_fkey
-            FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE SET NULL;
-        END IF;
-        IF NOT EXISTS (SELECT 1 FROM pg_constraint WHERE conname = 'medecins_user_id_key') THEN
-          ALTER TABLE medecins ADD CONSTRAINT medecins_user_id_key UNIQUE (user_id);
-        END IF;
-      END $$;
+    //
+    // Guarded on the table still existing: Phase 2 below DROPs medecins
+    // once its own migration completes, and on every boot *after* that
+    // this unconditional ALTER crashed the whole server with "relation
+    // 'medecins' does not exist" (initDB throws → process never starts).
+    // Phase 2 already guards itself the same way — this one didn't.
+    const medecinsExistsForPhase1 = await client.query(`
+      SELECT 1 FROM information_schema.tables
+      WHERE table_schema = 'public' AND table_name = 'medecins'
     `);
-    // Best-effort backfill. Only the unambiguous (nom, prenom) matches
-    // get linked — duplicates and orphans stay null for an admin to
-    // resolve manually via the /medecins admin UI.
-    await client.query(`
-      UPDATE medecins m
-      SET user_id = u.id
-      FROM (
-        SELECT nom, prenom, MIN(id) AS id
-        FROM users
-        WHERE role = 'medecin'
-        GROUP BY nom, prenom
-        HAVING COUNT(*) = 1
-      ) u
-      WHERE m.user_id IS NULL
-        AND m.nom = u.nom
-        AND m.prenom = u.prenom;
-    `);
+    if (medecinsExistsForPhase1.rows.length > 0) {
+      await client.query(`
+        ALTER TABLE medecins ADD COLUMN IF NOT EXISTS user_id INTEGER;
+        DO $$
+        BEGIN
+          IF NOT EXISTS (SELECT 1 FROM pg_constraint WHERE conname = 'medecins_user_id_fkey') THEN
+            ALTER TABLE medecins
+              ADD CONSTRAINT medecins_user_id_fkey
+              FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE SET NULL;
+          END IF;
+          IF NOT EXISTS (SELECT 1 FROM pg_constraint WHERE conname = 'medecins_user_id_key') THEN
+            ALTER TABLE medecins ADD CONSTRAINT medecins_user_id_key UNIQUE (user_id);
+          END IF;
+        END $$;
+      `);
+      // Best-effort backfill. Only the unambiguous (nom, prenom) matches
+      // get linked — duplicates and orphans stay null for an admin to
+      // resolve manually via the /medecins admin UI.
+      await client.query(`
+        UPDATE medecins m
+        SET user_id = u.id
+        FROM (
+          SELECT nom, prenom, MIN(id) AS id
+          FROM users
+          WHERE role = 'medecin'
+          GROUP BY nom, prenom
+          HAVING COUNT(*) = 1
+        ) u
+        WHERE m.user_id IS NULL
+          AND m.nom = u.nom
+          AND m.prenom = u.prenom;
+      `);
+    }
 
     // P0-6 Phase 2: complete the Medecin → User fusion.
     //
@@ -1948,6 +1962,13 @@ export const initDB = async (): Promise<void> => {
     await client.query(`
       ALTER TABLE audit_log ADD COLUMN IF NOT EXISTS hash VARCHAR(64);
       ALTER TABLE audit_log ADD COLUMN IF NOT EXISTS prev_hash VARCHAR(64);
+    `);
+
+    // "Où" : IP client + route HTTP sur chaque entrée d'audit (cf.
+    // services/request-context.ts + services/audit.ts).
+    await client.query(`
+      ALTER TABLE audit_log ADD COLUMN IF NOT EXISTS ip_address VARCHAR(45);
+      ALTER TABLE audit_log ADD COLUMN IF NOT EXISTS route VARCHAR(255);
     `);
 
     // OWASP A09: hash-chain trigger. Mirrors prisma/migrations/20260516020000.

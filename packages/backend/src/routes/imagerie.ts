@@ -8,6 +8,7 @@ import { authenticate, authorize, AuthRequest } from '../middleware/auth.js';
 import { validate, createImagerieSchema } from '../middleware/validation.js';
 import { requirePatientAccess } from '../middleware/patient-access.js';
 import { requireResourceAccess } from '../middleware/resource-access.js';
+import { billImagerie } from '../services/billing.js';
 import { validateUpload, IMAGERIE_MIMES } from '../middleware/upload-validation.js';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
@@ -66,6 +67,15 @@ router.post('/', authenticate, authorize('admin', 'medecin'), upload.single('fil
     };
     if (date_examen) data.dateExamen = new Date(date_examen);
     const created = await prisma.imagerie.create({ data });
+    // Auto-bill imagerie exam if it has a montant
+    if (req.body.montant && Number(req.body.montant) > 0) {
+      billImagerie({
+        patientId: Number(patient_id),
+        montant: Number(req.body.montant),
+        sourceId: created.id,
+        userId: req.user!.id,
+      }).catch(err => console.error('[BILLING] Imagerie billing failed:', err));
+    }
     res.status(201).json(created);
   } catch (err) { console.error(err); res.status(500).json({ error: 'Erreur serveur' }); }
 });

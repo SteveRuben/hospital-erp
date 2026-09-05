@@ -1,4 +1,5 @@
 import { useState } from 'react';
+import { useSnackbar } from './Snackbar';
 
 interface PrintButtonProps {
   url: string;
@@ -9,6 +10,7 @@ interface PrintButtonProps {
 
 export default function PrintButton({ url, label = 'Imprimer', icon = 'bi-printer', className = 'btn-ghost btn-sm' }: PrintButtonProps) {
   const [status, setStatus] = useState<'idle' | 'checking' | 'printing' | 'error'>('idle');
+  const { showSnackbar } = useSnackbar();
 
   const handlePrint = async () => {
     setStatus('checking');
@@ -18,7 +20,7 @@ export default function PrintButton({ url, label = 'Imprimer', icon = 'bi-printe
 
     if (!printWindow) {
       setStatus('error');
-      alert('Impossible d\'ouvrir la fenêtre d\'impression. Vérifiez que les popups ne sont pas bloqués.');
+      showSnackbar('Impossible d\'ouvrir la fenêtre d\'impression. Vérifiez que les popups ne sont pas bloqués.', 'warning');
       setTimeout(() => setStatus('idle'), 2000);
       return;
     }
@@ -62,11 +64,11 @@ export function usePrintAvailable(): boolean {
 }
 
 // Direct print utility
-export function printUrl(url: string) {
+export function printUrl(url: string, onBlocked?: () => void) {
   const w = window.open(url, '_blank');
   if (w) {
     w.onload = () => setTimeout(() => w.print(), 500);
   } else {
-    alert('Popups bloqués. Autorisez les popups pour imprimer.');
+    if (onBlocked) onBlocked();
   }
 }

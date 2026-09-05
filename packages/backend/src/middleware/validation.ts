@@ -59,10 +59,11 @@ export const loginSchema = z.object({
 export const createUserSchema = z.object({
   username: z.string().min(3).max(100).trim().regex(/^[a-zA-Z0-9_]+$/, 'Caractères alphanumériques uniquement'),
   password: z.string().min(8).max(255),
-  role: z.enum(['admin', 'medecin', 'comptable', 'laborantin', 'reception', 'pharmacien']),
+  role: z.enum(['admin', 'medecin', 'comptable', 'laborantin', 'reception', 'pharmacien', 'infirmier', 'super_admin', 'chef_pole']),
   nom: z.string().min(1).max(100).trim().optional(),
   prenom: z.string().min(1).max(100).trim().optional(),
   telephone: z.string().max(20).trim().optional(),
+  facility_id: z.number().int().positive().optional(),
 });
 
 export const createPatientSchema = z.object({
@@ -203,6 +204,7 @@ export const createVaccinationSchema = z.object({
   vaccin: z.string().min(1).max(200).trim(),
   lot: z.string().max(100).trim().optional().nullable(),
   dose: z.string().max(50).trim().optional().nullable(),
+  montant: numeric(z.number().min(0).max(10_000_000).optional().nullable()),
   site_injection: z.string().max(100).trim().optional().nullable(),
   date_vaccination: z.string().optional().nullable(),
   date_rappel: z.string().optional().nullable(),
@@ -329,6 +331,18 @@ export const createStockSchema = z.object({
   fournisseur: z.string().max(200).trim().optional().nullable(),
 });
 
+// POST /pharmacie/mouvements had no validation at all: medicament_id and
+// quantite arrived from the frontend as strings and were passed straight to
+// Prisma, which rejected them with "Expected Int or Null, provided String"
+// (500 on every entrée/sortie). Same numeric-coercion pattern as createStockSchema.
+export const createMouvementSchema = z.object({
+  medicament_id: numeric(z.number().int().positive()),
+  type_mouvement: z.enum(['entree', 'sortie']),
+  quantite: numeric(z.number().int().positive().max(1_000_000)),
+  lot: z.string().max(100).trim().optional().nullable(),
+  motif: z.string().max(500).trim().optional().nullable(),
+});
+
 export const createProgrammeSchema = z.object({
   nom: z.string().min(1).max(200).trim(),
   description: z.string().max(2000).trim().optional().nullable(),
@@ -419,6 +433,7 @@ export const createImagerieSchema = z.object({
   description: z.string().max(1000).trim().optional().nullable(),
   date_examen: z.string().optional().nullable(),
   medecin_id: z.preprocess(v => v === '' || v === undefined || v === null ? null : Number(v), z.number().int().positive().nullable()).optional(),
+  montant: z.preprocess(v => v === '' || v === undefined ? undefined : Number(v), z.number().positive().optional()),
 });
 
 // === BUSINESS LIMITS ===

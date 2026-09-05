@@ -8,6 +8,7 @@ import { patientAccessScope, canAccessPatient } from '../services/access-control
 import { assertTransition, WorkflowError } from '../services/workflow.js';
 import { logAudit } from '../services/audit.js';
 import { billConsultation } from '../services/billing.js';
+import { facilityScope, facilityWhere } from '../services/facility-scope.js';
 
 const router = Router();
 
@@ -15,6 +16,7 @@ router.get('/', authenticate, async (req: AuthRequest, res: Response): Promise<v
   try {
     const { patient_id, medecin_id, service_id, date_debut, date_fin } = req.query;
     const { page, limit, offset } = getPaginationParams(req);
+    const scope = facilityScope(req.user!, req.headers['x-facility-id']);
 
     const where: Prisma.ConsultationWhereInput = {};
     if (patient_id) where.patientId = Number(patient_id);
@@ -25,15 +27,17 @@ router.get('/', authenticate, async (req: AuthRequest, res: Response): Promise<v
       if (date_debut) (where.dateConsultation as Prisma.DateTimeFilter).gte = new Date(String(date_debut));
       if (date_fin) (where.dateConsultation as Prisma.DateTimeFilter).lte = new Date(String(date_fin));
     }
+    // Facility scoping for super_admin
+    facilityWhere(scope, where as Record<string, unknown>);
     // HIPAA minimum-necessary: a medecin can only see consultations for
     // patients they're attributed to. Intersect with any caller-supplied
     // patient_id filter so a medecin asking about an unattributed patient
     // gets an empty list instead of nothing-blocked.
-    const scope = await patientAccessScope(req.user!);
-    if (scope.kind === 'restricted') {
+    const patientScope = await patientAccessScope(req.user!);
+    if (patientScope.kind === 'restricted') {
       where.patientId = where.patientId
-        ? (scope.ids.includes(where.patientId as number) ? where.patientId : -1)
-        : { in: scope.ids };
+        ? (patientScope.ids.includes(where.patientId as number) ? where.patientId : -1)
+        : { in: patientScope.ids };
     }
 
     const [total, rows] = await Promise.all([

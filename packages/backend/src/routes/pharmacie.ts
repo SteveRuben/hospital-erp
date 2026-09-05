@@ -3,11 +3,32 @@ import multer from 'multer';
 import { Prisma } from '@prisma/client';
 import { prisma } from '../config/db.js';
 import { authenticate, authorize, AuthRequest } from '../middleware/auth.js';
-import { validate, createMedicamentSchema, createStockSchema } from '../middleware/validation.js';
+import { validate, createMedicamentSchema, createStockSchema, createMouvementSchema } from '../middleware/validation.js';
 import { notifyMany } from '../services/notify.js';
+import { billPharmacie, billDispensation } from '../services/billing.js';
 
 const router = Router();
 const upload = multer({ storage: multer.memoryStorage(), limits: { fileSize: 5 * 1024 * 1024 } });
+
+// Prisma returns camelCase (dosageStandard, codeBarre, prixUnitaire) but the
+// frontend catalogue table and PharmacieMedicamentForm read snake_case —
+// same class of bug already fixed on /patients/:id/historique. Without this
+// mapping, dosage/prix/code-barre silently render blank after saving.
+type MedicamentRow = Awaited<ReturnType<typeof prisma.medicament.findFirst>>;
+function toMedicamentDTO(m: NonNullable<MedicamentRow>) {
+  return {
+    id: m.id,
+    nom: m.nom,
+    dci: m.dci,
+    forme: m.forme,
+    dosage_standard: m.dosageStandard,
+    code_barre: m.codeBarre,
+    categorie: m.categorie,
+    prix_unitaire: m.prixUnitaire,
+    actif: m.actif,
+    created_at: m.createdAt,
+  };
+}
 
 // === MEDICAMENTS ===
 router.get('/medicaments', authenticate, async (req: AuthRequest, res: Response): Promise<void> => {
@@ -23,7 +44,19 @@ router.get('/medicaments', authenticate, async (req: AuthRequest, res: Response)
     }
     if (categorie) where.categorie = String(categorie);
     const rows = await prisma.medicament.findMany({ where, orderBy: { nom: 'asc' } });
-    res.json(rows);
+    res.json(rows.map(toMedicamentDTO));
+  } catch (err) { res.status(500).json({ error: 'Erreur serveur' }); }
+});
+
+// Single medicament — used by PharmacieMedicamentForm (view/edit) and the
+// catalogue detail link. Was missing entirely, so opening any medicament
+// 404'd (frontend route: GET /pharmacie/medicaments/:id).
+router.get('/medicaments/:id', authenticate, async (req: AuthRequest, res: Response): Promise<void> => {
+  try {
+    const id = Number(req.params.id);
+    const med = await prisma.medicament.findUnique({ where: { id } });
+    if (!med) { res.status(404).json({ error: 'Médicament non trouvé' }); return; }
+    res.json(toMedicamentDTO(med));
   } catch (err) { res.status(500).json({ error: 'Erreur serveur' }); }
 });
 
@@ -42,7 +75,67 @@ router.post('/medicaments', authenticate, authorize('admin', 'pharmacien'), vali
         prixUnitaire: n(prix_unitaire) as number | null,
       },
     });
-    res.status(201).json(created);
+    res.status(201).json(toMedicamentDTO(created));
+  } catch (err) { res.status(500).json({ error: 'Erreur serveur' }); }
+});
+
+router.put('/medicaments/:id', authenticate, authorize('admin', 'pharmacien'), validate(createMedicamentSchema), async (req: AuthRequest, res: Response): Promise<void> => {
+  try {
+    const id = Number(req.params.id);
+    const existing = await prisma.medicament.findUnique({ where: { id } });
+    if (!existing) { res.status(404).json({ error: 'Médicament non trouvé' }); return; }
+    const { nom, dci, forme, dosage_standard, code_barre, categorie, prix_unitaire } = req.body;
+    const n = (v: unknown) => (v === '' || v === undefined) ? null : v;
+    const updated = await prisma.medicament.update({
+      where: { id },
+      data: {
+        nom,
+        dci: n(dci) as string | null,
+        forme: n(forme) as string | null,
+        dosageStandard: n(dosage_standard) as string | null,
+        codeBarre: n(code_barre) as string | null,
+        categorie: n(categorie) as string | null,
+        prixUnitaire: n(prix_unitaire) as number | null,
+      },
+    });
+    res.json(toMedicamentDTO(updated));
+  } catch (err) { res.status(500).json({ error: 'Erreur serveur' }); }
+});
+
+router.delete('/medicaments/:id', authenticate, authorize('admin', 'pharmacien'), async (req: AuthRequest, res: Response): Promise<void> => {
+  try {
+    const id = Number(req.params.id);
+    const existing = await prisma.medicament.findUnique({ where: { id } });
+    if (!existing) { res.status(404).json({ error: 'Médicament non trouvé' }); return; }
+    await prisma.medicament.update({ where: { id }, data: { actif: false } });
+    res.json({ message: 'Médicament désactivé' });
+  } catch (err) { res.status(500).json({ error: 'Erreur serveur' }); }
+});
+
+// === DISPENSATIONS ===
+router.get('/dispensations', authenticate, async (_req: AuthRequest, res: Response): Promise<void> => {
+  try {
+    const rows = await prisma.dispensation.findMany({ orderBy: { dateDispensation: 'desc' }, take: 100 });
+    const patientIds = Array.from(new Set(rows.map(d => d.patientId).filter((v): v is number => v != null)));
+    const medIds = Array.from(new Set(rows.map(d => d.medicamentId).filter((v): v is number => v != null)));
+    const userIds = Array.from(new Set(rows.map(d => d.dispenseurId).filter((v): v is number => v != null)));
+    const [patients, meds, users] = await Promise.all([
+      patientIds.length > 0 ? prisma.patient.findMany({ where: { id: { in: patientIds } }, select: { id: true, nom: true, prenom: true } }) : Promise.resolve([]),
+      medIds.length > 0 ? prisma.medicament.findMany({ where: { id: { in: medIds } }, select: { id: true, nom: true } }) : Promise.resolve([]),
+      userIds.length > 0 ? prisma.user.findMany({ where: { id: { in: userIds } }, select: { id: true, nom: true, prenom: true } }) : Promise.resolve([]),
+    ]);
+    const patientMap = new Map(patients.map(p => [p.id, p]));
+    const medMap = new Map(meds.map(m => [m.id, m]));
+    const userMap = new Map(users.map(u => [u.id, u]));
+    const mapped = rows.map(d => ({
+      ...d,
+      patient_nom: d.patientId != null ? (patientMap.get(d.patientId)?.nom ?? null) : null,
+      patient_prenom: d.patientId != null ? (patientMap.get(d.patientId)?.prenom ?? null) : null,
+      medicament_nom: d.medicamentId != null ? (medMap.get(d.medicamentId)?.nom ?? null) : null,
+      dispenseur_nom: d.dispenseurId != null ? (userMap.get(d.dispenseurId)?.nom ?? null) : null,
+      dispenseur_prenom: d.dispenseurId != null ? (userMap.get(d.dispenseurId)?.prenom ?? null) : null,
+    }));
+    res.json(mapped);
   } catch (err) { res.status(500).json({ error: 'Erreur serveur' }); }
 });
 
@@ -176,7 +269,7 @@ async function checkLowStockAndNotify(medicamentId: number | null | undefined): 
   }
 }
 
-router.post('/mouvements', authenticate, async (req: AuthRequest, res: Response): Promise<void> => {
+router.post('/mouvements', authenticate, validate(createMouvementSchema), async (req: AuthRequest, res: Response): Promise<void> => {
   try {
     const { medicament_id, type_mouvement, quantite, lot, motif } = req.body;
     const n = (v: unknown) => (v === '' || v === undefined) ? null : v;
@@ -229,6 +322,16 @@ router.post('/dispensations', authenticate, async (req: AuthRequest, res: Respon
       },
     });
     await checkLowStockAndNotify(medicament_id);
+    if (patient_id) {
+      const medPrice = await prisma.medicament.findUnique({ where: { id: Number(medicament_id) }, select: { prixUnitaire: true } });
+      const montantDisp = (Number(medPrice?.prixUnitaire) || 0) * Number(quantite_delivree);
+      billDispensation({
+        patientId: Number(patient_id),
+        montant: montantDisp,
+        sourceId: created.id,
+        userId: req.user!.id,
+      }).catch(err => console.error('[BILLING] Dispensation billing failed:', err));
+    }
     res.status(201).json(created);
   } catch (err) { console.error(err); res.status(500).json({ error: 'Erreur serveur' }); }
 });
@@ -308,6 +411,7 @@ router.post('/vente', authenticate, async (req: AuthRequest, res: Response): Pro
 
     const result = await prisma.$transaction(async (tx) => {
       let totalVente = 0;
+      let lastMouvementId = 0;
       const venteLignes: Array<{ medicament_nom: string; quantite: number; prix: number; montant: number }> = [];
 
       for (const item of items) {
@@ -335,7 +439,7 @@ router.post('/vente', authenticate, async (req: AuthRequest, res: Response): Pro
           throw new Error(`Stock insuffisant pour le médicament #${medicament_id}`);
         }
 
-        await tx.stockMouvement.create({
+        const mouvement = await tx.stockMouvement.create({
           data: {
             medicamentId: Number(medicament_id),
             typeMouvement: 'sortie',
@@ -344,6 +448,7 @@ router.post('/vente', authenticate, async (req: AuthRequest, res: Response): Pro
             userId: req.user!.id,
           },
         });
+        lastMouvementId = mouvement.id;
 
         if (patient_id) {
           await tx.dispensation.create({
@@ -359,8 +464,16 @@ router.post('/vente', authenticate, async (req: AuthRequest, res: Response): Pro
         venteLignes.push({ medicament_nom: med.nom, quantite, prix, montant });
       }
 
-      return { totalVente, venteLignes };
+      return { totalVente, venteLignes, lastMouvementId };
     });
+
+    billPharmacie({
+      patientId: patient_id ? Number(patient_id) : null,
+      montant: result.totalVente,
+      typeActe: 'Vente pharmacie',
+      sourceId: result.lastMouvementId,
+      userId: req.user!.id,
+    }).catch(err => console.error('[BILLING] Pharmacy sale billing failed:', err));
 
     res.json({
       success: true,

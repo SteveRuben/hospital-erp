@@ -2,16 +2,19 @@ import { Router } from 'express';
 import { prisma } from '../config/db.js';
 import { authenticate, authorize, AuthRequest } from '../middleware/auth.js';
 import { asyncHandler } from '../middleware/asyncHandler.js';
+import { facilityScope, facilityWhere } from '../services/facility-scope.js';
 
 const router = Router();
 
 // Get all services (hierarchical — parents with children)
 router.get('/', authenticate, asyncHandler(async (req, res) => {
   const { flat, actif } = req.query;
+  const scope = facilityScope((req as AuthRequest).user!, req.headers['x-facility-id']);
 
   try {
     const where: any = {};
     if (actif !== 'false') where.actif = true;
+    facilityWhere(scope, where);
     
     const services = await prisma.service.findMany({
       where,

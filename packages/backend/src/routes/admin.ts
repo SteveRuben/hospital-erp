@@ -90,6 +90,9 @@ router.get('/posture', authenticate, authorize('admin'), async (_req: AuthReques
           username: a.user?.username,
           role: a.user?.role,
           createdAt: a.createdAt,
+          // "Où" : IP client + route HTTP (cf. services/request-context.ts).
+          ipAddress: a.ipAddress,
+          route: a.route,
         })),
         immutable: true, // WORM trigger active
       },

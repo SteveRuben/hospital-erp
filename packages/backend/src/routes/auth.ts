@@ -108,7 +108,7 @@ router.post('/login', validate(loginSchema), async (req: Request, res: Response)
       }
     }
 
-    const token = generateToken(user, user.must_change_password ?? false);
+    const token = generateToken({ ...user, facilityId: user.facilityId ?? undefined }, user.must_change_password ?? false);
     await recordActivity(user.id);
 
     await logAudit({ userId: user.id, action: 'login', tableName: 'users', recordId: user.id, details: `Successful login from IP: ${req.ip}`, ip: req.ip || undefined });
@@ -119,6 +119,7 @@ router.post('/login', validate(loginSchema), async (req: Request, res: Response)
         id: user.id,
         username: user.username,
         role: user.role,
+        facilityId: user.facilityId ?? null,
         nom: user.nom,
         prenom: user.prenom,
         must_change_password: user.must_change_password ?? false,
@@ -156,11 +157,11 @@ router.post('/login/mfa', async (req: Request, res: Response): Promise<void> => 
 
     const user = await prisma.user.findUnique({
       where: { id: challenge.userId },
-      select: { id: true, username: true, role: true, nom: true, prenom: true, must_change_password: true, mfaEnabled: true, onboardingDismissedAt: true, mentionHandle: true },
+      select: { id: true, username: true, role: true, nom: true, prenom: true, must_change_password: true, mfaEnabled: true, onboardingDismissedAt: true, mentionHandle: true, facilityId: true },
     });
     if (!user) { res.status(401).json({ error: 'Utilisateur non trouvé' }); return; }
 
-    const token = generateToken(user, user.must_change_password ?? false);
+    const token = generateToken({ ...user, facilityId: user.facilityId ?? undefined }, user.must_change_password ?? false);
     await recordActivity(user.id);
 
     await logAudit({ userId: user.id, action: 'login', tableName: 'users', recordId: user.id, details: 'MFA login completed' });
@@ -310,9 +311,9 @@ router.post('/dismiss-onboarding', authenticate, async (req: AuthRequest, res: R
 });
 
 // Create user (admin only)
-router.post('/users', authenticate, authorize('admin'), validate(createUserSchema), async (req: AuthRequest, res: Response): Promise<void> => {
+router.post('/users', authenticate, authorize('admin', 'super_admin'), validate(createUserSchema), async (req: AuthRequest, res: Response): Promise<void> => {
   try {
-    const { username, password, role, nom, prenom, telephone } = req.body;
+    const { username, password, role, nom, prenom, telephone, facility_id } = req.body;
 
     const passwordCheck = validatePassword(password);
     if (!passwordCheck.valid) {
@@ -328,7 +329,15 @@ router.post('/users', authenticate, authorize('admin'), validate(createUserSchem
     const hashedPassword = await argon2.hash(password, ARGON2_OPTIONS);
 
     const created = await prisma.user.create({
-      data: { username, password: hashedPassword, role, nom, prenom, telephone },
+      data: {
+        username,
+        password: hashedPassword,
+        role,
+        nom,
+        prenom,
+        telephone,
+        ...(facility_id ? { facility: { connect: { id: facility_id } } } : {}),
+      },
       select: { id: true, username: true, role: true, nom: true, prenom: true },
     });
 

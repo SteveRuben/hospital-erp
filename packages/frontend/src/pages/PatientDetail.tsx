@@ -8,6 +8,7 @@ import MentionContent from '../components/MentionContent';
 import FormRenderer from '../components/FormRenderer';
 import Cim10Input from '../components/Cim10Input';
 import { useBranding } from '../components/BrandingProvider';
+import { useSnackbar } from '../components/Snackbar';
 import { formatPhone } from '../components/format';
 import { listFormulaires, getFormulaireReponsesPatient, postFormulaireReponse, type Formulaire as FormulaireDef, type FormulaireReponse } from '../services/api';
 
@@ -188,6 +189,7 @@ function AttributionTile({ patientId, attributions, medecins, user, onRefresh }:
   const [adding, setAdding] = useState(false);
   const [medecinId, setMedecinId] = useState('');
   const [propose, setPropose] = useState(false);
+  const { showSnackbar } = useSnackbar();
   const actifs = attributions.filter(a => a.statut === 'actif');
   const proposes = attributions.filter(a => a.statut === 'propose');
   const cloturees = attributions.filter(a => a.statut === 'cloture');
@@ -200,17 +202,17 @@ function AttributionTile({ patientId, attributions, medecins, user, onRefresh }:
       await createAttribution({ patient_id: patientId, medecin_user_id: Number(medecinId), propose: canPropose ? propose : false });
       setMedecinId(''); setPropose(false); setAdding(false);
       onRefresh();
-    } catch (err: any) { alert(err.response?.data?.error || 'Erreur'); }
+    } catch (err: any) { showSnackbar(err.response?.data?.error || 'Erreur', 'error'); }
   };
 
   const handleValidate = async (id: number) => {
     try { await validateAttribution(id); onRefresh(); }
-    catch (err: any) { alert(err.response?.data?.error || 'Erreur'); }
+    catch (err: any) { showSnackbar(err.response?.data?.error || 'Erreur', 'error'); }
   };
   const handleCloture = async (id: number) => {
     const motif = prompt('Motif de clôture (optionnel) :') ?? undefined;
     try { await cloturerAttribution(id, motif); onRefresh(); }
-    catch (err: any) { alert(err.response?.data?.error || 'Erreur'); }
+    catch (err: any) { showSnackbar(err.response?.data?.error || 'Erreur', 'error'); }
   };
 
   return (
@@ -391,6 +393,7 @@ function PrescriptionsTab({ data, patientId, medecins, onRefresh, showModal, set
   // remove the allergy from the patient chart first.
   const [allergyWarning, setAllergyWarning] = useState<{ allergies: Array<{ allergene: string; severite: string | null; reaction: string | null }>; fatal: boolean } | null>(null);
   const [acknowledgedOverride, setAcknowledgedOverride] = useState(false);
+  const { showSnackbar } = useSnackbar();
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     try {
@@ -405,7 +408,7 @@ function PrescriptionsTab({ data, patientId, medecins, onRefresh, showModal, set
         setAllergyWarning({ allergies: r.allergies ?? [], fatal: r.code === 'allergy_fatal' });
         return;
       }
-      alert(r?.error || 'Erreur');
+      showSnackbar(r?.error || 'Erreur', 'error');
     }
   };
   return (

@@ -3,6 +3,7 @@ import { prisma } from '../config/db.js';
 import { authenticate, authorize, AuthRequest } from '../middleware/auth.js';
 import { validate, createRecetteSchema, createDepenseSchema } from '../middleware/validation.js';
 import { auditCreate, auditDelete } from '../services/audit.js';
+import { facilityScope } from '../services/facility-scope.js';
 import { Prisma } from '@prisma/client';
 
 const router = Router();
@@ -11,7 +12,9 @@ const router = Router();
 router.get('/recettes', authenticate, async (req: AuthRequest, res: Response): Promise<void> => {
   try {
     const { date_debut, date_fin, service_id, patient_id, inclure_annulees } = req.query;
+    const scope = facilityScope(req.user!, req.headers['x-facility-id']);
     const filters: Prisma.Sql[] = [Prisma.sql`1=1`];
+    if (scope.kind === 'restricted') filters.push(Prisma.sql`r.facility_id = ${scope.facilityId}`);
     if (!inclure_annulees) filters.push(Prisma.sql`(r.annulee = FALSE OR r.annulee IS NULL)`);
     if (date_debut) filters.push(Prisma.sql`r.date_recette >= ${String(date_debut)}::date`);
     if (date_fin) filters.push(Prisma.sql`r.date_recette <= ${String(date_fin)}::date`);
@@ -69,7 +72,9 @@ router.delete('/recettes/:id', authenticate, authorize('admin', 'comptable'), as
 router.get('/depenses', authenticate, async (req: AuthRequest, res: Response): Promise<void> => {
   try {
     const { date_debut, date_fin, type_depense, inclure_annulees } = req.query;
+    const scope = facilityScope(req.user!, req.headers['x-facility-id']);
     const filters: Prisma.Sql[] = [Prisma.sql`1=1`];
+    if (scope.kind === 'restricted') filters.push(Prisma.sql`facility_id = ${scope.facilityId}`);
     if (!inclure_annulees) filters.push(Prisma.sql`(annulee = FALSE OR annulee IS NULL)`);
     if (date_debut) filters.push(Prisma.sql`date_depense >= ${String(date_debut)}::date`);
     if (date_fin) filters.push(Prisma.sql`date_depense <= ${String(date_fin)}::date`);

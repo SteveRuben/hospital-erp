@@ -1,12 +1,14 @@
 import { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { getPavillons, createPavillon, getLits, createLit, updateLitStatut, getHospitalisations, sortieHospitalisation, getLitsStats, getPatients, getMedecins, getServices, printResumeSortie } from '../services/api';
+import { useSnackbar } from '../components/Snackbar';
 import type { Patient, Medecin, Service } from '../types';
 
 const statutLit: Record<string, { label: string; tag: string }> = { disponible: { label: 'Disponible', tag: 'tag-green' }, occupe: { label: 'Occupé', tag: 'tag-red' }, maintenance: { label: 'Maintenance', tag: 'tag-yellow' }, reserve: { label: 'Réservé', tag: 'tag-blue' } };
 const typeLit: Record<string, string> = { standard: 'Standard', soins_intensifs: 'Soins intensifs', pediatrique: 'Pédiatrique', maternite: 'Maternité', isolement: 'Isolement' };
 
 export default function Lits() {
+  const { showSnackbar } = useSnackbar();
   const [tab, setTab] = useState<'lits' | 'hospitalisations' | 'pavillons'>('lits');
   const [pavillons, setPavillons] = useState<any[]>([]);
   const [lits, setLits] = useState<any[]>([]);
@@ -31,9 +33,9 @@ export default function Lits() {
     finally { setLoading(false); }
   };
 
-  const handlePavillon = async (e: React.FormEvent) => { e.preventDefault(); try { await createPavillon(pavForm); setShowModal(null); setPavForm({ nom: '', etage: '', service_id: '', capacite: '', description: '' }); loadAll(); } catch { alert('Erreur'); } };
-  const handleLit = async (e: React.FormEvent) => { e.preventDefault(); try { await createLit(litForm); setShowModal(null); setLitForm({ pavillon_id: '', numero: '', type_lit: 'standard' }); loadAll(); } catch { alert('Erreur'); } };
-  const handleSortie = async (id: number) => { try { await sortieHospitalisation(id); loadAll(); } catch { alert('Erreur'); } };
+  const handlePavillon = async (e: React.FormEvent) => { e.preventDefault(); try { await createPavillon(pavForm); setShowModal(null); setPavForm({ nom: '', etage: '', service_id: '', capacite: '', description: '' }); loadAll(); } catch { showSnackbar('Erreur', 'error'); } };
+  const handleLit = async (e: React.FormEvent) => { e.preventDefault(); try { await createLit(litForm); setShowModal(null); setLitForm({ pavillon_id: '', numero: '', type_lit: 'standard' }); loadAll(); } catch { showSnackbar('Erreur', 'error'); } };
+  const handleSortie = async (id: number) => { try { await sortieHospitalisation(id); loadAll(); } catch { showSnackbar('Erreur', 'error'); } };
 
   if (loading) return <div className="loading"><div className="spinner"></div></div>;
 

@@ -5,6 +5,7 @@ import { getMyHabilitations, getMenuConfig, getStockAlerts } from '../services/a
 import { useSnackbar } from './Snackbar';
 import PatientSearch from './PatientSearch';
 import LocaleSelector from './LocaleSelector';
+import FacilitySelector from './FacilitySelector';
 import { useBranding } from './BrandingProvider';
 import OnboardingWizard from './OnboardingWizard';
 import NotificationsBell from './NotificationsBell';
@@ -239,6 +240,7 @@ export default function Layout({ children }: { children: React.ReactNode }) {
           })}
         </div>
         <div className="sidebar-footer">
+          <FacilitySelector />
           <div className="user-info"><div>{user?.prenom} {user?.nom}</div><div><span className="tag tag-blue">{user?.role}</span></div></div>
           <button className="btn-secondary" style={{ width: '100%', fontSize: '0.75rem' }} onClick={handleLogout}><i className="bi bi-box-arrow-right"></i> {t('auth.logout')}</button>
         </div>

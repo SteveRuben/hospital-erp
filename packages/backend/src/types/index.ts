@@ -1,5 +1,5 @@
 // User roles
-export type UserRole = 'admin' | 'medecin' | 'comptable' | 'laborantin' | 'reception' | 'pharmacien' | 'infirmier';
+export type UserRole = 'admin' | 'medecin' | 'comptable' | 'laborantin' | 'reception' | 'pharmacien' | 'infirmier' | 'super_admin' | 'chef_pole';
 
 // User model
 export interface User {
@@ -120,6 +120,7 @@ export interface JWTPayload {
   id: number;
   username: string;
   role: UserRole;
+  facilityId?: number;
   // "must change password" — present (true) only while the user hasn't
   // completed the forced first-login password change. Omitted otherwise.
   mcp?: boolean;
@@ -140,6 +141,9 @@ export interface DashboardStats {
   };
   consultations: {
     aujourdhui: number;
+  };
+  examens: {
+    en_attente_resultat: number;
   };
   caisse: {
     jour: {

@@ -1,38 +1,51 @@
 import { useState, useEffect } from 'react';
-import api, { getMedicaments, createMedicament, getStock, createStock, getMouvements, createMouvement, getPharmacieAlertes } from '../services/api';
-
-interface RefItem { code: string; libelle: string }
+import { useNavigate } from 'react-router-dom';
+import api, { getMedicaments, deleteMedicament, getStock, createStock, getMouvements, createMouvement, getPharmacieAlertes, getDispensations } from '../services/api';
+import { useSnackbar } from '../components/Snackbar';
+import { useConfirm } from '../components/ConfirmDialog';
 
 export default function Pharmacie() {
-  const [tab, setTab] = useState<'catalogue' | 'stock' | 'mouvements' | 'alertes'>('catalogue');
+  const navigate = useNavigate();
+  const [tab, setTab] = useState<'catalogue' | 'stock' | 'mouvements' | 'dispensations' | 'alertes'>('catalogue');
   const [medicaments, setMedicaments] = useState<any[]>([]);
   const [stock, setStockData] = useState<any[]>([]);
   const [mouvements, setMouvements] = useState<any[]>([]);
+  const [dispensations, setDispensations] = useState<any[]>([]);
   const [alertes, setAlertes] = useState<any>(null);
-  const [formes, setFormes] = useState<RefItem[]>([]);
   const [loading, setLoading] = useState(true);
   const [showModal, setShowModal] = useState<string | null>(null);
-  const [medForm, setMedForm] = useState({ nom: '', dci: '', forme: '', dosage_standard: '', categorie: '', prix_unitaire: '' });
   const [stockForm, setStockForm] = useState({ medicament_id: '', lot: '', date_expiration: '', quantite: '', quantite_min: '10', prix_achat: '', fournisseur: '' });
   const [mvtForm, setMvtForm] = useState({ medicament_id: '', type_mouvement: 'entree', quantite: '', lot: '', motif: '' });
+  const { showSnackbar } = useSnackbar();
+  const { confirm } = useConfirm();
 
   useEffect(() => { loadAll(); }, []);
 
   const loadAll = async () => {
     try {
-      const [m, s, mv, a, f] = await Promise.all([
+      const [m, s, mv, a, , d] = await Promise.all([
         getMedicaments(), getStock(), getMouvements(), getPharmacieAlertes(),
         api.get('/reference-lists/forme_pharmaceutique').catch(() => ({ data: [] })),
+        getDispensations(),
       ]);
       setMedicaments(m.data); setStockData(s.data); setMouvements(mv.data); setAlertes(a.data);
-      setFormes(f.data);
+      setDispensations(d.data);
     } catch (err) { console.error(err); }
     finally { setLoading(false); }
   };
 
-  const handleMed = async (e: React.FormEvent) => { e.preventDefault(); try { await createMedicament({ ...medForm, prix_unitaire: medForm.prix_unitaire ? Number(medForm.prix_unitaire) : null }); setShowModal(null); setMedForm({ nom: '', dci: '', forme: '', dosage_standard: '', categorie: '', prix_unitaire: '' }); loadAll(); } catch { alert('Erreur'); } };
-  const handleStock = async (e: React.FormEvent) => { e.preventDefault(); try { await createStock({ ...stockForm, quantite: Number(stockForm.quantite), quantite_min: Number(stockForm.quantite_min), prix_achat: stockForm.prix_achat ? Number(stockForm.prix_achat) : null }); setShowModal(null); loadAll(); } catch { alert('Erreur'); } };
-  const handleMvt = async (e: React.FormEvent) => { e.preventDefault(); try { await createMouvement({ ...mvtForm, quantite: Number(mvtForm.quantite) }); setShowModal(null); setMvtForm({ medicament_id: '', type_mouvement: 'entree', quantite: '', lot: '', motif: '' }); loadAll(); } catch { alert('Erreur'); } };
+  const handleDeleteMed = async (id: number, nom: string) => {
+    const ok = await confirm({ message: `Désactiver le médicament "${nom}" ?`, variant: 'danger' });
+    if (!ok) return;
+    try {
+      await deleteMedicament(id);
+      showSnackbar('Médicament désactivé', 'success');
+      loadAll();
+    } catch { showSnackbar('Erreur lors de la désactivation', 'error'); }
+  };
+
+  const handleStock = async (e: React.FormEvent) => { e.preventDefault(); try { await createStock({ ...stockForm, quantite: Number(stockForm.quantite), quantite_min: Number(stockForm.quantite_min), prix_achat: stockForm.prix_achat ? Number(stockForm.prix_achat) : null }); setShowModal(null); loadAll(); showSnackbar('Stock enregistré', 'success'); } catch { showSnackbar('Erreur', 'error'); } };
+  const handleMvt = async (e: React.FormEvent) => { e.preventDefault(); try { await createMouvement({ ...mvtForm, quantite: Number(mvtForm.quantite) }); setShowModal(null); setMvtForm({ medicament_id: '', type_mouvement: 'entree', quantite: '', lot: '', motif: '' }); loadAll(); showSnackbar('Mouvement enregistré', 'success'); } catch { showSnackbar('Erreur', 'error'); } };
 
   const fmt = (n: number) => new Intl.NumberFormat('fr-FR', { style: 'currency', currency: 'XOF' }).format(n);
   const totalAlertes = alertes ? (alertes.stockBas?.length || 0) + (alertes.rupture?.length || 0) + (alertes.perimes?.length || 0) + (alertes.bientotPerimes?.length || 0) : 0;
@@ -44,7 +57,7 @@ export default function Pharmacie() {
       <nav className="breadcrumb"><a href="/app">Accueil</a><span className="breadcrumb-separator">/</span><span>Pharmacie</span></nav>
       <div className="page-header"><h1 className="page-title">Pharmacie</h1>
         <div className="d-flex gap-1">
-          {tab === 'catalogue' && <button className="btn-primary" onClick={() => setShowModal('med')}><i className="bi bi-plus"></i> Médicament</button>}
+          {tab === 'catalogue' && <button className="btn-primary" onClick={() => navigate('/app/pharmacie/nouveau')}><i className="bi bi-plus-lg"></i> Nouveau médicament</button>}
           {tab === 'stock' && <button className="btn-primary" onClick={() => setShowModal('stock')}><i className="bi bi-plus"></i> Entrée stock</button>}
           {tab === 'mouvements' && <button className="btn-primary" onClick={() => setShowModal('mvt')}><i className="bi bi-plus"></i> Mouvement</button>}
         </div>
@@ -61,13 +74,24 @@ export default function Pharmacie() {
         <button className={`tab-item ${tab === 'catalogue' ? 'active' : ''}`} onClick={() => setTab('catalogue')}>Catalogue</button>
         <button className={`tab-item ${tab === 'stock' ? 'active' : ''}`} onClick={() => setTab('stock')}>Stock</button>
         <button className={`tab-item ${tab === 'mouvements' ? 'active' : ''}`} onClick={() => setTab('mouvements')}>Mouvements</button>
+        <button className={`tab-item ${tab === 'dispensations' ? 'active' : ''}`} onClick={() => setTab('dispensations')}>Dispensations</button>
         <button className={`tab-item ${tab === 'alertes' ? 'active' : ''}`} onClick={() => setTab('alertes')}>Alertes {totalAlertes > 0 && <span className="tag tag-red" style={{marginLeft:'0.25rem'}}>{totalAlertes}</span>}</button>
       </div>
 
       {tab === 'catalogue' && (
-        <table className="data-table"><thead><tr><th>Nom</th><th>DCI</th><th>Forme</th><th>Dosage</th><th>Catégorie</th><th>Prix</th></tr></thead>
-          <tbody>{medicaments.map((m: any) => <tr key={m.id}><td className="fw-600">{m.nom}</td><td>{m.dci || '-'}</td><td>{m.forme || '-'}</td><td>{m.dosage_standard || '-'}</td><td><span className="tag tag-gray">{m.categorie || '-'}</span></td><td>{m.prix_unitaire ? fmt(parseFloat(m.prix_unitaire)) : '-'}</td></tr>)}
-          {medicaments.length === 0 && <tr><td colSpan={6} className="table-empty">Aucun médicament</td></tr>}</tbody>
+        <table className="data-table"><thead><tr><th>Nom</th><th>DCI</th><th>Forme</th><th>Dosage</th><th>Catégorie</th><th>Prix</th><th>Actions</th></tr></thead>
+          <tbody>{medicaments.map((m: any) => <tr key={m.id}>
+            <td className="fw-600" style={{cursor:'pointer',color:'var(--cds-link)'}} onClick={() => navigate(`/app/pharmacie/${m.id}`)}>{m.nom}</td>
+            <td>{m.dci || '-'}</td><td>{m.forme || '-'}</td><td>{m.dosage_standard || '-'}</td>
+            <td><span className="tag tag-gray">{m.categorie || '-'}</span></td>
+            <td>{m.prix_unitaire ? fmt(parseFloat(m.prix_unitaire)) : '-'}</td>
+            <td><div className="d-flex gap-05">
+              <button className="btn-sm btn-secondary" onClick={() => navigate(`/app/pharmacie/${m.id}`)} title="Voir"><i className="bi bi-eye"></i></button>
+              <button className="btn-sm btn-secondary" onClick={() => navigate(`/app/pharmacie/${m.id}/modifier`)} title="Modifier"><i className="bi bi-pencil"></i></button>
+              <button className="btn-sm btn-danger" onClick={() => handleDeleteMed(m.id, m.nom)} title="Désactiver"><i className="bi bi-trash"></i></button>
+            </div></td>
+          </tr>)}
+          {medicaments.length === 0 && <tr><td colSpan={7} className="table-empty">Aucun médicament</td></tr>}</tbody>
         </table>
       )}
 
@@ -85,6 +109,13 @@ export default function Pharmacie() {
         </table>
       )}
 
+      {tab === 'dispensations' && (
+        <table className="data-table"><thead><tr><th>Date</th><th>Patient</th><th>Médicament</th><th>Quantité</th><th>Notes</th><th>Dispensé par</th></tr></thead>
+          <tbody>{dispensations.map((d: any) => <tr key={d.id}><td>{new Date(d.date_dispensation).toLocaleString('fr-FR')}</td><td>{d.patient_prenom ? `${d.patient_prenom} ${d.patient_nom}` : '-'}</td><td className="fw-600">{d.medicament_nom || '-'}</td><td>{d.quantite_delivree || '-'}</td><td>{d.notes || '-'}</td><td>{d.dispenseur_prenom} {d.dispenseur_nom}</td></tr>)}
+          {dispensations.length === 0 && <tr><td colSpan={6} className="table-empty">Aucune dispensation</td></tr>}</tbody>
+        </table>
+      )}
+
       {tab === 'alertes' && alertes && (
         <div>
           {alertes.rupture?.length > 0 && <div className="notification notification-error mb-2"><i className="bi bi-exclamation-octagon"></i><div><strong>Rupture de stock ({alertes.rupture.length})</strong><ul style={{margin:'0.25rem 0 0 1rem',fontSize:'0.8125rem'}}>{alertes.rupture.map((a: any) => <li key={a.id}>{a.medicament_nom}</li>)}</ul></div></div>}
@@ -95,18 +126,7 @@ export default function Pharmacie() {
         </div>
       )}
 
-      {/* Modals */}
-      {showModal === 'med' && (
-        <div className="modal-overlay" onClick={() => setShowModal(null)}><div className="modal-container" onClick={e => e.stopPropagation()}>
-          <div className="modal-header"><h3>Nouveau médicament</h3><button className="btn-icon" onClick={() => setShowModal(null)}><i className="bi bi-x-lg"></i></button></div>
-          <form onSubmit={handleMed}><div className="modal-body">
-            <div className="grid-2"><div className="form-group"><label className="form-label">Nom *</label><input type="text" className="form-input" value={medForm.nom} onChange={e => setMedForm({...medForm, nom: e.target.value})} required /></div><div className="form-group"><label className="form-label">DCI</label><input type="text" className="form-input" value={medForm.dci} onChange={e => setMedForm({...medForm, dci: e.target.value})} /></div></div>
-            <div className="grid-3"><div className="form-group"><label className="form-label">Forme</label><select className="form-select" value={medForm.forme} onChange={e => setMedForm({...medForm, forme: e.target.value})}><option value="">—</option>{formes.map(f => <option key={f.code} value={f.libelle}>{f.libelle}</option>)}</select></div><div className="form-group"><label className="form-label">Dosage</label><input type="text" className="form-input" value={medForm.dosage_standard} onChange={e => setMedForm({...medForm, dosage_standard: e.target.value})} placeholder="ex: 500mg" /></div><div className="form-group"><label className="form-label">Prix unitaire</label><input type="number" className="form-input" value={medForm.prix_unitaire} onChange={e => setMedForm({...medForm, prix_unitaire: e.target.value})} /></div></div>
-            <div className="form-group"><label className="form-label">Catégorie</label><input type="text" className="form-input" value={medForm.categorie} onChange={e => setMedForm({...medForm, categorie: e.target.value})} placeholder="ex: Antibiotique, Antalgique, Antipaludéen" /></div>
-          </div><div className="modal-footer"><button type="button" className="btn-secondary" onClick={() => setShowModal(null)}>Annuler</button><button type="submit" className="btn-primary">Créer</button></div></form>
-        </div></div>
-      )}
-
+      {/* Stock Modal */}
       {showModal === 'stock' && (
         <div className="modal-overlay" onClick={() => setShowModal(null)}><div className="modal-container" onClick={e => e.stopPropagation()}>
           <div className="modal-header"><h3>Entrée de stock</h3><button className="btn-icon" onClick={() => setShowModal(null)}><i className="bi bi-x-lg"></i></button></div>
@@ -118,6 +138,7 @@ export default function Pharmacie() {
         </div></div>
       )}
 
+      {/* Mouvement Modal */}
       {showModal === 'mvt' && (
         <div className="modal-overlay" onClick={() => setShowModal(null)}><div className="modal-container" onClick={e => e.stopPropagation()}>
           <div className="modal-header"><h3>Mouvement de stock</h3><button className="btn-icon" onClick={() => setShowModal(null)}><i className="bi bi-x-lg"></i></button></div>

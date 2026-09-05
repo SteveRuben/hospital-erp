@@ -1,5 +1,6 @@
 import { useState, useEffect } from 'react';
 import { getHabilitations, updateHabilitation, getMenuConfig, updateMenuItem } from '../services/api';
+import { useSnackbar } from '../components/Snackbar';
 
 const allRoles = [
   { role: 'admin', label: 'Admin', tag: 'tag-red' },
@@ -14,6 +15,7 @@ interface Hab { id: number; role: string; module: string; acces: boolean }
 interface MenuItem { id: number; groupe: string; groupe_ordre: number; module: string; label: string; icon: string; path: string; ordre: number; actif: boolean }
 
 export default function Habilitations() {
+  const { showSnackbar } = useSnackbar();
   const [tab, setTab] = useState<'permissions' | 'menu' | 'resume'>('permissions');
   const [habs, setHabs] = useState<Hab[]>([]);
   const [menuItems, setMenuItems] = useState<MenuItem[]>([]);
@@ -35,7 +37,7 @@ export default function Habilitations() {
     try {
       await updateHabilitation({ role, module, acces: !current });
       setHabs(prev => prev.map(h => h.role === role && h.module === module ? { ...h, acces: !current } : h));
-    } catch { alert('Erreur'); }
+    } catch { showSnackbar('Erreur', 'error'); }
     finally { setSaving(''); }
   };
 
@@ -59,21 +61,21 @@ export default function Habilitations() {
       await updateMenuItem(item.id, { ...item, ordre: newOrder1 });
       await updateMenuItem(sameGroup[swapIdx].id, { ...sameGroup[swapIdx], ordre: newOrder2 });
       loadData();
-    } catch { alert('Erreur'); }
+    } catch { showSnackbar('Erreur', 'error'); }
   };
 
   const toggleMenuItem = async (item: MenuItem) => {
     try {
       await updateMenuItem(item.id, { ...item, actif: !item.actif });
       loadData();
-    } catch { alert('Erreur'); }
+    } catch { showSnackbar('Erreur', 'error'); }
   };
 
   const updateLabel = async (item: MenuItem, newLabel: string) => {
     try {
       await updateMenuItem(item.id, { ...item, label: newLabel });
       loadData();
-    } catch { alert('Erreur'); }
+    } catch { showSnackbar('Erreur', 'error'); }
   };
 
   if (loading) return <div className="loading"><div className="spinner"></div></div>;

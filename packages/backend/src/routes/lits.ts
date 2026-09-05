@@ -5,6 +5,7 @@ import { validate, createPavillonSchema, createLitSchema } from '../middleware/v
 import { Prisma, LitStatut, HospitalisationStatut } from '@prisma/client';
 import { notifyMany } from '../services/notify.js';
 import { assertTransition, WorkflowError } from '../services/workflow.js';
+import { billHospitalisation } from '../services/billing.js';
 
 const router = Router();
 
@@ -185,7 +186,7 @@ router.post('/hospitalisations', authenticate, authorize('admin', 'medecin'), as
 router.put('/hospitalisations/:id/sortie', authenticate, authorize('admin', 'medecin'), async (req: AuthRequest, res: Response): Promise<void> => {
   try {
     const id = Number(req.params.id);
-    const hosp = await prisma.hospitalisation.findUnique({ where: { id }, select: { litId: true, statut: true } });
+    const hosp = await prisma.hospitalisation.findUnique({ where: { id }, select: { id: true, litId: true, statut: true, patientId: true, serviceId: true, dateAdmission: true } });
     if (!hosp) { res.status(404).json({ error: 'Non trouvé' }); return; }
     try { assertTransition('hospitalisation', hosp.statut, HospitalisationStatut.sortie); }
     catch (e) {
@@ -204,6 +205,22 @@ router.put('/hospitalisations/:id/sortie', authenticate, authorize('admin', 'med
         data: { statut: HospitalisationStatut.sortie, dateSortie: new Date() },
       });
     });
+
+    const nbNuits = Math.max(1, Math.ceil((Date.now() - new Date(hosp.dateAdmission).getTime()) / 86400000));
+    let servicePrix = 0;
+    if (hosp.serviceId) {
+      const svc = await prisma.service.findUnique({ where: { id: hosp.serviceId }, select: { prix: true } });
+      servicePrix = Number(svc?.prix ?? 0);
+    }
+    billHospitalisation({
+      patientId: hosp.patientId,
+      serviceId: hosp.serviceId,
+      montant: servicePrix * nbNuits,
+      sourceId: hosp.id,
+      userId: req.user!.id,
+      nbNuits,
+    }).catch(err => console.error('[BILLING] Hospitalisation billing failed:', err));
+
     res.json(updated);
   } catch (err) { res.status(500).json({ error: 'Erreur serveur' }); }
 });

@@ -1,35 +1,36 @@
 import { useState, useEffect } from 'react';
-import api, { getTarifs, createTarif, getFactures, getFacture, createFacture, createPaiement, printFacture, getExamens } from '../services/api';
+import { useNavigate } from 'react-router-dom';
+import api, { getTarifs, getFactures, getFacture, createPaiement, printFacture } from '../services/api';
 import { useSnackbar } from '../components/Snackbar';
-import PatientTypeahead from '../components/PatientTypeahead';
 import PaymentModal from '../components/PaymentModal';
 
 interface RefItem { code: string; libelle: string }
 type PaymentMode = 'mobile_money' | 'carte' | 'virement' | 'especes' | 'assurance';
 
-interface PendingExamen {
+interface CaisseItem {
   id: number;
-  type_examen: string;
+  entity_type: 'examen' | 'dispensation' | 'hospitalisation';
+  label: string;
   montant: number | string | null;
   patient_id: number;
   patient_nom: string | null;
   patient_prenom: string | null;
   patient_telephone: string | null;
-  date_examen: string;
+  date: string;
+  entity_statut: string;
 }
 
 export default function Facturation() {
+  const navigate = useNavigate();
   const [tab, setTab] = useState<'caisse' | 'factures' | 'tarifs' | 'detail'>('caisse');
   const { showSnackbar } = useSnackbar();
-  const [pendingExamens, setPendingExamens] = useState<PendingExamen[]>([]);
+  const [caisseItems, setCaisseItems] = useState<CaisseItem[]>([]);
   const [tarifs, setTarifs] = useState<any[]>([]);
   const [factures, setFactures] = useState<any[]>([]);
   const [detail, setDetail] = useState<any>(null);
   const [modesPaiement, setModesPaiement] = useState<RefItem[]>([]);
   const [loading, setLoading] = useState(true);
   const [showModal, setShowModal] = useState<string | null>(null);
-  const [tarifForm, setTarifForm] = useState({ code: '', libelle: '', categorie: '', montant: '' });
-  const [factureForm, setFactureForm] = useState({ patient_id: '', lignes: [{ tarif_id: '', libelle: '', quantite: 1, prix_unitaire: 0 }] as Array<{tarif_id: string; libelle: string; quantite: number; prix_unitaire: number}>, notes: '' });
   const [paiementForm, setPaiementForm] = useState({ facture_id: 0, montant: '', mode_paiement: 'especes', reference: '' });
   // Last-payment confirmation banner. The bottom-right snackbar
   // disappears in 5 s and is easy to miss when the cashier was
@@ -39,19 +40,19 @@ export default function Facturation() {
   const [lastPayment, setLastPayment] = useState<{ type: 'examen' | 'facture'; libelle: string; montant: number; mode: string; at: Date } | null>(null);
   // Modal de paiement actif (mode + examen ciblé). Remplace l'ancien
   // « 1-clic » qui marquait directement payé sans confirmation.
-  const [paymentTarget, setPaymentTarget] = useState<{ examen: PendingExamen; mode: PaymentMode } | null>(null);
+  const [paymentTarget, setPaymentTarget] = useState<{ examen: CaisseItem; mode: PaymentMode } | null>(null);
 
   useEffect(() => { loadAll(); }, []);
 
   const loadAll = async () => {
     try {
-      const [t, f, e, mp] = await Promise.all([
+      const [t, f, ci, mp] = await Promise.all([
         getTarifs(), getFactures(),
-        getExamens({ statut: 'a_payer' }),
+        api.get('/facturation/caisse').catch(() => ({ data: [] })),
         api.get('/reference-lists/mode_paiement').catch(() => ({ data: [] })),
       ]);
       setTarifs(t.data); setFactures(f.data);
-      setPendingExamens(e.data as unknown as PendingExamen[]);
+      setCaisseItems((ci.data || []) as unknown as CaisseItem[]);
       setModesPaiement(mp.data);
     } catch (err) { console.error(err); }
     finally { setLoading(false); }
@@ -61,39 +62,30 @@ export default function Facturation() {
   // direct : la confirmation passe par PaymentModal (Remita pour MM,
   // saisie ref pour carte/virement, monnaie à rendre pour espèces,
   // prise en charge pour assurance).
-  const openPayment = (examen: PendingExamen, mode: PaymentMode) => {
+  const openPayment = (examen: CaisseItem, mode: PaymentMode) => {
     setPaymentTarget({ examen, mode });
   };
 
   const onPaymentSuccess = (info: { mode: string; reference?: string; montant: number; assurance?: string; co_paiement?: number }) => {
     if (!paymentTarget) return;
     const { examen } = paymentTarget;
-    setPendingExamens(prev => prev.filter(p => p.id !== examen.id));
+    setCaisseItems(prev => prev.filter(p => !(p.id === examen.id && p.entity_type === examen.entity_type)));
     const modeLabel = info.assurance
       ? `Assurance ${info.assurance}${info.co_paiement ? ` (co-paiement ${info.co_paiement.toLocaleString('fr-FR')} XOF restant)` : ''}`
       : modesPaiement.find(m => m.code.toLowerCase() === info.mode.toLowerCase())?.libelle ?? info.mode;
     setLastPayment({
       type: 'examen',
-      libelle: `${examen.type_examen} — ${examen.patient_prenom ?? ''} ${examen.patient_nom ?? ''}`.trim(),
+      libelle: `${examen.label} — ${examen.patient_prenom ?? ''} ${examen.patient_nom ?? ''}`.trim(),
       montant: info.montant,
       mode: modeLabel,
       at: new Date(),
     });
-    showSnackbar(`✓ ${examen.type_examen} — paiement enregistré`, 'success');
+    showSnackbar(`✓ ${examen.label} — paiement enregistré`, 'success');
     setPaymentTarget(null);
     loadAll();
   };
 
-  const viewDetail = async (id: number) => { try { const { data } = await getFacture(id); setDetail(data); setTab('detail'); } catch { alert('Erreur'); } };
-
-  const handleTarif = async (e: React.FormEvent) => { e.preventDefault(); try { await createTarif({ ...tarifForm, montant: parseFloat(tarifForm.montant) }); setShowModal(null); setTarifForm({ code: '', libelle: '', categorie: '', montant: '' }); loadAll(); } catch (err: any) { alert(err.response?.data?.error || 'Erreur'); } };
-
-  const handleFacture = async (e: React.FormEvent) => {
-    e.preventDefault();
-    const lignes = factureForm.lignes.filter(l => l.libelle && l.prix_unitaire > 0);
-    if (lignes.length === 0) { alert('Ajoutez au moins une ligne'); return; }
-    try { await createFacture({ patient_id: Number(factureForm.patient_id), lignes, notes: factureForm.notes }); setShowModal(null); setFactureForm({ patient_id: '', lignes: [{ tarif_id: '', libelle: '', quantite: 1, prix_unitaire: 0 }], notes: '' }); loadAll(); } catch (err: any) { alert(err.response?.data?.error || 'Erreur'); }
-  };
+  const viewDetail = async (id: number) => { try { const { data } = await getFacture(id); setDetail(data); setTab('detail'); } catch { showSnackbar('Erreur', 'error'); } };
 
   const handlePaiement = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -118,21 +110,7 @@ export default function Facturation() {
     }
   };
 
-  const addLigne = () => setFactureForm({ ...factureForm, lignes: [...factureForm.lignes, { tarif_id: '', libelle: '', quantite: 1, prix_unitaire: 0 }] });
-  const removeLigne = (i: number) => setFactureForm({ ...factureForm, lignes: factureForm.lignes.filter((_, idx) => idx !== i) });
-  const updateLigne = (i: number, field: string, value: string | number) => {
-    const lignes = [...factureForm.lignes];
-    (lignes[i] as any)[field] = value;
-    // Auto-fill from tarif
-    if (field === 'tarif_id' && value) {
-      const t = tarifs.find((t: any) => t.id === Number(value));
-      if (t) { lignes[i].libelle = t.libelle; lignes[i].prix_unitaire = parseFloat(t.montant); }
-    }
-    setFactureForm({ ...factureForm, lignes });
-  };
-
   const fmt = (n: number) => new Intl.NumberFormat('fr-FR', { style: 'currency', currency: 'XOF' }).format(n);
-  const totalFacture = factureForm.lignes.reduce((s, l) => s + l.prix_unitaire * l.quantite, 0);
 
   // Print a receipt for a specific payment
   const printRecuPaiement = (facture: any, paiement: any, numero: number) => {
@@ -180,14 +158,14 @@ ${paiement.notes ? `<tr><td><strong>Notes</strong></td><td>${paiement.notes}</td
       <nav className="breadcrumb"><a href="/app">Accueil</a><span className="breadcrumb-separator">/</span><span>Facturation</span></nav>
       <div className="page-header"><h1 className="page-title">Facturation</h1>
         <div className="d-flex gap-1">
-          {tab === 'tarifs' && <button className="btn-primary" onClick={() => setShowModal('tarif')}><i className="bi bi-plus"></i> Tarif</button>}
-          {tab === 'factures' && <button className="btn-primary" onClick={() => setShowModal('facture')}><i className="bi bi-plus"></i> Facture</button>}
+          {tab === 'tarifs' && <button className="btn-primary" onClick={() => navigate('/app/facturation/tarifs/nouveau')}><i className="bi bi-plus"></i> Tarif</button>}
+          {tab === 'factures' && <button className="btn-primary" onClick={() => navigate('/app/facturation/factures/nouvelle')}><i className="bi bi-plus"></i> Facture</button>}
         </div>
       </div>
 
       <div className="tabs mb-2">
         <button className={`tab-item ${tab === 'caisse' ? 'active' : ''}`} onClick={() => setTab('caisse')}>
-          Caisse {pendingExamens.length > 0 && <span className="tag tag-orange" style={{ marginLeft: '0.25rem' }}>{pendingExamens.length}</span>}
+          Caisse {caisseItems.length > 0 && <span className="tag tag-orange" style={{ marginLeft: '0.25rem' }}>{caisseItems.length}</span>}
         </button>
         <button className={`tab-item ${tab === 'factures' ? 'active' : ''}`} onClick={() => setTab('factures')}>Factures</button>
         <button className={`tab-item ${tab === 'tarifs' ? 'active' : ''}`} onClick={() => setTab('tarifs')}>Grille tarifaire</button>
@@ -223,31 +201,42 @@ ${paiement.notes ? `<tr><td><strong>Notes</strong></td><td>${paiement.notes}</td
             </div>
           )}
           <p className="text-muted mb-2" style={{ fontSize: '0.8125rem' }}>
-            Examens en attente de paiement. Un clic sur le mode = encaissé et envoyé en prélèvement au labo.
+            Paiements en attente de traitement. Les examens peuvent être encaissés directement.
           </p>
           <table className="data-table">
-            <thead><tr><th>Patient</th><th>Téléphone</th><th>Examen</th><th>Date</th><th>Montant</th><th style={{ width: 1, whiteSpace: 'nowrap' }}>Encaisser</th></tr></thead>
+            <thead><tr><th>Patient</th><th>Téléphone</th><th>Type</th><th>Désignation</th><th>Date</th><th>Montant</th><th style={{ width: 1, whiteSpace: 'nowrap' }}>Encaisser</th></tr></thead>
             <tbody>
-              {pendingExamens.map(ex => (
-                <tr key={ex.id}>
-                  <td className="fw-600">{ex.patient_prenom} {ex.patient_nom}</td>
-                  <td>{ex.patient_telephone || '-'}</td>
-                  <td>{ex.type_examen}</td>
-                  <td>{new Date(ex.date_examen).toLocaleDateString('fr-FR')}</td>
-                  <td className="fw-600">{ex.montant ? fmt(Number(ex.montant)) : '-'}</td>
+              {caisseItems.map(item => (
+                <tr key={`${item.entity_type}-${item.id}`}>
+                  <td className="fw-600">{item.patient_prenom} {item.patient_nom}</td>
+                  <td>{item.patient_telephone || '-'}</td>
                   <td>
-                    <div className="d-flex gap-1" style={{ flexWrap: 'nowrap' }}>
-                      <button className="btn-primary btn-sm" title="Espèces" onClick={() => openPayment(ex, 'especes')}><i className="bi bi-cash"></i> Esp.</button>
-                      <button className="btn-primary btn-sm" title="Mobile Money via Remita" onClick={() => openPayment(ex, 'mobile_money')}><i className="bi bi-phone"></i> MM</button>
-                      <button className="btn-primary btn-sm" title="Carte bancaire" onClick={() => openPayment(ex, 'carte')}><i className="bi bi-credit-card"></i> Carte</button>
-                      <button className="btn-secondary btn-sm" title="Prise en charge assurance" onClick={() => openPayment(ex, 'assurance')}><i className="bi bi-shield-check"></i> Assur.</button>
-                      <button className="btn-ghost btn-sm" title="Virement" onClick={() => openPayment(ex, 'virement')}><i className="bi bi-bank"></i> Vir.</button>
-                    </div>
+                    <span className={`tag ${item.entity_type === 'examen' ? 'tag-blue' : item.entity_type === 'dispensation' ? 'tag-purple' : 'tag-orange'}`}>
+                      {item.entity_type === 'examen' ? 'Examen' : item.entity_type === 'dispensation' ? 'Dispensation' : 'Hospitalisation'}
+                    </span>
+                  </td>
+                  <td>{item.label}</td>
+                  <td>{new Date(item.date).toLocaleDateString('fr-FR')}</td>
+                  <td className="fw-600">{item.montant ? fmt(Number(item.montant)) : '-'}</td>
+                  <td>
+                    {item.entity_type === 'examen' ? (
+                      <div className="d-flex gap-1" style={{ flexWrap: 'nowrap' }}>
+                        <button className="btn-primary btn-sm" title="Espèces" onClick={() => openPayment(item, 'especes')}><i className="bi bi-cash"></i> Esp.</button>
+                        <button className="btn-primary btn-sm" title="Mobile Money via Remita" onClick={() => openPayment(item, 'mobile_money')}><i className="bi bi-phone"></i> MM</button>
+                        <button className="btn-primary btn-sm" title="Carte bancaire" onClick={() => openPayment(item, 'carte')}><i className="bi bi-credit-card"></i> Carte</button>
+                        <button className="btn-secondary btn-sm" title="Prise en charge assurance" onClick={() => openPayment(item, 'assurance')}><i className="bi bi-shield-check"></i> Assur.</button>
+                        <button className="btn-ghost btn-sm" title="Virement" onClick={() => openPayment(item, 'virement')}><i className="bi bi-bank"></i> Vir.</button>
+                      </div>
+                    ) : (
+                      <span className="text-muted" style={{ fontSize: '0.75rem' }} title="Facturation automatique via le flux dédié">
+                        <i className="bi bi-arrow-right-circle"></i> Facturé
+                      </span>
+                    )}
                   </td>
                 </tr>
               ))}
-              {pendingExamens.length === 0 && (
-                <tr><td colSpan={6} className="table-empty"><i className="bi bi-cash-stack" style={{ fontSize: '2rem', display: 'block', marginBottom: '0.5rem' }}></i>Aucun paiement en attente</td></tr>
+              {caisseItems.length === 0 && (
+                <tr><td colSpan={7} className="table-empty"><i className="bi bi-cash-stack" style={{ fontSize: '2rem', display: 'block', marginBottom: '0.5rem' }}></i>Aucun paiement en attente</td></tr>
               )}
             </tbody>
           </table>
@@ -316,45 +305,6 @@ ${paiement.notes ? `<tr><td><strong>Notes</strong></td><td>${paiement.notes}</td
             </div>
           )}
         </div>
-      )}
-
-      {/* Modal Tarif */}
-      {showModal === 'tarif' && (
-        <div className="modal-overlay" onClick={() => setShowModal(null)}><div className="modal-container" onClick={e => e.stopPropagation()}>
-          <div className="modal-header"><h3>Nouveau tarif</h3><button className="btn-icon" onClick={() => setShowModal(null)}><i className="bi bi-x-lg"></i></button></div>
-          <form onSubmit={handleTarif}><div className="modal-body">
-            <div className="grid-2"><div className="form-group"><label className="form-label">Code *</label><input type="text" className="form-input" value={tarifForm.code} onChange={e => setTarifForm({...tarifForm, code: e.target.value})} required placeholder="ex: CONS-GEN" /></div>
-            <div className="form-group"><label className="form-label">Montant (XOF) *</label><input type="number" className="form-input" value={tarifForm.montant} onChange={e => setTarifForm({...tarifForm, montant: e.target.value})} required /></div></div>
-            <div className="form-group"><label className="form-label">Libellé *</label><input type="text" className="form-input" value={tarifForm.libelle} onChange={e => setTarifForm({...tarifForm, libelle: e.target.value})} required placeholder="ex: Consultation générale" /></div>
-            <div className="form-group"><label className="form-label">Catégorie *</label><input type="text" className="form-input" value={tarifForm.categorie} onChange={e => setTarifForm({...tarifForm, categorie: e.target.value})} required placeholder="ex: Consultation, Laboratoire, Imagerie" /></div>
-          </div><div className="modal-footer"><button type="button" className="btn-secondary" onClick={() => setShowModal(null)}>Annuler</button><button type="submit" className="btn-primary">Créer</button></div></form>
-        </div></div>
-      )}
-
-      {/* Modal Facture */}
-      {showModal === 'facture' && (
-        <div className="modal-overlay" onClick={() => setShowModal(null)}><div className="modal-container modal-lg" onClick={e => e.stopPropagation()}>
-          <div className="modal-header"><h3>Nouvelle facture</h3><button className="btn-icon" onClick={() => setShowModal(null)}><i className="bi bi-x-lg"></i></button></div>
-          <form onSubmit={handleFacture}><div className="modal-body">
-            <div className="form-group">
-              <label className="form-label">Patient * <span className="text-muted" style={{ fontSize: '0.6875rem', fontWeight: 400 }}>(nom ou référence)</span></label>
-              <PatientTypeahead value={factureForm.patient_id} onChange={id => setFactureForm({ ...factureForm, patient_id: id })} required autoFocus />
-            </div>
-            <h4 style={{ fontSize: '0.875rem', fontWeight: 600, margin: '1rem 0 0.5rem' }}>Lignes de facturation</h4>
-            {factureForm.lignes.map((l, i) => (
-              <div key={i} className="d-flex gap-1 align-center mb-1">
-                <select className="form-select" style={{ width: '200px' }} value={l.tarif_id} onChange={e => updateLigne(i, 'tarif_id', e.target.value)}><option value="">Tarif (optionnel)</option>{tarifs.map((t: any) => <option key={t.id} value={t.id}>{t.code} - {t.libelle}</option>)}</select>
-                <input type="text" className="form-input" style={{ flex: 1 }} value={l.libelle} onChange={e => updateLigne(i, 'libelle', e.target.value)} placeholder="Désignation" />
-                <input type="number" className="form-input" style={{ width: '60px' }} value={l.quantite} onChange={e => updateLigne(i, 'quantite', parseInt(e.target.value) || 1)} min={1} />
-                <input type="number" className="form-input" style={{ width: '120px' }} value={l.prix_unitaire} onChange={e => updateLigne(i, 'prix_unitaire', parseFloat(e.target.value) || 0)} placeholder="Prix" />
-                <span style={{ width: '100px', textAlign: 'right', fontWeight: 600 }}>{fmt(l.prix_unitaire * l.quantite)}</span>
-                {factureForm.lignes.length > 1 && <button type="button" className="btn-icon" onClick={() => removeLigne(i)}><i className="bi bi-x"></i></button>}
-              </div>
-            ))}
-            <button type="button" className="btn-ghost btn-sm" onClick={addLigne}><i className="bi bi-plus"></i> Ajouter une ligne</button>
-            <div style={{ textAlign: 'right', marginTop: '1rem', fontSize: '1.25rem', fontWeight: 600 }}>Total: {fmt(totalFacture)}</div>
-          </div><div className="modal-footer"><button type="button" className="btn-secondary" onClick={() => setShowModal(null)}>Annuler</button><button type="submit" className="btn-primary">Créer la facture</button></div></form>
-        </div></div>
       )}
 
       {/* Modal Paiement */}

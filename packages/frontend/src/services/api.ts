@@ -9,6 +9,8 @@ const api = axios.create({ baseURL: API_URL, headers: { 'Content-Type': 'applica
 api.interceptors.request.use((config) => {
   const token = localStorage.getItem('token');
   if (token) config.headers.Authorization = `Bearer ${token}`;
+  const facilityId = localStorage.getItem('facility_id');
+  if (facilityId) config.headers['X-Facility-Id'] = facilityId;
   return config;
 });
 
@@ -181,7 +183,15 @@ export const createExamen = (data: unknown) => api.post<Examen>('/laboratoire', 
 export const updateExamen = (id: number, data: unknown) => api.put<Examen>(`/laboratoire/${id}`, data);
 export const deleteExamen = (id: number) => api.delete(`/laboratoire/${id}`);
 
-export const getDashboard = () => api.get<DashboardStats>('/dashboard');
+export const getDashboard = (month?: string) => api.get<DashboardStats>('/dashboard', { params: month ? { month } : undefined });
+
+// Facilities
+export const getFacilities = () => api.get('/facilities');
+export const getFacilitiesAll = () => api.get('/facilities/all');
+export const getFacility = (id: number) => api.get(`/facilities/${id}`);
+export const createFacility = (data: unknown) => api.post('/facilities', data);
+export const updateFacility = (id: number, data: unknown) => api.put(`/facilities/${id}`, data);
+export const deleteFacility = (id: number) => api.delete(`/facilities/${id}`);
 
 export default api;
 
@@ -593,11 +603,14 @@ export const updateOrderStatut = (id: number, data: { statut: string; resultat?:
 // Pharmacie
 export const getMedicaments = (params?: unknown) => api.get('/pharmacie/medicaments', { params });
 export const createMedicament = (data: unknown) => api.post('/pharmacie/medicaments', data);
+export const updateMedicament = (id: number, data: unknown) => api.put(`/pharmacie/medicaments/${id}`, data);
+export const deleteMedicament = (id: number) => api.delete(`/pharmacie/medicaments/${id}`);
 export const getStock = () => api.get('/pharmacie/stock');
 export const createStock = (data: unknown) => api.post('/pharmacie/stock', data);
 export const createMouvement = (data: unknown) => api.post('/pharmacie/mouvements', data);
 export const getMouvements = () => api.get('/pharmacie/mouvements');
 export const createDispensation = (data: unknown) => api.post('/pharmacie/dispensations', data);
+export const getDispensations = () => api.get('/pharmacie/dispensations');
 export const getPharmacieAlertes = () => api.get('/pharmacie/alertes');
 export const getStockAlerts = () => api.get('/pharmacie/alerts/stock-bas');
 export const getExpirationAlerts = () => api.get('/pharmacie/alerts/expirations');

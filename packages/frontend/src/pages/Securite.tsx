@@ -6,7 +6,7 @@ interface Posture {
   mfa: { totalUsers: number; mfaEnabled: number; mfaRate: number; compliant: boolean };
   sessions: { redisConfigured: boolean; activeSessions: number; timeoutMinutes: number };
   auth: { failedLogins24h: number; passwordPolicy: Record<string, unknown>; hashAlgorithm: string; tokenExpiry: string };
-  audit: { recentEntries: Array<{ id: number; action: string; tableName: string; recordId: number; details: string; username: string; role: string; createdAt: string }>; immutable: boolean };
+  audit: { recentEntries: Array<{ id: number; action: string; tableName: string; recordId: number; details: string; username: string; role: string; createdAt: string; ipAddress: string | null; route: string | null }>; immutable: boolean };
   compliance: { owasp: { score: number; max: number; details: string }; dataProtection: Record<string, boolean>; patients: { total: number; withReferenceId: number } };
 }
 
@@ -116,7 +116,7 @@ export default function Securite() {
         </div>
         <div style={{ maxHeight: '300px', overflowY: 'auto' }}>
           <table className="data-table" style={{ fontSize: '0.75rem' }}>
-            <thead><tr><th>Date</th><th>Utilisateur</th><th>Action</th><th>Table</th><th>Détails</th></tr></thead>
+            <thead><tr><th>Date</th><th>Utilisateur</th><th>Action</th><th>Table</th><th>Détails</th><th>Où</th></tr></thead>
             <tbody>
               {posture.audit.recentEntries.map(entry => (
                 <tr key={entry.id}>
@@ -125,9 +125,10 @@ export default function Securite() {
                   <td><span className={`tag ${entry.action === 'login' ? 'tag-blue' : entry.action === 'delete' ? 'tag-red' : entry.action === 'create' ? 'tag-green' : 'tag-gray'}`} style={{ fontSize: '0.5625rem' }}>{entry.action}</span></td>
                   <td className="text-muted">{entry.tableName || '-'}</td>
                   <td style={{ maxWidth: '200px', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }} title={entry.details}>{entry.details || '-'}</td>
+                  <td className="text-muted" style={{ whiteSpace: 'nowrap' }} title={entry.route || undefined}>{entry.ipAddress || '-'}</td>
                 </tr>
               ))}
-              {posture.audit.recentEntries.length === 0 && <tr><td colSpan={5} className="table-empty">Aucune entrée</td></tr>}
+              {posture.audit.recentEntries.length === 0 && <tr><td colSpan={6} className="table-empty">Aucune entrée</td></tr>}
             </tbody>
           </table>
         </div>

@@ -1,11 +1,15 @@
 import { useState, useEffect } from 'react';
 import api, { getRecettes, createRecette, deleteRecette, getDepenses, createDepense, deleteDepense, getCaisse, getBilan, getServices } from '../services/api';
 import PatientTypeahead from '../components/PatientTypeahead';
+import { useSnackbar } from '../components/Snackbar';
+import { useConfirm } from '../components/ConfirmDialog';
 import type { Recette, Depense, Service, Bilan } from '../types';
 
 interface RefItem { code: string; libelle: string; par_defaut: boolean }
 
 export default function Finances() {
+  const { showSnackbar } = useSnackbar();
+  const { confirm } = useConfirm();
   const [tab, setTab] = useState<'recettes' | 'depenses' | 'bilan'>('recettes');
   const [recettes, setRecettes] = useState<Recette[]>([]);
   const [depenses, setDepenses] = useState<Depense[]>([]);
@@ -41,12 +45,12 @@ export default function Finances() {
 
   const handleRecette = async (e: React.FormEvent) => {
     e.preventDefault();
-    try { await createRecette(recForm); setShowModal(false); setRecForm({ patient_id: '', service_id: '', type_acte: '', montant: '', mode_paiement: 'especes', description: '' }); loadData(); } catch { alert('Erreur'); }
+    try { await createRecette(recForm); setShowModal(false); setRecForm({ patient_id: '', service_id: '', type_acte: '', montant: '', mode_paiement: 'especes', description: '' }); loadData(); } catch { showSnackbar('Erreur', 'error'); }
   };
 
   const handleDepense = async (e: React.FormEvent) => {
     e.preventDefault();
-    try { await createDepense(depForm); setShowModal(false); setDepForm({ type_depense: '', nature: '', montant: '', fournisseur: '', description: '', date_depense: '' }); loadData(); } catch { alert('Erreur'); }
+    try { await createDepense(depForm); setShowModal(false); setDepForm({ type_depense: '', nature: '', montant: '', fournisseur: '', description: '', date_depense: '' }); loadData(); } catch { showSnackbar('Erreur', 'error'); }
   };
 
   const fmt = (n: number) => new Intl.NumberFormat('fr-FR', { style: 'currency', currency: 'XOF' }).format(n);
@@ -75,7 +79,7 @@ export default function Finances() {
       {tab === 'recettes' && (
         <table className="data-table"><thead><tr><th>Date</th><th>Patient</th><th>Type</th><th>Montant</th><th>Paiement</th><th></th></tr></thead>
           <tbody>
-            {recettes.map(r => <tr key={r.id}><td>{new Date(r.date_recette).toLocaleDateString('fr-FR')}</td><td>{r.patient_prenom} {r.patient_nom}</td><td>{r.type_acte}</td><td className="text-success fw-600">{fmt(r.montant)}</td><td><span className="tag tag-gray">{r.mode_paiement}</span></td><td><button className="btn-icon" onClick={async () => { if (confirm('Supprimer ?')) { await deleteRecette(r.id); loadData(); }}}><i className="bi bi-trash"></i></button></td></tr>)}
+            {recettes.map(r => <tr key={r.id}><td>{new Date(r.date_recette).toLocaleDateString('fr-FR')}</td><td>{r.patient_prenom} {r.patient_nom}</td><td>{r.type_acte}</td><td className="text-success fw-600">{fmt(r.montant)}</td><td><span className="tag tag-gray">{r.mode_paiement}</span></td><td><button className="btn-icon" onClick={async () => { const ok = await confirm({ message: 'Supprimer cette recette ?', variant: 'danger' }); if (ok) { await deleteRecette(r.id); loadData(); }}}><i className="bi bi-trash"></i></button></td></tr>)}
             {recettes.length === 0 && <tr><td colSpan={6} className="table-empty"><i className="bi bi-cash-coin"></i>Aucune recette</td></tr>}
           </tbody>
         </table>
@@ -84,7 +88,7 @@ export default function Finances() {
       {tab === 'depenses' && (
         <table className="data-table"><thead><tr><th>Date</th><th>Type</th><th>Nature</th><th>Fournisseur</th><th>Montant</th><th></th></tr></thead>
           <tbody>
-            {depenses.map(d => <tr key={d.id}><td>{new Date(d.date_depense).toLocaleDateString('fr-FR')}</td><td>{d.type_depense}</td><td>{d.nature}</td><td>{d.fournisseur}</td><td className="text-danger fw-600">{fmt(d.montant)}</td><td><button className="btn-icon" onClick={async () => { if (confirm('Supprimer ?')) { await deleteDepense(d.id); loadData(); }}}><i className="bi bi-trash"></i></button></td></tr>)}
+            {depenses.map(d => <tr key={d.id}><td>{new Date(d.date_depense).toLocaleDateString('fr-FR')}</td><td>{d.type_depense}</td><td>{d.nature}</td><td>{d.fournisseur}</td><td className="text-danger fw-600">{fmt(d.montant)}</td><td><button className="btn-icon" onClick={async () => { const ok = await confirm({ message: 'Supprimer cette dépense ?', variant: 'danger' }); if (ok) { await deleteDepense(d.id); loadData(); }}}><i className="bi bi-trash"></i></button></td></tr>)}
             {depenses.length === 0 && <tr><td colSpan={6} className="table-empty"><i className="bi bi-wallet2"></i>Aucune dépense</td></tr>}
           </tbody>
         </table>

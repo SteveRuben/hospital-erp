@@ -4,6 +4,7 @@ import { Prisma, PaymentIntentStatut, PriseEnChargeStatut, ExamenStatut } from '
 import { prisma } from '../config/db.js';
 import { authenticate, authorize, AuthRequest } from '../middleware/auth.js';
 import { logAudit } from '../services/audit.js';
+import { recordActeRevenue } from '../services/billing.js';
 
 const router = Router();
 
@@ -198,6 +199,20 @@ router.post('/confirm/:reference', authenticate, authorize('admin', 'comptable',
         });
       }
     });
+    // Auto-bill examen payment via PaymentModal
+    if (intent.examenId) {
+      const examen = await prisma.examen.findUnique({ where: { id: intent.examenId } });
+      if (examen) {
+        recordActeRevenue({
+          kind: 'examen',
+          sourceId: examen.id,
+          patientId: examen.patientId,
+          typeActe: examen.typeExamen || 'Examen',
+          montant: Number(examen.montant),
+          userId: req.user!.id,
+        }).catch(err => console.error('[BILLING] Examen payment billing failed:', err));
+      }
+    }
     await logAudit({
       userId: req.user!.id, action: 'update', tableName: 'payment_intents', recordId: intent.id,
       details: `Confirmation manuelle paiement ${intent.reference} (${intent.mode})`,

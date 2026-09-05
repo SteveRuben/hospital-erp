@@ -246,6 +246,7 @@ body {
 .tag-purple { background: #e8daff; color: #6929c4; }
 .tag-orange { background: #ffe8d4; color: #8a3800; }
 .tag-teal { background: #d9fbfb; color: #005d5d; }
+.tag-cyan { background: #d0e8ff; color: #0043ce; }
 
 /* ===== FORMS ===== */
 .form-group { margin-bottom: 1rem; }
@@ -393,6 +394,7 @@ body {
 .text-right { text-align: right; }
 .fw-600 { font-weight: 600; }
 .d-flex { display: flex; }
+.gap-05 { gap: 0.25rem; }
 .gap-1 { gap: 0.5rem; }
 .gap-2 { gap: 1rem; }
 .gap-3 { gap: 1.5rem; }
@@ -414,6 +416,7 @@ body {
   border-top-color: var(--cds-interactive); border-radius: 50%;
   animation: spin 0.8s linear infinite;
 }
+.spin { animation: spin 0.8s linear infinite; }
 @keyframes spin { to { transform: rotate(360deg); } }
 @keyframes slideInRight { from { transform: translateX(100%); opacity: 0; } to { transform: translateX(0); opacity: 1; } }
 

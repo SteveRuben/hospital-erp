@@ -4,6 +4,7 @@ import { authenticate, authorize, AuthRequest } from '../middleware/auth.js';
 import { validate, createTarifSchema, createFactureSchema, createPaiementSchema } from '../middleware/validation.js';
 import { Prisma, FactureStatut } from '@prisma/client';
 import { canTransition } from '../services/workflow.js';
+import { billPaiement } from '../services/billing.js';
 
 const router = Router();
 
@@ -79,6 +80,61 @@ router.delete('/tarifs/:id', authenticate, authorize('admin', 'comptable'), asyn
       res.status(404).json({ error: 'Non trouvé' });
     }
   } catch (err) { res.status(500).json({ error: 'Erreur serveur' }); }
+});
+
+// === CAISSE — ALL PENDING PAYMENTS ===
+router.get('/caisse', authenticate, async (req: AuthRequest, res: Response): Promise<void> => {
+  try {
+    const examens = await prisma.$queryRaw<Array<Record<string, unknown>>>`
+      SELECT examens.id, 'examen' as entity_type, examens.type_examen as label,
+             examens.montant, examens.patient_id,
+             patients.nom as patient_nom, patients.prenom as patient_prenom, patients.telephone as patient_telephone,
+             examens.date_examen as date,
+             examens.statut as entity_statut
+      FROM examens
+      JOIN patients ON examens.patient_id = patients.id
+      WHERE examens.paye = false
+        AND (examens.statut = 'a_payer' OR (examens.statut = 'demande' AND examens.montant IS NOT NULL AND examens.montant > 0))
+    `;
+
+    const dispensations = await prisma.$queryRaw<Array<Record<string, unknown>>>`
+      SELECT dispensations.id, 'dispensation' as entity_type, medicaments.nom as label,
+             (medicaments.prix_unitaire * dispensations.quantite_delivree) as montant,
+             dispensations.patient_id,
+             patients.nom as patient_nom, patients.prenom as patient_prenom, patients.telephone as patient_telephone,
+             dispensations.date_dispensation as date,
+             'a_payer' as entity_statut
+      FROM dispensations
+      JOIN medicaments ON dispensations.medicament_id = medicaments.id
+      JOIN patients ON dispensations.patient_id = patients.id
+      WHERE dispensations.patient_id IS NOT NULL
+        AND NOT EXISTS (SELECT 1 FROM recettes WHERE recettes.source_kind = 'dispensation' AND recettes.source_id = dispensations.id AND (recettes.annulee = false OR recettes.annulee IS NULL))
+    `;
+
+    const hospitalisations = await prisma.$queryRaw<Array<Record<string, unknown>>>`
+      SELECT hospitalisations.id, 'hospitalisation' as entity_type,
+             services.nom || ' — ' || hospitalisations.motif as label,
+             (services.prix * GREATEST(1, EXTRACT(DAY FROM (COALESCE(hospitalisations.date_sortie, NOW()) - hospitalisations.date_admission)))) as montant,
+             hospitalisations.patient_id,
+             patients.nom as patient_nom, patients.prenom as patient_prenom, patients.telephone as patient_telephone,
+             hospitalisations.date_admission as date,
+             hospitalisations.statut as entity_statut
+      FROM hospitalisations
+      JOIN patients ON hospitalisations.patient_id = patients.id
+      LEFT JOIN services ON hospitalisations.service_id = services.id
+      WHERE hospitalisations.statut = 'active'
+        AND services.prix IS NOT NULL AND services.prix > 0
+        AND NOT EXISTS (SELECT 1 FROM recettes WHERE recettes.source_kind = 'hospitalisation' AND recettes.source_id = hospitalisations.id AND (recettes.annulee = false OR recettes.annulee IS NULL))
+    `;
+
+    const all = [...examens, ...dispensations, ...hospitalisations].sort((a, b) => {
+      const da = new Date(a.date as string).getTime();
+      const db = new Date(b.date as string).getTime();
+      return db - da;
+    });
+
+    res.json(all);
+  } catch (err) { console.error(err); res.status(500).json({ error: 'Erreur serveur' }); }
 });
 
 // === FACTURES ===
@@ -191,7 +247,7 @@ router.post('/paiements', authenticate, authorize('admin', 'comptable'), validat
       where: { factureId: Number(facture_id) },
       _sum: { montant: true },
     });
-    const facture = await prisma.facture.findUnique({ where: { id: Number(facture_id) }, select: { montantTotal: true, statut: true } });
+    const facture = await prisma.facture.findUnique({ where: { id: Number(facture_id) }, select: { montantTotal: true, statut: true, patientId: true } });
     const paye = Number(agg._sum.montant ?? 0);
     const total = Number(facture?.montantTotal ?? 0);
     const nextStatut: FactureStatut = paye >= total ? FactureStatut.payee : FactureStatut.partielle;
@@ -204,6 +260,17 @@ router.post('/paiements', authenticate, authorize('admin', 'comptable'), validat
       where: { id: Number(facture_id) },
       data: { montantPaye: paye, statut: newStatut },
     });
+
+    // Bridge: paiement → recette for financial reporting
+    if (facture) {
+      billPaiement({
+        patientId: facture.patientId,
+        montant: montant,
+        sourceId: paiement.id,
+        userId: req.user!.id,
+        modePaiement: mode_paiement,
+      }).catch(err => console.error('[BILLING] Paiement bridge failed:', err));
+    }
 
     res.status(201).json(paiement);
   } catch (err) { console.error(err); res.status(500).json({ error: 'Erreur serveur' }); }

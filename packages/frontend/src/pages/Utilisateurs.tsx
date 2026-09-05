@@ -1,7 +1,8 @@
 import { useState, useEffect, useContext } from 'react';
-import { getUsers, createUser, impersonateUser, adminResetPassword, adminSuspendUser, adminUnsuspendUser, getUserAuditLog, type UserAuditEntry } from '../services/api';
+import { getUsers, impersonateUser, adminResetPassword, adminSuspendUser, adminUnsuspendUser, getUserAuditLog, type UserAuditEntry } from '../services/api';
 import api from '../services/api';
 import { AuthContext } from '../App';
+import { useNavigate } from 'react-router-dom';
 import { useSnackbar } from '../components/Snackbar';
 import { useConfirm } from '../components/ConfirmDialog';
 import type { User } from '../types';
@@ -15,24 +16,20 @@ const roleConfig: Record<string, { label: string; tag: string; desc: string }> =
   laborantin: { label: 'Laborantin', tag: 'tag-purple', desc: 'Module laboratoire' },
   reception: { label: 'Réception', tag: 'tag-orange', desc: 'Patients, RDV, file d\'attente' },
   pharmacien: { label: 'Pharmacien', tag: 'tag-teal', desc: 'Pharmacie, stock, dispensations' },
+  infirmier: { label: 'Infirmier', tag: 'tag-cyan', desc: 'Patients, soins, visites, lits' },
+  super_admin: { label: 'Super Administrateur', tag: 'tag-red', desc: 'Accès multi-établissement (niveau tenant)' },
+  chef_pole: { label: 'Chef de pôle', tag: 'tag-blue', desc: 'Supervision de pôle médical, technique ou support' },
 };
-
-const emptyForm = { username: '', password: '', role: 'reception' as string, nom: '', prenom: '', telephone: '' };
 
 export default function Utilisateurs() {
   const [users, setUsers] = useState<AdminUser[]>([]);
   const [loading, setLoading] = useState(true);
-  const [showModal, setShowModal] = useState(false);
-  const [form, setForm] = useState(emptyForm);
-  const [error, setError] = useState('');
   const { user: currentUser, startImpersonate } = useContext(AuthContext);
   const { showSnackbar } = useSnackbar();
   const { confirm } = useConfirm();
   const [resetTarget, setResetTarget] = useState<AdminUser | null>(null);
   const [activityTarget, setActivityTarget] = useState<AdminUser | null>(null);
-  const [showPwd, setShowPwd] = useState(false);
-  const [editTarget, setEditTarget] = useState<AdminUser | null>(null);
-  const [editForm, setEditForm] = useState({ nom: '', prenom: '', telephone: '', role: '' });
+  const navigate = useNavigate();
 
   useEffect(() => { loadUsers(); }, []);
 
@@ -42,18 +39,6 @@ export default function Utilisateurs() {
     finally { setLoading(false); }
   };
 
-  const handleSubmit = async (e: React.FormEvent) => {
-    e.preventDefault();
-    setError('');
-    try {
-      await createUser(form);
-      setShowModal(false);
-      setForm(emptyForm);
-      loadUsers();
-    } catch (err: any) {
-      setError(err.response?.data?.error || 'Erreur lors de la création');
-    }
-  };
 
   const countByRole = (role: string) => users.filter(u => u.role === role).length;
 
@@ -94,21 +79,6 @@ export default function Utilisateurs() {
     } catch (err: any) { showSnackbar(err.response?.data?.error || 'Erreur', 'error'); }
   };
 
-  const handleEdit = (u: AdminUser) => {
-    setEditTarget(u);
-    setEditForm({ nom: u.nom || '', prenom: u.prenom || '', telephone: u.telephone || '', role: u.role });
-  };
-
-  const submitEdit = async (e: React.FormEvent) => {
-    e.preventDefault();
-    if (!editTarget) return;
-    try {
-      await api.put(`/auth/users/${editTarget.id}`, editForm);
-      showSnackbar('Utilisateur modifié', 'success');
-      setEditTarget(null);
-      loadUsers();
-    } catch (err: any) { showSnackbar(err.response?.data?.error || 'Erreur', 'error'); }
-  };
 
   if (loading) return <div className="loading"><div className="spinner"></div></div>;
 
@@ -117,7 +87,7 @@ export default function Utilisateurs() {
       <nav className="breadcrumb"><a href="/app">Accueil</a><span className="breadcrumb-separator">/</span><span>Utilisateurs</span></nav>
       <div className="page-header">
         <h1 className="page-title">Gestion des utilisateurs</h1>
-        <button className="btn-primary" onClick={() => { setForm(emptyForm); setError(''); setShowModal(true); }}><i className="bi bi-plus"></i> Nouvel utilisateur</button>
+        <button className="btn-primary" onClick={() => navigate('/app/utilisateurs/nouveau')}><i className="bi bi-plus-lg"></i> Nouvel utilisateur</button>
       </div>
 
       {/* Stats par rôle */}
@@ -149,7 +119,7 @@ export default function Utilisateurs() {
               <td>{u.telephone || '-'}</td>
               <td>{u.created_at ? new Date(u.created_at).toLocaleDateString('fr-FR') : '-'}</td>
               <td style={{ whiteSpace: 'nowrap' }}>
-                <button className="btn-icon" title="Modifier" onClick={() => handleEdit(u)}><i className="bi bi-pencil"></i></button>
+                <button className="btn-icon" title="Modifier" onClick={() => navigate(`/app/utilisateurs/${u.id}/modifier`)}><i className="bi bi-pencil"></i></button>
                 <button className="btn-icon" title="Voir l'activité" onClick={() => setActivityTarget(u)}><i className="bi bi-clock-history"></i></button>
                 {u.id !== currentUser?.id && (
                   <>
@@ -181,97 +151,6 @@ export default function Utilisateurs() {
         <ActivityDrawer target={activityTarget} onClose={() => setActivityTarget(null)} />
       )}
 
-      {/* Modal modification */}
-      {editTarget && (
-        <div className="modal-overlay" onClick={() => setEditTarget(null)}>
-          <div className="modal-container" onClick={e => e.stopPropagation()}>
-            <div className="modal-header"><h3>Modifier — {editTarget.username}</h3><button className="btn-icon" onClick={() => setEditTarget(null)}><i className="bi bi-x-lg"></i></button></div>
-            <form onSubmit={submitEdit}>
-              <div className="modal-body">
-                <div className="grid-2">
-                  <div className="form-group"><label className="form-label">Nom</label><input type="text" className="form-input" value={editForm.nom} onChange={e => setEditForm({...editForm, nom: e.target.value})} /></div>
-                  <div className="form-group"><label className="form-label">Prénom</label><input type="text" className="form-input" value={editForm.prenom} onChange={e => setEditForm({...editForm, prenom: e.target.value})} /></div>
-                </div>
-                <div className="grid-2">
-                  <div className="form-group"><label className="form-label">Téléphone</label><input type="tel" className="form-input" value={editForm.telephone} onChange={e => setEditForm({...editForm, telephone: e.target.value})} /></div>
-                  <div className="form-group"><label className="form-label">Rôle</label>
-                    <select className="form-select" value={editForm.role} onChange={e => setEditForm({...editForm, role: e.target.value})}>
-                      {Object.entries(roleConfig).map(([role, cfg]) => <option key={role} value={role}>{cfg.label}</option>)}
-                    </select>
-                  </div>
-                </div>
-              </div>
-              <div className="modal-footer"><button type="button" className="btn-secondary" onClick={() => setEditTarget(null)}>Annuler</button><button type="submit" className="btn-primary">Enregistrer</button></div>
-            </form>
-          </div>
-        </div>
-      )}
-
-      {/* Modal création */}
-      {showModal && (
-        <div className="modal-overlay" onClick={() => setShowModal(false)}>
-          <div className="modal-container" onClick={e => e.stopPropagation()}>
-            <div className="modal-header"><h3>Nouvel utilisateur</h3><button className="btn-icon" onClick={() => setShowModal(false)}><i className="bi bi-x-lg"></i></button></div>
-            <form onSubmit={handleSubmit}>
-              <div className="modal-body">
-                {error && <div className="notification notification-error mb-2"><i className="bi bi-exclamation-circle"></i><span>{error}</span></div>}
-                <div className="grid-2">
-                  <div className="form-group"><label className="form-label">Nom d'utilisateur *</label><input type="text" className="form-input" value={form.username} onChange={e => setForm({...form, username: e.target.value})} required placeholder="ex: dr.dupont" /></div>
-                  <div className="form-group">
-                    <label className="form-label">Mot de passe *</label>
-                    <div style={{ position: 'relative' }}>
-                      <input type={showPwd ? 'text' : 'password'} className="form-input" value={form.password} onChange={e => setForm({...form, password: e.target.value})} required placeholder="Ex: Hospital1!" style={{ paddingRight: '2.5rem' }} />
-                      <button type="button" onClick={() => setShowPwd(!showPwd)} style={{ position: 'absolute', right: '0.5rem', top: '50%', transform: 'translateY(-50%)', background: 'none', border: 'none', cursor: 'pointer', padding: '0.25rem', color: 'var(--cds-text-secondary)' }}>
-                        <i className={`bi ${showPwd ? 'bi-eye-slash' : 'bi-eye'}`}></i>
-                      </button>
-                    </div>
-                    <div style={{ marginTop: '0.5rem', fontSize: '0.75rem', color: 'var(--cds-text-secondary)', background: 'var(--cds-field-01)', padding: '0.5rem 0.75rem' }}>
-                      <strong>Règles du mot de passe :</strong>
-                      <ul style={{ margin: '0.25rem 0 0 1rem', padding: 0 }}>
-                        <li style={{ color: form.password.length >= 8 ? 'var(--cds-support-success)' : 'inherit' }}>
-                          {form.password.length >= 8 ? '✓' : '○'} Minimum 8 caractères
-                        </li>
-                        <li style={{ color: /[A-Z]/.test(form.password) ? 'var(--cds-support-success)' : 'inherit' }}>
-                          {/[A-Z]/.test(form.password) ? '✓' : '○'} Au moins 1 majuscule (A-Z)
-                        </li>
-                        <li style={{ color: /[a-z]/.test(form.password) ? 'var(--cds-support-success)' : 'inherit' }}>
-                          {/[a-z]/.test(form.password) ? '✓' : '○'} Au moins 1 minuscule (a-z)
-                        </li>
-                        <li style={{ color: /[0-9]/.test(form.password) ? 'var(--cds-support-success)' : 'inherit' }}>
-                          {/[0-9]/.test(form.password) ? '✓' : '○'} Au moins 1 chiffre (0-9)
-                        </li>
-                        <li style={{ color: /[!@#$%^&*()_+\-=\[\]{};':"\\|,.<>\/?]/.test(form.password) ? 'var(--cds-support-success)' : 'inherit' }}>
-                          {/[!@#$%^&*()_+\-=\[\]{};':"\\|,.<>\/?]/.test(form.password) ? '✓' : '○'} Au moins 1 caractère spécial (!@#$...)
-                        </li>
-                      </ul>
-                    </div>
-                  </div>
-                </div>
-                <div className="grid-3">
-                  <div className="form-group"><label className="form-label">Nom</label><input type="text" className="form-input" value={form.nom} onChange={e => setForm({...form, nom: e.target.value})} /></div>
-                  <div className="form-group"><label className="form-label">Prénom</label><input type="text" className="form-input" value={form.prenom} onChange={e => setForm({...form, prenom: e.target.value})} /></div>
-                  <div className="form-group"><label className="form-label">Téléphone</label><input type="tel" className="form-input" value={form.telephone} onChange={e => setForm({...form, telephone: e.target.value})} /></div>
-                </div>
-                <div className="form-group">
-                  <label className="form-label">Rôle *</label>
-                  <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '0.5rem' }}>
-                    {Object.entries(roleConfig).map(([role, cfg]) => (
-                      <div key={role} className="tile tile-clickable" style={{ padding: '0.75rem', borderLeft: form.role === role ? '3px solid var(--cds-interactive)' : '3px solid transparent', cursor: 'pointer' }} onClick={() => setForm({...form, role})}>
-                        <div className="d-flex align-center gap-1">
-                          <input type="radio" checked={form.role === role} onChange={() => setForm({...form, role})} />
-                          <span className={`tag ${cfg.tag}`}>{cfg.label}</span>
-                        </div>
-                        <p className="text-muted" style={{ fontSize: '0.6875rem', marginTop: '0.25rem', marginLeft: '1.25rem' }}>{cfg.desc}</p>
-                      </div>
-                    ))}
-                  </div>
-                </div>
-              </div>
-              <div className="modal-footer"><button type="button" className="btn-secondary" onClick={() => setShowModal(false)}>Annuler</button><button type="submit" className="btn-primary">Créer l'utilisateur</button></div>
-            </form>
-          </div>
-        </div>
-      )}
     </div>
   );
 }

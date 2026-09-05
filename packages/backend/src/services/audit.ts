@@ -5,6 +5,7 @@
  */
 
 import { prisma } from '../config/db.js';
+import { getRequestContext } from './request-context.js';
 
 export interface AuditEntry {
   userId: number;
@@ -47,6 +48,13 @@ export async function logAudit(entry: AuditEntry): Promise<void> {
       details = details.substring(0, 2000) + '... [truncated]';
     }
 
+    // "Where": prefer an explicitly-passed ip (a handful of call sites pass
+    // one already resolved, e.g. login attempts), otherwise fall back to the
+    // AsyncLocalStorage request context so every call site gets it for free.
+    const ctx = getRequestContext();
+    const ip = entry.ip || ctx?.ip || null;
+    const route = ctx ? `${ctx.method} ${ctx.route}` : null;
+
     await prisma.auditLog.create({
       data: {
         userId: entry.userId,
@@ -54,6 +62,8 @@ export async function logAudit(entry: AuditEntry): Promise<void> {
         tableName: entry.tableName,
         recordId: entry.recordId || null,
         details: details || null,
+        ipAddress: ip,
+        route,
       },
     });
   } catch (err) {

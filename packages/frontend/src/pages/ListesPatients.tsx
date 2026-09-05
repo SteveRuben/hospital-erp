@@ -2,6 +2,8 @@ import { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { getListesPatients, getListePatients, createListePatients, deleteListePatients, addPatientToListe, removePatientFromListe } from '../services/api';
 import PatientTypeahead from '../components/PatientTypeahead';
+import { useSnackbar } from '../components/Snackbar';
+import { useConfirm } from '../components/ConfirmDialog';
 
 export default function ListesPatients() {
   const [listes, setListes] = useState<any[]>([]);
@@ -11,6 +13,8 @@ export default function ListesPatients() {
   const [showAddModal, setShowAddModal] = useState(false);
   const [createForm, setCreateForm] = useState({ nom: '', description: '' });
   const [addPatientId, setAddPatientId] = useState('');
+  const { showSnackbar } = useSnackbar();
+  const { confirm } = useConfirm();
   const navigate = useNavigate();
 
   useEffect(() => { loadData(); }, []);
@@ -31,26 +35,27 @@ export default function ListesPatients() {
   const handleCreate = async (e: React.FormEvent) => {
     e.preventDefault();
     try { await createListePatients(createForm); setShowCreateModal(false); setCreateForm({ nom: '', description: '' }); loadData(); }
-    catch { alert('Erreur'); }
+    catch { showSnackbar('Erreur', 'error'); }
   };
 
   const handleAddPatient = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!selectedListe || !addPatientId) return;
     try { await addPatientToListe(selectedListe.id, Number(addPatientId)); setShowAddModal(false); setAddPatientId(''); selectListe(selectedListe.id); loadData(); }
-    catch (err: any) { alert(err.response?.data?.error || 'Erreur'); }
+    catch (err: any) { showSnackbar(err.response?.data?.error || 'Erreur', 'error'); }
   };
 
   const handleRemovePatient = async (patientId: number) => {
     if (!selectedListe) return;
     try { await removePatientFromListe(selectedListe.id, patientId); selectListe(selectedListe.id); loadData(); }
-    catch { alert('Erreur'); }
+    catch { showSnackbar('Erreur', 'error'); }
   };
 
   const handleDeleteListe = async (id: number) => {
-    if (!confirm('Supprimer cette liste ?')) return;
+    const ok = await confirm({ message: 'Supprimer cette liste ?', variant: 'danger' });
+    if (!ok) return;
     try { await deleteListePatients(id); setSelectedListe(null); loadData(); }
-    catch { alert('Erreur'); }
+    catch { showSnackbar('Erreur', 'error'); }
   };
 
   if (loading) return <div className="loading"><div className="spinner"></div></div>;

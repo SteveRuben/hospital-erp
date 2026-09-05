@@ -1,12 +1,14 @@
 import { useState, useEffect } from 'react';
 import { getOrders, createOrder, updateOrderStatut, getConcepts } from '../services/api';
 import PatientTypeahead from '../components/PatientTypeahead';
+import { useSnackbar } from '../components/Snackbar';
 
 const typeLabels: Record<string, { label: string; tag: string }> = { prescription: { label: 'Prescription', tag: 'tag-blue' }, test_labo: { label: 'Test Labo', tag: 'tag-purple' }, imagerie: { label: 'Imagerie', tag: 'tag-teal' }, procedure: { label: 'Procédure', tag: 'tag-green' }, referral: { label: 'Référence', tag: 'tag-orange' } };
 const statutLabels: Record<string, { label: string; tag: string }> = { nouveau: { label: 'Nouveau', tag: 'tag-gray' }, actif: { label: 'Actif', tag: 'tag-blue' }, complete: { label: 'Complété', tag: 'tag-green' }, annule: { label: 'Annulé', tag: 'tag-red' }, expire: { label: 'Expiré', tag: 'tag-yellow' } };
 const urgenceLabels: Record<string, { label: string; tag: string }> = { routine: { label: 'Routine', tag: 'tag-gray' }, urgent: { label: 'Urgent', tag: 'tag-orange' }, stat: { label: 'STAT', tag: 'tag-red' } };
 
 export default function Orders() {
+  const { showSnackbar } = useSnackbar();
   const [orders, setOrders] = useState<any[]>([]);
   const [total, setTotal] = useState(0);
   const [concepts, setConcepts] = useState<any[]>([]);
@@ -29,11 +31,11 @@ export default function Orders() {
   const handleCreate = async (e: React.FormEvent) => {
     e.preventDefault();
     try { await createOrder(form); setShowModal(false); setForm({ patient_id: '', concept_id: '', type_order: 'prescription', urgence: 'routine', instructions: '', dosage: '', frequence: '', duree: '', voie: '' }); loadData(); }
-    catch (err: any) { alert(err.response?.data?.error || 'Erreur'); }
+    catch (err: any) { showSnackbar(err.response?.data?.error || 'Erreur', 'error'); }
   };
 
   const changeStatut = async (id: number, statut: string) => {
-    try { await updateOrderStatut(id, { statut }); loadData(); } catch { alert('Erreur'); }
+    try { await updateOrderStatut(id, { statut }); loadData(); } catch { showSnackbar('Erreur', 'error'); }
   };
 
   return (
