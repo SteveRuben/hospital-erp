@@ -1012,6 +1012,10 @@ model StockMouvement {
   motif         String?
   userId        Int?     @map("user_id")
   createdAt     DateTime @default(now()) @map("created_at")
+  // 'perime' movements don't touch stock immediately — they wait for an
+  // admin to approve/reject (valide | en_attente | rejete). All other types
+  // are 'valide' from creation.
+  statut        String   @default("valide") @db.VarChar(20)
   @@map("stock_mouvements")
 }
 

@@ -1971,6 +1971,12 @@ export const initDB = async (): Promise<void> => {
       ALTER TABLE audit_log ADD COLUMN IF NOT EXISTS route VARCHAR(255);
     `);
 
+    // Mouvements 'perime' passent par une approbation admin avant de
+    // toucher le stock (cf. routes/pharmacie.ts POST /mouvements + .../approuver).
+    await client.query(`
+      ALTER TABLE stock_mouvements ADD COLUMN IF NOT EXISTS statut VARCHAR(20) NOT NULL DEFAULT 'valide';
+    `);
+
     // OWASP A09: hash-chain trigger. Mirrors prisma/migrations/20260516020000.
     // Railway deploys boot via init.ts (not `prisma migrate deploy`), so the
     // trigger must be (re)created here or the hash/prev_hash columns stay NULL

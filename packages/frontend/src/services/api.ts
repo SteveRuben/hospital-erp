@@ -609,6 +609,8 @@ export const getStock = () => api.get('/pharmacie/stock');
 export const createStock = (data: unknown) => api.post('/pharmacie/stock', data);
 export const createMouvement = (data: unknown) => api.post('/pharmacie/mouvements', data);
 export const getMouvements = () => api.get('/pharmacie/mouvements');
+export const approuverMouvement = (id: number) => api.post(`/pharmacie/mouvements/${id}/approuver`);
+export const rejeterMouvement = (id: number) => api.post(`/pharmacie/mouvements/${id}/rejeter`);
 export const createDispensation = (data: unknown) => api.post('/pharmacie/dispensations', data);
 export const getDispensations = () => api.get('/pharmacie/dispensations');
 export const getPharmacieAlertes = () => api.get('/pharmacie/alertes');

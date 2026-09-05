@@ -1,11 +1,16 @@
 import { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
-import api, { getMedicaments, deleteMedicament, getStock, createStock, getMouvements, createMouvement, getPharmacieAlertes, getDispensations } from '../services/api';
+import api, { getMedicaments, deleteMedicament, getStock, createStock, getMouvements, createMouvement, getPharmacieAlertes, getDispensations, approuverMouvement, rejeterMouvement } from '../services/api';
 import { useSnackbar } from '../components/Snackbar';
 import { useConfirm } from '../components/ConfirmDialog';
 
+function currentRole(): string | undefined {
+  try { return JSON.parse(localStorage.getItem('user') || '{}').role; } catch { return undefined; }
+}
+
 export default function Pharmacie() {
   const navigate = useNavigate();
+  const role = currentRole();
   const [tab, setTab] = useState<'catalogue' | 'stock' | 'mouvements' | 'dispensations' | 'alertes'>('catalogue');
   const [medicaments, setMedicaments] = useState<any[]>([]);
   const [stock, setStockData] = useState<any[]>([]);
@@ -45,7 +50,20 @@ export default function Pharmacie() {
   };
 
   const handleStock = async (e: React.FormEvent) => { e.preventDefault(); try { await createStock({ ...stockForm, quantite: Number(stockForm.quantite), quantite_min: Number(stockForm.quantite_min), prix_achat: stockForm.prix_achat ? Number(stockForm.prix_achat) : null }); setShowModal(null); loadAll(); showSnackbar('Stock enregistré', 'success'); } catch { showSnackbar('Erreur', 'error'); } };
-  const handleMvt = async (e: React.FormEvent) => { e.preventDefault(); try { await createMouvement({ ...mvtForm, quantite: Number(mvtForm.quantite) }); setShowModal(null); setMvtForm({ medicament_id: '', type_mouvement: 'entree', quantite: '', lot: '', motif: '' }); loadAll(); showSnackbar('Mouvement enregistré', 'success'); } catch { showSnackbar('Erreur', 'error'); } };
+  const handleMvt = async (e: React.FormEvent) => { e.preventDefault(); try { await createMouvement({ ...mvtForm, quantite: Number(mvtForm.quantite) }); setShowModal(null); setMvtForm({ medicament_id: '', type_mouvement: 'entree', quantite: '', lot: '', motif: '' }); loadAll(); showSnackbar('Mouvement enregistré', 'success'); } catch (err: any) { showSnackbar(err.response?.data?.error || 'Erreur lors de l\'enregistrement du mouvement', 'error'); } };
+
+  const handleApprouverMvt = async (id: number) => {
+    const ok = await confirm({ message: 'Approuver ce retrait pour péremption ? Le stock sera décrémenté.', variant: 'warning' });
+    if (!ok) return;
+    try { await approuverMouvement(id); showSnackbar('Retrait approuvé', 'success'); loadAll(); }
+    catch (err: any) { showSnackbar(err.response?.data?.error || 'Erreur lors de l\'approbation', 'error'); }
+  };
+  const handleRejeterMvt = async (id: number) => {
+    const ok = await confirm({ message: 'Rejeter ce retrait pour péremption ? Le stock ne sera pas modifié.', variant: 'danger' });
+    if (!ok) return;
+    try { await rejeterMouvement(id); showSnackbar('Retrait rejeté', 'success'); loadAll(); }
+    catch (err: any) { showSnackbar(err.response?.data?.error || 'Erreur lors du rejet', 'error'); }
+  };
 
   const fmt = (n: number) => new Intl.NumberFormat('fr-FR', { style: 'currency', currency: 'XOF' }).format(n);
   const totalAlertes = alertes ? (alertes.stockBas?.length || 0) + (alertes.rupture?.length || 0) + (alertes.perimes?.length || 0) + (alertes.bientotPerimes?.length || 0) : 0;
@@ -58,8 +76,8 @@ export default function Pharmacie() {
       <div className="page-header"><h1 className="page-title">Pharmacie</h1>
         <div className="d-flex gap-1">
           {tab === 'catalogue' && <button className="btn-primary" onClick={() => navigate('/app/pharmacie/nouveau')}><i className="bi bi-plus-lg"></i> Nouveau médicament</button>}
-          {tab === 'stock' && <button className="btn-primary" onClick={() => setShowModal('stock')}><i className="bi bi-plus"></i> Entrée stock</button>}
-          {tab === 'mouvements' && <button className="btn-primary" onClick={() => setShowModal('mvt')}><i className="bi bi-plus"></i> Mouvement</button>}
+          {tab === 'stock' && <button className="btn-primary" onClick={() => setShowModal(showModal === 'stock' ? null : 'stock')}><i className={`bi ${showModal === 'stock' ? 'bi-dash-lg' : 'bi-plus'}`}></i> Entrée stock</button>}
+          {tab === 'mouvements' && <button className="btn-primary" onClick={() => setShowModal(showModal === 'mvt' ? null : 'mvt')}><i className={`bi ${showModal === 'mvt' ? 'bi-dash-lg' : 'bi-plus'}`}></i> Mouvement</button>}
         </div>
       </div>
 
@@ -77,6 +95,30 @@ export default function Pharmacie() {
         <button className={`tab-item ${tab === 'dispensations' ? 'active' : ''}`} onClick={() => setTab('dispensations')}>Dispensations</button>
         <button className={`tab-item ${tab === 'alertes' ? 'active' : ''}`} onClick={() => setTab('alertes')}>Alertes {totalAlertes > 0 && <span className="tag tag-red" style={{marginLeft:'0.25rem'}}>{totalAlertes}</span>}</button>
       </div>
+
+      {tab === 'stock' && showModal === 'stock' && (
+        <div className="tile mb-2" style={{ padding: '1.25rem' }}>
+          <h3 style={{ fontSize: '0.875rem', fontWeight: 600, marginBottom: '1rem' }}>Entrée de stock</h3>
+          <form onSubmit={handleStock}>
+            <div className="form-group"><label className="form-label">Médicament *</label><select className="form-select" value={stockForm.medicament_id} onChange={e => setStockForm({...stockForm, medicament_id: e.target.value})} required><option value="">Sélectionner...</option>{medicaments.map((m: any) => <option key={m.id} value={m.id}>{m.nom} {m.forme ? `(${m.forme})` : ''}</option>)}</select></div>
+            <div className="grid-3"><div className="form-group"><label className="form-label">Quantité *</label><input type="number" className="form-input" value={stockForm.quantite} onChange={e => setStockForm({...stockForm, quantite: e.target.value})} required /></div><div className="form-group"><label className="form-label">Seuil min</label><input type="number" className="form-input" value={stockForm.quantite_min} onChange={e => setStockForm({...stockForm, quantite_min: e.target.value})} /></div><div className="form-group"><label className="form-label">Lot</label><input type="text" className="form-input" value={stockForm.lot} onChange={e => setStockForm({...stockForm, lot: e.target.value})} /></div></div>
+            <div className="grid-2"><div className="form-group"><label className="form-label">Date expiration</label><input type="date" className="form-input" value={stockForm.date_expiration} onChange={e => setStockForm({...stockForm, date_expiration: e.target.value})} /></div><div className="form-group"><label className="form-label">Fournisseur</label><input type="text" className="form-input" value={stockForm.fournisseur} onChange={e => setStockForm({...stockForm, fournisseur: e.target.value})} /></div></div>
+            <div className="d-flex gap-1" style={{ justifyContent: 'flex-end', marginTop: '1rem' }}><button type="button" className="btn-secondary" onClick={() => setShowModal(null)}>Annuler</button><button type="submit" className="btn-primary">Enregistrer</button></div>
+          </form>
+        </div>
+      )}
+
+      {tab === 'mouvements' && showModal === 'mvt' && (
+        <div className="tile mb-2" style={{ padding: '1.25rem' }}>
+          <h3 style={{ fontSize: '0.875rem', fontWeight: 600, marginBottom: '1rem' }}>Mouvement de stock</h3>
+          <form onSubmit={handleMvt}>
+            <div className="grid-2"><div className="form-group"><label className="form-label">Médicament *</label><select className="form-select" value={mvtForm.medicament_id} onChange={e => setMvtForm({...mvtForm, medicament_id: e.target.value})} required><option value="">Sélectionner...</option>{medicaments.map((m: any) => <option key={m.id} value={m.id}>{m.nom}</option>)}</select></div><div className="form-group"><label className="form-label">Type *</label><select className="form-select" value={mvtForm.type_mouvement} onChange={e => setMvtForm({...mvtForm, type_mouvement: e.target.value})}><option value="entree">Entrée</option><option value="sortie">Sortie</option><option value="ajustement">Ajustement (correction)</option><option value="perime">Périmé (retrait — validation admin)</option></select></div></div>
+            <div className="grid-2"><div className="form-group"><label className="form-label">Quantité *</label><input type="number" className="form-input" value={mvtForm.quantite} onChange={e => setMvtForm({...mvtForm, quantite: e.target.value})} required /></div><div className="form-group"><label className="form-label">Lot</label><input type="text" className="form-input" value={mvtForm.lot} onChange={e => setMvtForm({...mvtForm, lot: e.target.value})} /></div></div>
+            <div className="form-group"><label className="form-label">Motif</label><input type="text" className="form-input" value={mvtForm.motif} onChange={e => setMvtForm({...mvtForm, motif: e.target.value})} /></div>
+            <div className="d-flex gap-1" style={{ justifyContent: 'flex-end', marginTop: '1rem' }}><button type="button" className="btn-secondary" onClick={() => setShowModal(null)}>Annuler</button><button type="submit" className="btn-primary">Enregistrer</button></div>
+          </form>
+        </div>
+      )}
 
       {tab === 'catalogue' && (
         <table className="data-table"><thead><tr><th>Nom</th><th>DCI</th><th>Forme</th><th>Dosage</th><th>Catégorie</th><th>Prix</th><th>Actions</th></tr></thead>
@@ -103,9 +145,19 @@ export default function Pharmacie() {
       )}
 
       {tab === 'mouvements' && (
-        <table className="data-table"><thead><tr><th>Date</th><th>Médicament</th><th>Type</th><th>Quantité</th><th>Lot</th><th>Motif</th><th>Par</th></tr></thead>
-          <tbody>{mouvements.map((m: any) => <tr key={m.id}><td>{new Date(m.created_at).toLocaleString('fr-FR')}</td><td>{m.medicament_nom}</td><td><span className={`tag ${m.type_mouvement === 'entree' ? 'tag-green' : m.type_mouvement === 'sortie' ? 'tag-red' : 'tag-yellow'}`}>{m.type_mouvement}</span></td><td>{m.quantite}</td><td>{m.lot || '-'}</td><td>{m.motif || '-'}</td><td>{m.user_prenom} {m.user_nom}</td></tr>)}
-          {mouvements.length === 0 && <tr><td colSpan={7} className="table-empty">Aucun mouvement</td></tr>}</tbody>
+        <table className="data-table"><thead><tr><th>Date</th><th>Médicament</th><th>Type</th><th>Quantité</th><th>Lot</th><th>Motif</th><th>Par</th><th>Statut</th>{role === 'admin' && <th>Actions</th>}</tr></thead>
+          <tbody>{mouvements.map((m: any) => <tr key={m.id}>
+            <td>{new Date(m.created_at).toLocaleString('fr-FR')}</td>
+            <td>{m.medicament_nom}</td>
+            <td><span className={`tag ${m.type_mouvement === 'entree' ? 'tag-green' : m.type_mouvement === 'sortie' ? 'tag-red' : m.type_mouvement === 'perime' ? 'tag-purple' : 'tag-yellow'}`}>{m.type_mouvement}</span></td>
+            <td>{m.quantite}</td><td>{m.lot || '-'}</td><td>{m.motif || '-'}</td><td>{m.user_prenom} {m.user_nom}</td>
+            <td><span className={`tag ${m.statut === 'valide' ? 'tag-green' : m.statut === 'rejete' ? 'tag-red' : 'tag-yellow'}`}>{m.statut === 'valide' ? 'Validé' : m.statut === 'rejete' ? 'Rejeté' : 'En attente'}</span></td>
+            {role === 'admin' && <td>{m.statut === 'en_attente' && <div className="d-flex gap-05">
+              <button className="btn-sm btn-secondary" title="Approuver" onClick={() => handleApprouverMvt(m.id)}><i className="bi bi-check-lg"></i></button>
+              <button className="btn-sm btn-danger" title="Rejeter" onClick={() => handleRejeterMvt(m.id)}><i className="bi bi-x-lg"></i></button>
+            </div>}</td>}
+          </tr>)}
+          {mouvements.length === 0 && <tr><td colSpan={role === 'admin' ? 9 : 8} className="table-empty">Aucun mouvement</td></tr>}</tbody>
         </table>
       )}
 
@@ -126,29 +178,6 @@ export default function Pharmacie() {
         </div>
       )}
 
-      {/* Stock Modal */}
-      {showModal === 'stock' && (
-        <div className="modal-overlay" onClick={() => setShowModal(null)}><div className="modal-container" onClick={e => e.stopPropagation()}>
-          <div className="modal-header"><h3>Entrée de stock</h3><button className="btn-icon" onClick={() => setShowModal(null)}><i className="bi bi-x-lg"></i></button></div>
-          <form onSubmit={handleStock}><div className="modal-body">
-            <div className="form-group"><label className="form-label">Médicament *</label><select className="form-select" value={stockForm.medicament_id} onChange={e => setStockForm({...stockForm, medicament_id: e.target.value})} required><option value="">Sélectionner...</option>{medicaments.map((m: any) => <option key={m.id} value={m.id}>{m.nom} {m.forme ? `(${m.forme})` : ''}</option>)}</select></div>
-            <div className="grid-3"><div className="form-group"><label className="form-label">Quantité *</label><input type="number" className="form-input" value={stockForm.quantite} onChange={e => setStockForm({...stockForm, quantite: e.target.value})} required /></div><div className="form-group"><label className="form-label">Seuil min</label><input type="number" className="form-input" value={stockForm.quantite_min} onChange={e => setStockForm({...stockForm, quantite_min: e.target.value})} /></div><div className="form-group"><label className="form-label">Lot</label><input type="text" className="form-input" value={stockForm.lot} onChange={e => setStockForm({...stockForm, lot: e.target.value})} /></div></div>
-            <div className="grid-2"><div className="form-group"><label className="form-label">Date expiration</label><input type="date" className="form-input" value={stockForm.date_expiration} onChange={e => setStockForm({...stockForm, date_expiration: e.target.value})} /></div><div className="form-group"><label className="form-label">Fournisseur</label><input type="text" className="form-input" value={stockForm.fournisseur} onChange={e => setStockForm({...stockForm, fournisseur: e.target.value})} /></div></div>
-          </div><div className="modal-footer"><button type="button" className="btn-secondary" onClick={() => setShowModal(null)}>Annuler</button><button type="submit" className="btn-primary">Enregistrer</button></div></form>
-        </div></div>
-      )}
-
-      {/* Mouvement Modal */}
-      {showModal === 'mvt' && (
-        <div className="modal-overlay" onClick={() => setShowModal(null)}><div className="modal-container" onClick={e => e.stopPropagation()}>
-          <div className="modal-header"><h3>Mouvement de stock</h3><button className="btn-icon" onClick={() => setShowModal(null)}><i className="bi bi-x-lg"></i></button></div>
-          <form onSubmit={handleMvt}><div className="modal-body">
-            <div className="grid-2"><div className="form-group"><label className="form-label">Médicament *</label><select className="form-select" value={mvtForm.medicament_id} onChange={e => setMvtForm({...mvtForm, medicament_id: e.target.value})} required><option value="">Sélectionner...</option>{medicaments.map((m: any) => <option key={m.id} value={m.id}>{m.nom}</option>)}</select></div><div className="form-group"><label className="form-label">Type *</label><select className="form-select" value={mvtForm.type_mouvement} onChange={e => setMvtForm({...mvtForm, type_mouvement: e.target.value})}><option value="entree">Entrée</option><option value="sortie">Sortie</option><option value="ajustement">Ajustement</option><option value="perime">Périmé</option></select></div></div>
-            <div className="grid-2"><div className="form-group"><label className="form-label">Quantité *</label><input type="number" className="form-input" value={mvtForm.quantite} onChange={e => setMvtForm({...mvtForm, quantite: e.target.value})} required /></div><div className="form-group"><label className="form-label">Lot</label><input type="text" className="form-input" value={mvtForm.lot} onChange={e => setMvtForm({...mvtForm, lot: e.target.value})} /></div></div>
-            <div className="form-group"><label className="form-label">Motif</label><input type="text" className="form-input" value={mvtForm.motif} onChange={e => setMvtForm({...mvtForm, motif: e.target.value})} /></div>
-          </div><div className="modal-footer"><button type="button" className="btn-secondary" onClick={() => setShowModal(null)}>Annuler</button><button type="submit" className="btn-primary">Enregistrer</button></div></form>
-        </div></div>
-      )}
     </div>
   );
 }

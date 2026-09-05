@@ -6,6 +6,7 @@ import { authenticate, authorize, AuthRequest } from '../middleware/auth.js';
 import { validate, createMedicamentSchema, createStockSchema, createMouvementSchema } from '../middleware/validation.js';
 import { notifyMany } from '../services/notify.js';
 import { billPharmacie, billDispensation } from '../services/billing.js';
+import { auditUpdate } from '../services/audit.js';
 
 const router = Router();
 const upload = multer({ storage: multer.memoryStorage(), limits: { fileSize: 5 * 1024 * 1024 } });
@@ -208,8 +209,19 @@ router.get('/mouvements', authenticate, async (_req: AuthRequest, res: Response)
     ]);
     const medMap = new Map(meds.map(m => [m.id, m]));
     const userMap = new Map(users.map(u => [u.id, u]));
+    // Was `{ ...s, ... }` — spread the raw Prisma row (camelCase: typeMouvement,
+    // createdAt) while the frontend table reads type_mouvement/created_at,
+    // so the type tag never rendered and the date showed "Invalid Date".
     const mapped = rows.map(s => ({
-      ...s,
+      id: s.id,
+      medicament_id: s.medicamentId,
+      type_mouvement: s.typeMouvement,
+      quantite: s.quantite,
+      lot: s.lot,
+      motif: s.motif,
+      user_id: s.userId,
+      created_at: s.createdAt,
+      statut: s.statut,
       medicament_nom: s.medicamentId != null ? (medMap.get(s.medicamentId)?.nom ?? null) : null,
       user_nom: s.userId != null ? (userMap.get(s.userId)?.nom ?? null) : null,
       user_prenom: s.userId != null ? (userMap.get(s.userId)?.prenom ?? null) : null,
@@ -269,30 +281,148 @@ async function checkLowStockAndNotify(medicamentId: number | null | undefined): 
   }
 }
 
+// Resolve the single stock row a mouvement without an explicit lot should
+// act on: the named lot if given, otherwise the FIFO-oldest (soonest to
+// expire) row for that medicament. Shared by creation and by the 'perime'
+// approval step, which re-resolves at approval time since stock may have
+// moved between the write-off request and the admin's decision.
+async function resolveStockTarget(medicamentId: number, lotVal: string | null): Promise<import('@prisma/client').Stock | null> {
+  const candidates = await prisma.stock.findMany({
+    where: { medicamentId, ...(lotVal ? { lot: lotVal } : {}) },
+    orderBy: [{ dateExpiration: 'asc' }, { dateEntree: 'asc' }],
+  });
+  return candidates[0] ?? null;
+}
+
 router.post('/mouvements', authenticate, validate(createMouvementSchema), async (req: AuthRequest, res: Response): Promise<void> => {
   try {
     const { medicament_id, type_mouvement, quantite, lot, motif } = req.body;
     const n = (v: unknown) => (v === '' || v === undefined) ? null : v;
-    await prisma.stockMouvement.create({
-      data: {
-        medicamentId: medicament_id ?? null,
-        typeMouvement: type_mouvement,
-        quantite,
-        lot: n(lot) as string | null,
-        motif: n(motif) as string | null,
-        userId: req.user!.id,
-      },
-    });
-    // Update stock quantity (matching the SQL: lot = $3 OR $3 IS NULL → match any lot when lot is null)
     const lotVal = n(lot) as string | null;
-    if (type_mouvement === 'entree') {
-      await prisma.$executeRaw`UPDATE stock SET quantite = quantite + ${quantite} WHERE medicament_id = ${medicament_id} AND (lot = ${lotVal} OR ${lotVal}::text IS NULL)`;
-    } else if (type_mouvement === 'sortie') {
-      await prisma.$executeRaw`UPDATE stock SET quantite = quantite - ${quantite} WHERE medicament_id = ${medicament_id} AND (lot = ${lotVal} OR ${lotVal}::text IS NULL)`;
-      await checkLowStockAndNotify(medicament_id);
+
+    // Was `WHERE medicament_id = X AND (lot = $lot OR $lot IS NULL)` — when no
+    // lot is picked, "$lot IS NULL" is true for every row, so the UPDATE hit
+    // *every* lot of that medicament and applied the full delta to each one
+    // (e.g. "sortie" of 5 across 3 lots silently removed 15). It also never
+    // checked available quantity, so a sortie could push stock negative.
+    // Fix: resolve to exactly one stock row and validate against it.
+    //   entree      → add quantite to the target row.
+    //   sortie      → subtract, rejected if it would go negative.
+    //   ajustement  → correction: SET the target row to quantite (the counted
+    //                 true value), not a delta.
+    //   perime      → expired stock to write off. Doesn't touch stock here —
+    //                 stays 'en_attente' until an admin approves (see
+    //                 POST /mouvements/:id/approuver), which is where the
+    //                 actual decrement + sufficiency check happens.
+    let target: import('@prisma/client').Stock | null = null;
+    if (type_mouvement !== 'perime') {
+      target = await resolveStockTarget(medicament_id, lotVal);
+      if (!target) {
+        res.status(400).json({ error: lotVal ? `Aucun stock pour le lot "${lotVal}"` : 'Aucun stock pour ce médicament' });
+        return;
+      }
+      if (type_mouvement === 'sortie' && target.quantite < quantite) {
+        res.status(400).json({ error: `Stock insuffisant (disponible : ${target.quantite}, demandé : ${quantite})` });
+        return;
+      }
+    } else {
+      // Creation-time sanity check only (does the medicament/lot exist at
+      // all) — the authoritative sufficiency check happens at approval time.
+      const exists = await resolveStockTarget(medicament_id, lotVal);
+      if (!exists) {
+        res.status(400).json({ error: lotVal ? `Aucun stock pour le lot "${lotVal}"` : 'Aucun stock pour ce médicament' });
+        return;
+      }
     }
-    res.json({ message: 'Mouvement enregistré' });
-  } catch (err) { res.status(500).json({ error: 'Erreur serveur' }); }
+
+    const writes: Prisma.PrismaPromise<unknown>[] = [
+      prisma.stockMouvement.create({
+        data: {
+          medicamentId: medicament_id ?? null,
+          typeMouvement: type_mouvement,
+          quantite,
+          lot: lotVal,
+          motif: n(motif) as string | null,
+          userId: req.user!.id,
+          statut: type_mouvement === 'perime' ? 'en_attente' : 'valide',
+        },
+      }),
+    ];
+    if (target) {
+      writes.push(prisma.stock.update({
+        where: { id: target.id },
+        data: {
+          quantite:
+            type_mouvement === 'entree' ? target.quantite + quantite :
+            type_mouvement === 'ajustement' ? quantite :
+            target.quantite - quantite, // sortie
+        },
+      }));
+    }
+
+    await prisma.$transaction(writes);
+    if (type_mouvement === 'sortie') await checkLowStockAndNotify(medicament_id);
+
+    if (type_mouvement === 'perime') {
+      const [admins, medicament] = await Promise.all([
+        prisma.user.findMany({ where: { role: 'admin' }, select: { id: true } }),
+        prisma.medicament.findUnique({ where: { id: medicament_id }, select: { nom: true } }),
+      ]);
+      await notifyMany(admins.map(a => a.id), {
+        type: 'stock_perime_approval',
+        title: `Péremption à valider : ${medicament?.nom ?? `médicament #${medicament_id}`}`,
+        body: `Quantité ${quantite}${lotVal ? ` — Lot ${lotVal}` : ''} — déclaré par ${req.user!.username}${motif ? ` — ${motif}` : ''}`,
+        link: '/app/pharmacie',
+      });
+    }
+
+    res.json({ message: type_mouvement === 'perime' ? 'Mouvement enregistré — en attente de validation admin' : 'Mouvement enregistré' });
+  } catch (err) { console.error('[PHARMACIE] Mouvement error:', err); res.status(500).json({ error: 'Erreur serveur' }); }
+});
+
+// Admin decision on a pending 'perime' write-off. Approving is where the
+// stock actually gets decremented — re-resolved and re-checked for
+// sufficiency now, since time has passed since the request was filed.
+router.post('/mouvements/:id/approuver', authenticate, authorize('admin'), async (req: AuthRequest, res: Response): Promise<void> => {
+  try {
+    const id = Number(req.params.id);
+    const mvt = await prisma.stockMouvement.findUnique({ where: { id } });
+    if (!mvt) { res.status(404).json({ error: 'Mouvement non trouvé' }); return; }
+    if (mvt.typeMouvement !== 'perime' || mvt.statut !== 'en_attente') {
+      res.status(400).json({ error: 'Ce mouvement ne peut pas être approuvé' });
+      return;
+    }
+    if (!mvt.medicamentId) { res.status(400).json({ error: 'Médicament manquant sur ce mouvement' }); return; }
+
+    const target = await resolveStockTarget(mvt.medicamentId, mvt.lot);
+    if (!target || target.quantite < mvt.quantite) {
+      res.status(400).json({ error: `Stock insuffisant pour valider ce retrait (disponible : ${target?.quantite ?? 0}, demandé : ${mvt.quantite})` });
+      return;
+    }
+
+    await prisma.$transaction([
+      prisma.stock.update({ where: { id: target.id }, data: { quantite: target.quantite - mvt.quantite } }),
+      prisma.stockMouvement.update({ where: { id }, data: { statut: 'valide' } }),
+    ]);
+    auditUpdate(req.user!.id, 'stock_mouvements', id, { statut: 'en_attente' }, { statut: 'valide' });
+    await checkLowStockAndNotify(mvt.medicamentId);
+    res.json({ message: 'Retrait pour péremption approuvé' });
+  } catch (err) { console.error('[PHARMACIE] Approbation mouvement error:', err); res.status(500).json({ error: 'Erreur serveur' }); }
+});
+
+router.post('/mouvements/:id/rejeter', authenticate, authorize('admin'), async (req: AuthRequest, res: Response): Promise<void> => {
+  try {
+    const id = Number(req.params.id);
+    const mvt = await prisma.stockMouvement.findUnique({ where: { id } });
+    if (!mvt) { res.status(404).json({ error: 'Mouvement non trouvé' }); return; }
+    if (mvt.typeMouvement !== 'perime' || mvt.statut !== 'en_attente') {
+      res.status(400).json({ error: 'Ce mouvement ne peut pas être rejeté' });
+      return;
+    }
+    await prisma.stockMouvement.update({ where: { id }, data: { statut: 'rejete' } });
+    auditUpdate(req.user!.id, 'stock_mouvements', id, { statut: 'en_attente' }, { statut: 'rejete' });
+    res.json({ message: 'Retrait pour péremption rejeté' });
+  } catch (err) { console.error('[PHARMACIE] Rejet mouvement error:', err); res.status(500).json({ error: 'Erreur serveur' }); }
 });
 
 // === DISPENSATIONS ===

@@ -337,7 +337,7 @@ export const createStockSchema = z.object({
 // (500 on every entrée/sortie). Same numeric-coercion pattern as createStockSchema.
 export const createMouvementSchema = z.object({
   medicament_id: numeric(z.number().int().positive()),
-  type_mouvement: z.enum(['entree', 'sortie']),
+  type_mouvement: z.enum(['entree', 'sortie', 'ajustement', 'perime']),
   quantite: numeric(z.number().int().positive().max(1_000_000)),
   lot: z.string().max(100).trim().optional().nullable(),
   motif: z.string().max(500).trim().optional().nullable(),
