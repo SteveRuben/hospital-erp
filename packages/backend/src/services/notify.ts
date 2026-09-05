@@ -21,6 +21,7 @@ export type NotificationType =
   | 'admission'         // a patient was admitted to the user's service
   | 'stock_low'         // a critical medication is running low
   | 'stock_perime_approval' // an expired-stock write-off is awaiting admin approval
+  | 'stock_mouvement_orphelin' // a mouvement was filed against a lot that doesn't exist in stock
   | 'chat_message'      // direct chat message (Phase 2)
   | 'chat_mention'      // mentioned in a chat channel (Phase 2)
   | 'attribution_propose'; // patient assignment proposed, awaiting medecin OK

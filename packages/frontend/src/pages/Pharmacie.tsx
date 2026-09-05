@@ -148,7 +148,10 @@ export default function Pharmacie() {
         <table className="data-table"><thead><tr><th>Date</th><th>Médicament</th><th>Type</th><th>Quantité</th><th>Lot</th><th>Motif</th><th>Par</th><th>Statut</th>{role === 'admin' && <th>Actions</th>}</tr></thead>
           <tbody>{mouvements.map((m: any) => <tr key={m.id} style={m.orphelin ? { background: '#ffd7d9' } : undefined}>
             <td>{new Date(m.created_at).toLocaleString('fr-FR')}</td>
-            <td>{m.medicament_nom}</td>
+            <td>{m.orphelin && m.medicament_id
+              ? <a href="#" onClick={e => { e.preventDefault(); navigate(`/app/pharmacie/${m.medicament_id}`); }} title="Ouvrir le produit pour corriger le stock">{m.medicament_nom} <i className="bi bi-box-arrow-up-right" style={{ fontSize: '0.75rem' }}></i></a>
+              : m.medicament_nom}
+            </td>
             <td><span className={`tag ${m.type_mouvement === 'entree' ? 'tag-green' : m.type_mouvement === 'sortie' ? 'tag-red' : m.type_mouvement === 'perime' ? 'tag-purple' : 'tag-yellow'}`}>{m.type_mouvement}</span></td>
             <td>{m.quantite}</td>
             <td className={m.orphelin ? 'text-danger fw-600' : ''} title={m.orphelin ? `Aucun lot "${m.lot}" en stock — ce mouvement n'a pas modifié le stock, à corriger` : undefined}>
