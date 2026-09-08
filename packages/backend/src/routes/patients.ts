@@ -235,6 +235,13 @@ router.get('/:id', authenticate, async (req: AuthRequest, res: Response): Promis
   try {
     const patientId = Number(req.params.id);
 
+    // Non-numeric ids (e.g. "duplicates" from the later-mounted patient-merge
+    // router, shadowed by this route) produced NaN → prisma throws → 500.
+    if (!Number.isInteger(patientId) || patientId <= 0) {
+      res.status(400).json({ error: 'ID patient invalide' });
+      return;
+    }
+
     if (!(await canAccessPatient(req.user!, patientId))) {
       res.status(403).json({ error: 'Accès refusé — ce patient ne vous est pas attribué' });
       return;
@@ -262,8 +269,20 @@ router.post('/', authenticate, authorize('admin', 'medecin', 'reception'), valid
     }
 
     const n = <T,>(v: T): T | null => (v === '' || v === undefined ? null : v) as T | null;
-    const reference_id = await generatePatientReferenceId(nom, prenom);
+    let reference_id = await generatePatientReferenceId(nom, prenom);
     const scope = facilityScope(req.user!, req.headers['x-facility-id']);
+
+    // The scope can resolve a facility that no longer exists (stale JWT
+    // facilityId or stale X-Facility-Id header) → prisma P2025 on connect.
+    // Guard up-front so the user gets an actionable message instead of a
+    // generic 500 on every attempt.
+    if (scope.kind === 'restricted') {
+      const facility = await prisma.facility.findUnique({ where: { id: scope.facilityId }, select: { id: true, actif: true } });
+      if (!facility || !facility.actif) {
+        res.status(400).json({ error: 'Établissement introuvable ou désactivé — déconnectez-vous puis reconnectez-vous, ou changez d\'établissement' });
+        return;
+      }
+    }
 
     const data: Prisma.PatientCreateInput = {
       referenceId: reference_id,
@@ -293,8 +312,33 @@ router.post('/', authenticate, authorize('admin', 'medecin', 'reception'), valid
     };
     if (date_naissance) data.dateNaissance = new Date(date_naissance);
 
-    // OWASP A02: encrypt PHI fields before persisting
-    const created = await prisma.patient.create({ data: encryptFields(data as Record<string, unknown>, ENC_FIELDS) as Prisma.PatientCreateInput });
+    // OWASP A02: encrypt PHI fields before persisting. Retries on P2002:
+    // referenceId is @unique and generated from a daily count + 1 — two
+    // concurrent registrations (or counter drift after an archive/delete)
+    // collide with the same computed value. On collision, append a short
+    // uniqueness suffix instead of failing with a 500.
+    let created: Prisma.PatientGetPayload<{}> | null = null;
+    let lastErr: unknown = null;
+    for (let attempt = 0; attempt < 3 && !created; attempt++) {
+      try {
+        created = await prisma.patient.create({ data: encryptFields(data as Record<string, unknown>, ENC_FIELDS) as Prisma.PatientCreateInput });
+      } catch (err) {
+        lastErr = err;
+        const code = (err as { code?: string })?.code;
+        if (code !== 'P2002') break;
+        if (attempt === 0) {
+          data.referenceId = reference_id = await generatePatientReferenceId(nom, prenom);
+        } else {
+          // Same count+1 twice in a row means the counter is stuck (e.g.
+          // same-day re-creation after archiving) — disambiguate with a
+          // short suffix derived from the timestamp.
+          const suffix = String(Date.now()).slice(-3);
+          const base = reference_id.slice(0, 27); // keep VarChar(30) headroom
+          data.referenceId = reference_id = `${base}-${suffix}`;
+        }
+      }
+    }
+    if (!created) throw lastErr;
 
     auditCreate(req.user!.id, 'patients', created.id, `Created patient ${prenom} ${nom}`);
 
@@ -318,6 +362,22 @@ router.post('/', authenticate, authorize('admin', 'medecin', 'reception'), valid
     res.status(201).json(decryptPatient(created));
   } catch (err) {
     console.error('[ERROR] Create patient:', err);
+    // Surface Prisma known errors with a clear message instead of a bare
+    // "Erreur serveur" that hides the real cause from the user.
+    const code = (err as { code?: string })?.code;
+    if (code === 'P2002') {
+      res.status(409).json({ error: 'Référence patient déjà utilisée — réessayez dans un instant' });
+      return;
+    }
+    if (code === 'P2025') {
+      res.status(400).json({ error: 'Établissement introuvable — déconnectez-vous puis reconnectez-vous' });
+      return;
+    }
+    if (code === 'P2022') {
+      console.error('[ERROR] DB schema drift: facility_id column missing — run migrations (init.ts or prisma migrate deploy)');
+      res.status(500).json({ error: 'Configuration base de données incomplète (facility_id) — contactez l\'administrateur' });
+      return;
+    }
     res.status(500).json({ error: 'Erreur serveur' });
   }
 });

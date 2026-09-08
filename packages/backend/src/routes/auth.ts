@@ -688,11 +688,11 @@ router.post('/impersonate/:id', authenticate, authorize('admin'), async (req: Au
   try {
     const target = await prisma.user.findUnique({
       where: { id: Number(req.params.id) },
-      select: { id: true, username: true, role: true, nom: true, prenom: true },
+      select: { id: true, username: true, role: true, nom: true, prenom: true, facilityId: true },
     });
     if (!target) { res.status(404).json({ error: 'Utilisateur non trouvé' }); return; }
 
-    const token = generateToken(target);
+    const token = generateToken({ ...target, facilityId: target.facilityId ?? undefined });
 
     await logAudit({ userId: req.user!.id, action: 'impersonate', tableName: 'users', recordId: target.id, details: `Admin ${req.user!.username} impersonated ${target.username} (${target.role})` });
 
@@ -723,11 +723,11 @@ router.post('/stop-impersonate', authenticate, async (req: AuthRequest, res: Res
 
     const admin = await prisma.user.findFirst({
       where: { id: admin_id, role: 'admin' },
-      select: { id: true, username: true, role: true, nom: true, prenom: true },
+      select: { id: true, username: true, role: true, nom: true, prenom: true, facilityId: true },
     });
     if (!admin) { res.status(403).json({ error: 'Utilisateur admin non trouvé' }); return; }
 
-    const token = generateToken(admin);
+    const token = generateToken({ ...admin, facilityId: admin.facilityId ?? undefined });
 
     await logAudit({ userId: admin.id, action: 'stop_impersonate' as any, tableName: 'users', recordId: admin.id, details: `Admin ${admin.username} stopped impersonation` });
 
@@ -741,7 +741,7 @@ router.post('/change-password', authenticate, async (req: AuthRequest, res: Resp
     const { old_password, new_password } = req.body;
     if (!old_password || !new_password) { res.status(400).json({ error: 'Ancien et nouveau mot de passe requis' }); return; }
 
-    const u = await prisma.user.findUnique({ where: { id: req.user!.id }, select: { password: true } });
+    const u = await prisma.user.findUnique({ where: { id: req.user!.id }, select: { password: true, facilityId: true } });
     if (!u) { res.status(404).json({ error: 'Utilisateur non trouvé' }); return; }
 
     const valid = await verifyPassword(u.password, old_password);
@@ -763,7 +763,10 @@ router.post('/change-password', authenticate, async (req: AuthRequest, res: Resp
 
     await logAudit({ userId: req.user!.id, action: 'password_change', tableName: 'users', recordId: req.user!.id });
 
-    const newToken = generateToken({ id: req.user!.id, username: req.user!.username, role: req.user!.role });
+    // Preserve the facility scope in the re-issued token: dropping it here
+    // silently unscoped the user (patients created without facility_id and
+    // invisible to facility-filtered lists) after every password change.
+    const newToken = generateToken({ id: req.user!.id, username: req.user!.username, role: req.user!.role, facilityId: u.facilityId ?? undefined });
     res.json({ message: 'Mot de passe modifié', token: newToken });
   } catch (err) { res.status(500).json({ error: 'Erreur serveur' }); }
 });

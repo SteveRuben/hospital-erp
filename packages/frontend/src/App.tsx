@@ -107,19 +107,11 @@ function SessionManager({ children }: { children: React.ReactNode }) {
   const { user, logout } = useContext(AuthContext);
   const navigate = useNavigate();
   const handleTimeout = useCallback(() => {
-    // Save current path + form data so user can resume after re-login
+    // Save the current path so the user resumes where they were after
+    // re-login. Form drafts are already persisted per-keystroke by
+    // useFormPersist (sessionStorage) — the previous DOM-scrape snapshot
+    // (form_data_before_timeout) was written but never read back.
     sessionStorage.setItem('redirect_after_login', window.location.pathname + window.location.search);
-    // Save all form inputs on the current page
-    const formData: Record<string, string> = {};
-    document.querySelectorAll('input, textarea, select').forEach((el, idx) => {
-      const input = el as HTMLInputElement;
-      const name = input.name || input.id || `field_${idx}`;
-      if (input.type === 'password' || input.type === 'hidden') return;
-      if (input.value) formData[name] = input.value;
-    });
-    if (Object.keys(formData).length > 0) {
-      sessionStorage.setItem('form_data_before_timeout', JSON.stringify(formData));
-    }
     logout();
     navigate('/login?expired=1');
   }, [logout, navigate]);

@@ -20,6 +20,10 @@ export default function Finances() {
   const [typeActes, setTypeActes] = useState<RefItem[]>([]);
   const [typeDepenses, setTypeDepenses] = useState<RefItem[]>([]);
   const [modesPaiement, setModesPaiement] = useState<RefItem[]>([]);
+  // Set when a reference list fails to load — previously the silent
+  // .catch(() => ({ data: [] })) left the dropdowns empty with no feedback,
+  // which looked like "the types no longer load" with no clue why.
+  const [listesError, setListesError] = useState(false);
   const [loading, setLoading] = useState(true);
   const [showModal, setShowModal] = useState(false);
   const [recForm, setRecForm] = useState({ patient_id: '', service_id: '', type_acte: '', montant: '', mode_paiement: 'especes', description: '' });
@@ -29,12 +33,17 @@ export default function Finances() {
 
   const loadData = async () => {
     try {
+      // Track reference-list failures separately so a backend outage shows
+      // a visible warning instead of silently empty dropdowns.
+      let listesFailed = false;
+      const safeGet = (url: string) => api.get(url).catch(() => { listesFailed = true; return { data: [] }; });
       const [r, d, c, s, ta, td, mp] = await Promise.all([
         getRecettes(), getDepenses(), getCaisse(), getServices(),
-        api.get('/reference-lists/type_acte').catch(() => ({ data: [] })),
-        api.get('/reference-lists/type_depense').catch(() => ({ data: [] })),
-        api.get('/reference-lists/mode_paiement').catch(() => ({ data: [] })),
+        safeGet('/reference-lists/type_acte'),
+        safeGet('/reference-lists/type_depense'),
+        safeGet('/reference-lists/mode_paiement'),
       ]);
+      setListesError(listesFailed);
       setRecettes(r.data); setDepenses(d.data); setCaisse(c.data); setServices(s.data);
       setTypeActes(ta.data); setTypeDepenses(td.data); setModesPaiement(mp.data);
     } catch (err) { console.error(err); }
@@ -61,6 +70,13 @@ export default function Finances() {
     <div>
       <nav className="breadcrumb"><a href="/app">Accueil</a><span className="breadcrumb-separator">/</span><span>Finances</span></nav>
       <div className="page-header"><h1 className="page-title">Finances</h1><button className="btn-primary" onClick={() => setShowModal(true)}><i className="bi bi-plus"></i> {tab === 'depenses' ? 'Nouvelle dépense' : 'Nouvelle recette'}</button></div>
+
+      {listesError && (
+        <div className="notification notification-warning mb-2">
+          <i className="bi bi-exclamation-triangle"></i>
+          <span>Impossible de charger les listes de référence (types d'acte, modes de paiement). Vérifiez la connexion au serveur puis rechargez la page.</span>
+        </div>
+      )}
 
       {caisse && (
         <div className="grid-3 mb-3">

@@ -893,6 +893,63 @@ export const initDB = async (): Promise<void> => {
       );
     `);
 
+    // users.must_change_password is in the CREATE TABLE but pre-existing
+    // databases (built by an older init or a prisma db push) never got the
+    // ALTER — prisma.user.findUnique() then throws P2022 on login because
+    // the Prisma schema selects the column. Idempotent backfill.
+    await client.query(`
+      ALTER TABLE users ADD COLUMN IF NOT EXISTS must_change_password BOOLEAN DEFAULT TRUE;
+    `);
+
+    // Legacy-shape settings table (key/value jsonb/updatedAt — created by an
+    // old prisma db push on some environments) predates the current schema.
+    // CREATE TABLE IF NOT EXISTS never fixes an existing wrong-shaped table,
+    // and every prisma.setting.findUnique({ where: { cle } }) throws P2022
+    // ("column cle does not exist") until it is converged. Rebuild in place:
+    // migrate any key/value rows, then drop the legacy columns.
+    await client.query(`
+      DO $$
+      BEGIN
+        IF EXISTS (
+          SELECT 1 FROM information_schema.columns
+          WHERE table_name = 'settings' AND column_name = 'key'
+        ) THEN
+          ALTER TABLE settings ADD COLUMN IF NOT EXISTS cle VARCHAR(100);
+          ALTER TABLE settings ADD COLUMN IF NOT EXISTS valeur TEXT;
+          ALTER TABLE settings ADD COLUMN IF NOT EXISTS description TEXT;
+          ALTER TABLE settings ADD COLUMN IF NOT EXISTS categorie VARCHAR(50) DEFAULT 'general';
+          -- key → cle (jsonb value → text, NULL-safe)
+          UPDATE settings SET cle = "key" WHERE cle IS NULL;
+          UPDATE settings SET valeur = COALESCE(value #>> '{}', '') WHERE valeur IS NULL;
+          ALTER TABLE settings ALTER COLUMN cle SET NOT NULL;
+          CREATE UNIQUE INDEX IF NOT EXISTS idx_settings_cle ON settings(cle);
+          ALTER TABLE settings DROP COLUMN IF EXISTS "key";
+          ALTER TABLE settings DROP COLUMN IF EXISTS value;
+          ALTER TABLE settings DROP COLUMN IF EXISTS "updatedAt";
+          ALTER TABLE settings ADD COLUMN IF NOT EXISTS updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP;
+          -- Legacy tables also lack the 'id' PK the Prisma schema expects
+          -- (findUnique/upsert need it) — add SERIAL id if missing.
+        END IF;
+      END $$;
+    `);
+
+    // Standalone guard: the id PK is added even when the key/value→cle/valeur
+    // migration above already ran on a previous boot (its guard was the
+    // legacy 'key' column, which no longer exists).
+    await client.query(`
+      DO $$
+      BEGIN
+        IF NOT EXISTS (
+          SELECT 1 FROM information_schema.columns
+          WHERE table_name = 'settings' AND column_name = 'id'
+        ) THEN
+          ALTER TABLE settings ADD COLUMN id SERIAL;
+          UPDATE settings SET id = nextval(pg_get_serial_sequence('settings', 'id'));
+          ALTER TABLE settings ADD CONSTRAINT settings_pkey PRIMARY KEY (id);
+        END IF;
+      END $$;
+    `);
+
     // Reference lists (lookup tables — configurable dropdowns)
     await client.query(`
       CREATE TABLE IF NOT EXISTS reference_lists (
@@ -1975,6 +2032,70 @@ export const initDB = async (): Promise<void> => {
     // toucher le stock (cf. routes/pharmacie.ts POST /mouvements + .../approuver).
     await client.query(`
       ALTER TABLE stock_mouvements ADD COLUMN IF NOT EXISTS statut VARCHAR(20) NOT NULL DEFAULT 'valide';
+    `);
+
+    // Multi-hospital facility scoping. Mirrors prisma/migrations/20260721010000:
+    // facilities parent hierarchy + facility_id FKs on users/patients/services.
+    // init.ts is the boot-time source of truth (no _prisma_migrations table on
+    // init-managed DBs), so without this block prisma.patient.create() with
+    // `facility connect` throws P2022 ("column facility_id does not exist") —
+    // surfacing as a generic 500 on every patient registration.
+    await client.query(`
+      ALTER TABLE facilities ADD COLUMN IF NOT EXISTS parent_id INTEGER;
+    `);
+    await client.query(`
+      DO $$
+      BEGIN
+        IF NOT EXISTS (SELECT 1 FROM pg_constraint WHERE conname = 'facilities_parent_id_fkey') THEN
+          ALTER TABLE facilities ADD CONSTRAINT facilities_parent_id_fkey
+            FOREIGN KEY (parent_id) REFERENCES facilities(id) ON DELETE SET NULL;
+        END IF;
+      END $$;
+    `);
+    await client.query(`CREATE INDEX IF NOT EXISTS idx_facilities_parent_id ON facilities(parent_id);`);
+    await client.query(`
+      ALTER TABLE users ADD COLUMN IF NOT EXISTS facility_id INTEGER;
+      ALTER TABLE patients ADD COLUMN IF NOT EXISTS facility_id INTEGER;
+      ALTER TABLE services ADD COLUMN IF NOT EXISTS facility_id INTEGER;
+    `);
+    await client.query(`
+      DO $$
+      BEGIN
+        IF NOT EXISTS (SELECT 1 FROM pg_constraint WHERE conname = 'users_facility_id_fkey') THEN
+          ALTER TABLE users ADD CONSTRAINT users_facility_id_fkey
+            FOREIGN KEY (facility_id) REFERENCES facilities(id) ON DELETE SET NULL;
+        END IF;
+        IF NOT EXISTS (SELECT 1 FROM pg_constraint WHERE conname = 'patients_facility_id_fkey') THEN
+          ALTER TABLE patients ADD CONSTRAINT patients_facility_id_fkey
+            FOREIGN KEY (facility_id) REFERENCES facilities(id) ON DELETE SET NULL;
+        END IF;
+        IF NOT EXISTS (SELECT 1 FROM pg_constraint WHERE conname = 'services_facility_id_fkey') THEN
+          ALTER TABLE services ADD CONSTRAINT services_facility_id_fkey
+            FOREIGN KEY (facility_id) REFERENCES facilities(id) ON DELETE SET NULL;
+        END IF;
+      END $$;
+    `);
+    await client.query(`CREATE INDEX IF NOT EXISTS idx_users_facility_id ON users(facility_id);`);
+    await client.query(`CREATE INDEX IF NOT EXISTS idx_patients_facility_id ON patients(facility_id);`);
+    await client.query(`CREATE INDEX IF NOT EXISTS idx_services_facility_id ON services(facility_id);`);
+    // Seed a default facility when none exists and backfill NULL facility_id
+    // rows so facilityScope() always resolves a valid connect target.
+    await client.query(`
+      DO $$
+      DECLARE
+        default_facility_id INTEGER;
+      BEGIN
+        IF NOT EXISTS (SELECT 1 FROM facilities LIMIT 1) THEN
+          INSERT INTO facilities (nom, type_facility, actif, created_at)
+          VALUES ('Hôpital Principal', 'hopital', TRUE, NOW())
+          RETURNING id INTO default_facility_id;
+        ELSE
+          SELECT id INTO default_facility_id FROM facilities WHERE actif = TRUE ORDER BY id LIMIT 1;
+        END IF;
+        UPDATE users    SET facility_id = default_facility_id WHERE facility_id IS NULL;
+        UPDATE patients SET facility_id = default_facility_id WHERE facility_id IS NULL;
+        UPDATE services SET facility_id = default_facility_id WHERE facility_id IS NULL;
+      END $$;
     `);
 
     // OWASP A09: hash-chain trigger. Mirrors prisma/migrations/20260516020000.

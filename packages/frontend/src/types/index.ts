@@ -43,7 +43,10 @@ export interface Patient {
   deuxieme_prenom?: string;
   sexe?: 'M' | 'F' | 'autre';
   date_naissance?: string;
+  /** API returns Prisma camelCase (dateNaissance) — pages must read both. */
+  dateNaissance?: string;
   age_estime?: number;
+  ageEstime?: number | null;
   lieu_naissance?: string;
   nationalite?: string;
   numero_identite?: string;
@@ -61,9 +64,14 @@ export interface Patient {
   contact_urgence_nom?: string;
   contact_urgence_relation?: string;
   contact_urgence_telephone?: string;
+  /** camelCase mirror returned by the API for the emergency contact. */
+  contactUrgenceNom?: string | null;
+  contactUrgenceRelation?: string | null;
+  contactUrgenceTelephone?: string | null;
+  referenceId?: string | null;
   photo_url?: string;
   archived: boolean;
-  created_at: string;
+  created_at?: string;
 }
 
 export interface Medecin {

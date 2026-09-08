@@ -61,7 +61,9 @@ export default function PatientDetail() {
   if (loading) return <div className="loading"><div className="spinner"></div></div>;
   if (!patient) return <div className="table-empty">Patient non trouvé</div>;
 
-  const age = patient.date_naissance ? Math.floor((Date.now() - new Date(patient.date_naissance).getTime()) / 31557600000) : null;
+  // API returns Prisma camelCase (dateNaissance); tolerate both shapes.
+  const dob = patient.date_naissance ?? patient.dateNaissance;
+  const age = dob ? Math.floor((Date.now() - new Date(dob).getTime()) / 31557600000) : (patient.ageEstime ?? patient.age_estime ?? null);
   const activeAlertes = alertes.filter((a: any) => a.active);
 
   return (
@@ -121,7 +123,7 @@ export default function PatientDetail() {
       </div>
 
       <div className="mt-2">
-        {tab === 'resume' && <ResumeTab patient={patient} hist={hist} rdvs={rdvs} vitaux={vitaux} allergies={allergies} pathologies={pathologies} fmt={fmt} attributions={attributions} medecins={medecins} user={user} onRefresh={loadAll} />}
+        {tab === 'resume' && <ResumeTab patient={patient} dob={dob} hist={hist} rdvs={rdvs} vitaux={vitaux} allergies={allergies} pathologies={pathologies} fmt={fmt} attributions={attributions} medecins={medecins} user={user} onRefresh={loadAll} />}
         {tab === 'vitaux' && <VitauxTab data={vitaux} patientId={patient.id} medecins={medecins} onRefresh={loadAll} showModal={showModal} setShowModal={setShowModal} />}
         {tab === 'allergies' && <AllergiesTab data={allergies} patientId={patient.id} onRefresh={loadAll} showModal={showModal} setShowModal={setShowModal} />}
         {tab === 'pathologies' && <PathologiesTab data={pathologies} patientId={patient.id} onRefresh={loadAll} showModal={showModal} setShowModal={setShowModal} />}
@@ -144,17 +146,30 @@ export default function PatientDetail() {
 
 // === SUB COMPONENTS ===
 
-function ResumeTab({ patient, hist, rdvs, vitaux, allergies, pathologies, fmt, attributions, medecins, user, onRefresh }: any) {
+function ResumeTab({ patient, dob, hist, rdvs, vitaux, allergies, pathologies, fmt, attributions, medecins, user, onRefresh }: any) {
+  const { branding } = useBranding();
   const lastVitaux = vitaux[0];
   return (
     <div className="grid-2">
       <div className="tile">
         <h4 style={{marginBottom:'1rem',fontSize:'0.875rem',fontWeight:600}}>Informations</h4>
         <div className="grid-2">
-          <div><span className="form-label">Date naissance</span><p>{patient.date_naissance ? new Date(patient.date_naissance).toLocaleDateString('fr-FR') : '-'}</p></div>
+          <div><span className="form-label">Date naissance</span><p>{dob ? new Date(dob).toLocaleDateString('fr-FR') : '-'}</p></div>
           <div><span className="form-label">Adresse</span><p>{patient.adresse || '-'}</p></div>
           <div><span className="form-label">Profession</span><p>{patient.profession || '-'}</p></div>
-          <div><span className="form-label">Contact urgence</span><p>{patient.contact_urgence || '-'}</p></div>
+          <div><span className="form-label">Contact urgence</span><p>{(() => {
+            // The API returns camelCase fields (contactUrgenceNom etc.);
+            // reading a non-existent patient.contact_urgence always showed
+            // "-" even when the contact was correctly saved.
+            const cuNom = patient.contactUrgenceNom ?? patient.contact_urgence_nom;
+            const cuTel = patient.contactUrgenceTelephone ?? patient.contact_urgence_telephone;
+            const cuRel = patient.contactUrgenceRelation ?? patient.contact_urgence_relation;
+            if (!cuNom && !cuTel) return '-';
+            const relLabels: Record<string,string> = { conjoint: 'Conjoint(e)', parent: 'Parent', enfant: 'Enfant', frere_soeur: 'Frère/Sœur', ami: 'Ami(e)', autre: 'Autre' };
+            const rel = cuRel ? ` (${relLabels[cuRel] ?? cuRel})` : '';
+            const tel = cuTel ? formatPhone(cuTel, branding.code_pays) : '';
+            return [cuNom + rel, tel].filter(Boolean).join(' — ');
+          })()}</p></div>
         </div>
       </div>
       <AttributionTile patientId={patient.id} attributions={attributions} medecins={medecins} user={user} onRefresh={onRefresh} />

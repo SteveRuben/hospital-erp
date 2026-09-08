@@ -37,54 +37,39 @@ export function clearFormState(key: string): void {
 }
 
 /**
- * Save all visible form data on the page (called before session timeout)
- */
-export function saveAllFormsOnPage(): void {
-  const path = window.location.pathname;
-  
-  // Find all form inputs on the page and save their values
-  const formData: Record<string, string> = {};
-  const inputs = document.querySelectorAll('input, textarea, select');
-  inputs.forEach((el, idx) => {
-    const input = el as HTMLInputElement | HTMLTextAreaElement | HTMLSelectElement;
-    const name = input.name || input.id || `field_${idx}`;
-    if (input.type === 'password') return; // Never save passwords
-    if (input.value) formData[name] = input.value;
-  });
-
-  if (Object.keys(formData).length > 0) {
-    try {
-      sessionStorage.setItem('page_form_data', JSON.stringify({ path, data: formData, timestamp: Date.now() }));
-    } catch { /* ignore */ }
-  }
-}
-
-/**
  * Hook for form persistence in a specific component.
  * Auto-saves form state on change, restores on mount.
+ *
+ * `enabled` (default true) gates BOTH the restore-on-mount and the
+ * save-on-change effects. The caller must set it to false while an
+ * async server fetch is loading the authoritative state — otherwise the
+ * restored draft and the fetch race and the last writer wins silently.
  */
 export function useFormPersist<T extends Record<string, unknown>>(
   key: string,
   form: T,
   setForm: (data: T) => void,
+  enabled: boolean = true,
 ): { clearSaved: () => void; hasSaved: boolean } {
-  
+
   // Restore on mount
   useEffect(() => {
+    if (!enabled) return;
     const saved = getFormState<T>(key);
     if (saved) {
       setForm(saved);
     }
-  }, [key]);
+  }, [key, enabled]);
 
   // Save on every change
   useEffect(() => {
+    if (!enabled) return;
     // Only save if form has actual data (not empty)
     const hasData = Object.values(form).some(v => v !== '' && v !== null && v !== undefined);
     if (hasData) {
       saveFormState(key, form);
     }
-  }, [key, form]);
+  }, [key, form, enabled]);
 
   const clearSaved = useCallback(() => {
     clearFormState(key);

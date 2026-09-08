@@ -13,12 +13,14 @@ const emptyForm = {
   contact_urgence_nom: '', contact_urgence_relation: '', contact_urgence_telephone: '',
 };
 
+// Light input mask for phone fields: keeps digits and a leading +, caps the
+// length, but does NOT invent a country code or re-group digits — the old
+// version turned "690320123" into "+690 320 12" (Tokelau!) by assuming the
+// first 3 digits were a country prefix and silently dropped digit 13+.
 const formatPhone = (value: string): string => {
-  const digits = value.replace(/\D/g, '');
-  if (digits.length <= 3) return digits;
-  if (digits.length <= 6) return `+${digits.slice(0, 3)} ${digits.slice(3)}`;
-  if (digits.length <= 9) return `+${digits.slice(0, 3)} ${digits.slice(3, 6)} ${digits.slice(6)}`;
-  return `+${digits.slice(0, 3)} ${digits.slice(3, 6)} ${digits.slice(6, 9)} ${digits.slice(9, 12)}`;
+  const trimmed = value.trim();
+  if (trimmed.startsWith('+')) return `+${trimmed.slice(1).replace(/\D/g, '').slice(0, 15)}`;
+  return trimmed.replace(/\D/g, '').slice(0, 15);
 };
 
 // patientServerToForm lives in src/lib/formCoerce so it can be unit-tested
@@ -33,11 +35,15 @@ export default function PatientForm() {
   const [step, setStep] = useState(0);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
+  const [draftRestored, setDraftRestored] = useState(false);
   const [paysList, setPaysList] = useState<Array<{ code: string; libelle: string }>>([]);
   const [villesList, setVillesList] = useState<Array<{ code: string; libelle: string; parent_code: string | null }>>([]);
 
-  // Persist form data across session timeouts
-  const { clearSaved } = useFormPersist(isEdit ? `patient_edit_${id}` : 'patient_new', form, setForm);
+  // Persist form data across session timeouts. Disabled while the initial
+  // load runs: in edit mode the restored draft and the server fetch race and
+  // the last writer silently wins (the fetch overwrote the draft — or worse,
+  // a stale draft became the edit state when the fetch failed).
+  const { clearSaved, hasSaved } = useFormPersist(isEdit ? `patient_edit_${id}` : 'patient_new', form, setForm, !loading);
 
   useEffect(() => {
     Promise.all([
@@ -51,6 +57,13 @@ export default function PatientForm() {
     }).catch(() => setError('Erreur de chargement')).finally(() => setLoading(false));
   }, [id]);
 
+  // In create mode, an abandoned draft in sessionStorage is restored by the
+  // hook. Surface it so the user knows (and can discard) instead of silently
+  // editing a stale draft from a previous session.
+  useEffect(() => {
+    if (!loading && !isEdit && hasSaved) setDraftRestored(true);
+  }, [loading, isEdit, hasSaved]);
+
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     setError('');
@@ -61,8 +74,23 @@ export default function PatientForm() {
       clearSaved(); // Clear persisted form data on success
       navigate('/app/patients');
     } catch (err: any) {
-      setError(err.response?.data?.error || 'Erreur lors de l\'enregistrement');
+      // Offline mutations are queued for replay, not lost — tell the user
+      // the truth instead of "Erreur lors de l'enregistrement".
+      if (err?.isOfflineQueued) {
+        clearSaved();
+        navigate('/app/patients');
+        return;
+      }
+      const details = err.response?.data?.details;
+      const detail = Array.isArray(details) && details.length ? ` (${details.join(', ')})` : '';
+      setError((err.response?.data?.error || 'Erreur lors de l\'enregistrement') + detail);
     }
+  };
+
+  const discardDraft = () => {
+    clearSaved();
+    setForm(emptyForm);
+    setDraftRestored(false);
   };
 
   const steps = ['Identité', 'Démographie', 'Adresse', 'Contact'];
@@ -81,6 +109,14 @@ export default function PatientForm() {
       </div>
 
       {error && <div className="notification notification-error mb-2"><i className="bi bi-exclamation-triangle"></i><span>{error}</span></div>}
+
+      {draftRestored && (
+        <div className="notification notification-warning mb-2" style={{ alignItems: 'center' }}>
+          <i className="bi bi-clock-history"></i>
+          <span>Brouillon restauré automatiquement (session précédente).</span>
+          <button type="button" className="btn-ghost btn-sm" style={{ marginLeft: 'auto' }} onClick={discardDraft}>Repartir de zéro</button>
+        </div>
+      )}
 
       {/* Wizard steps */}
       <div className="wizard-steps mb-2">
