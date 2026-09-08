@@ -37,6 +37,8 @@ interface RecordActeOptions {
   montant: number;
   modePaiement?: string | null;
   userId: number;
+  /** Explicit facility for the recette. Falls back to the patient's facility. */
+  facilityId?: number | null;
 }
 
 /**
@@ -66,6 +68,18 @@ export async function recordActeRevenue(opts: RecordActeOptions): Promise<number
     const existing = await findLive();
     if (existing) return existing.id;
 
+    // Facility scoping: resolve the facility for the recette so scoped
+    // finance lists (r.facility_id = X) keep showing auto-billed revenue.
+    // Explicit opt wins; otherwise inherit from the patient's facility.
+    let facilityId = opts.facilityId ?? null;
+    if (facilityId == null && opts.patientId != null) {
+      const p = await prisma.patient.findUnique({
+        where: { id: opts.patientId },
+        select: { facilityId: true },
+      });
+      facilityId = p?.facilityId ?? null;
+    }
+
     let created;
     try {
       created = await prisma.recette.create({
@@ -78,6 +92,7 @@ export async function recordActeRevenue(opts: RecordActeOptions): Promise<number
           sourceKind: opts.kind,
           sourceId: opts.sourceId,
           description: marker, // lisible pour l'humain ; l'idempotence vient des colonnes
+          ...(facilityId != null ? { facilityId } : {}),
         },
       });
     } catch (err: any) {
@@ -146,6 +161,7 @@ export async function billPharmacie(opts: { patientId: number | null; serviceId?
     typeActe: opts.typeActe,
     montant: opts.montant,
     userId: opts.userId,
+    facilityId: opts.facilityId ?? null,
   });
 }
 

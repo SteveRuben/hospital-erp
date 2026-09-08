@@ -2057,6 +2057,10 @@ export const initDB = async (): Promise<void> => {
       ALTER TABLE users ADD COLUMN IF NOT EXISTS facility_id INTEGER;
       ALTER TABLE patients ADD COLUMN IF NOT EXISTS facility_id INTEGER;
       ALTER TABLE services ADD COLUMN IF NOT EXISTS facility_id INTEGER;
+      -- Finance scoping (mirrors migration 20260908000000): the facilityScope
+      -- filters in routes/finances.ts reference these columns.
+      ALTER TABLE recettes ADD COLUMN IF NOT EXISTS facility_id INTEGER;
+      ALTER TABLE depenses ADD COLUMN IF NOT EXISTS facility_id INTEGER;
     `);
     await client.query(`
       DO $$
@@ -2073,11 +2077,21 @@ export const initDB = async (): Promise<void> => {
           ALTER TABLE services ADD CONSTRAINT services_facility_id_fkey
             FOREIGN KEY (facility_id) REFERENCES facilities(id) ON DELETE SET NULL;
         END IF;
+        IF NOT EXISTS (SELECT 1 FROM pg_constraint WHERE conname = 'recettes_facility_id_fkey') THEN
+          ALTER TABLE recettes ADD CONSTRAINT recettes_facility_id_fkey
+            FOREIGN KEY (facility_id) REFERENCES facilities(id) ON DELETE SET NULL;
+        END IF;
+        IF NOT EXISTS (SELECT 1 FROM pg_constraint WHERE conname = 'depenses_facility_id_fkey') THEN
+          ALTER TABLE depenses ADD CONSTRAINT depenses_facility_id_fkey
+            FOREIGN KEY (facility_id) REFERENCES facilities(id) ON DELETE SET NULL;
+        END IF;
       END $$;
     `);
     await client.query(`CREATE INDEX IF NOT EXISTS idx_users_facility_id ON users(facility_id);`);
     await client.query(`CREATE INDEX IF NOT EXISTS idx_patients_facility_id ON patients(facility_id);`);
     await client.query(`CREATE INDEX IF NOT EXISTS idx_services_facility_id ON services(facility_id);`);
+    await client.query(`CREATE INDEX IF NOT EXISTS idx_recettes_facility_id ON recettes(facility_id);`);
+    await client.query(`CREATE INDEX IF NOT EXISTS idx_depenses_facility_id ON depenses(facility_id);`);
     // Seed a default facility when none exists and backfill NULL facility_id
     // rows so facilityScope() always resolves a valid connect target.
     await client.query(`
@@ -2095,6 +2109,8 @@ export const initDB = async (): Promise<void> => {
         UPDATE users    SET facility_id = default_facility_id WHERE facility_id IS NULL;
         UPDATE patients SET facility_id = default_facility_id WHERE facility_id IS NULL;
         UPDATE services SET facility_id = default_facility_id WHERE facility_id IS NULL;
+        UPDATE recettes  SET facility_id = default_facility_id WHERE facility_id IS NULL;
+        UPDATE depenses  SET facility_id = default_facility_id WHERE facility_id IS NULL;
       END $$;
     `);
 

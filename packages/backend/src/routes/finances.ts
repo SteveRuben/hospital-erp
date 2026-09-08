@@ -37,6 +37,7 @@ router.get('/recettes', authenticate, async (req: AuthRequest, res: Response): P
 router.post('/recettes', authenticate, authorize('admin', 'comptable'), validate(createRecetteSchema), async (req: AuthRequest, res: Response): Promise<void> => {
   try {
     const { patient_id, service_id, type_acte, montant, mode_paiement, description } = req.body;
+    const scope = facilityScope(req.user!, req.headers['x-facility-id']);
     const created = await prisma.recette.create({
       data: {
         patientId: patient_id ?? null,
@@ -45,6 +46,7 @@ router.post('/recettes', authenticate, authorize('admin', 'comptable'), validate
         montant,
         modePaiement: mode_paiement ?? null,
         description: description ?? null,
+        ...(scope.kind === 'restricted' ? { facilityId: scope.facilityId } : {}),
       },
     });
     auditCreate(req.user!.id, 'recettes', created.id, `Recette ${type_acte}: ${montant} XAF`);
@@ -91,6 +93,7 @@ router.get('/depenses', authenticate, async (req: AuthRequest, res: Response): P
 router.post('/depenses', authenticate, authorize('admin', 'comptable'), validate(createDepenseSchema), async (req: AuthRequest, res: Response): Promise<void> => {
   try {
     const { type_depense, nature, montant, fournisseur, description, date_depense } = req.body;
+    const scope = facilityScope(req.user!, req.headers['x-facility-id']);
     const created = await prisma.depense.create({
       data: {
         typeDepense: type_depense,
@@ -99,6 +102,7 @@ router.post('/depenses', authenticate, authorize('admin', 'comptable'), validate
         fournisseur: fournisseur ?? null,
         description: description ?? null,
         dateDepense: date_depense ? new Date(date_depense) : new Date(),
+        ...(scope.kind === 'restricted' ? { facilityId: scope.facilityId } : {}),
       },
     });
     auditCreate(req.user!.id, 'depenses', created.id, `Dépense ${type_depense}: ${montant} XAF`);

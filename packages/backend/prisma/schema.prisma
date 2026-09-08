@@ -407,8 +407,10 @@ model Recette {
   dateAnnulation  DateTime? @map("date_annulation")
   annuleePar      Int?      @map("annulee_par")
   createdAt       DateTime  @default(now()) @map("created_at")
+  facilityId      Int?      @map("facility_id")
   patient         Patient?  @relation(fields: [patientId], references: [id])
   service         Service?  @relation(fields: [serviceId], references: [id])
+  facility        Facility? @relation("FacilityRecettes", fields: [facilityId], references: [id])
   @@map("recettes")
 }
 
@@ -762,6 +764,8 @@ model Depense {
   dateAnnulation DateTime? @map("date_annulation")
   annuleePar     Int?      @map("annulee_par")
   createdAt      DateTime  @default(now()) @map("created_at")
+  facilityId     Int?      @map("facility_id")
+  facility       Facility? @relation("FacilityDepenses", fields: [facilityId], references: [id])
   @@map("depenses")
 }
 
@@ -1048,9 +1052,11 @@ model Facility {
 
   parent   Facility?  @relation("FacilityHierarchy", fields: [parentId], references: [id])
   children Facility[] @relation("FacilityHierarchy")
-  users    User[]    @relation("UserFacility")
-  patients Patient[] @relation("PatientFacility")
-  services Service[] @relation("ServiceFacility")
+  users    User[]     @relation("UserFacility")
+  patients Patient[]  @relation("PatientFacility")
+  services Service[]  @relation("ServiceFacility")
+  recettes Recette[]  @relation("FacilityRecettes")
+  depenses Depense[]  @relation("FacilityDepenses")
 
   @@map("facilities")
 }
