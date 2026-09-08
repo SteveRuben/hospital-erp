@@ -2061,6 +2061,13 @@ export const initDB = async (): Promise<void> => {
       -- filters in routes/finances.ts reference these columns.
       ALTER TABLE recettes ADD COLUMN IF NOT EXISTS facility_id INTEGER;
       ALTER TABLE depenses ADD COLUMN IF NOT EXISTS facility_id INTEGER;
+      -- Schema drift found in prod (mirrors migration 20260908010000):
+      -- vaccinations.montant broke GET /api/vaccinations (P2022 → 500),
+      -- consultations/examens.reference are used by the patient history
+      -- and advanced search.
+      ALTER TABLE vaccinations ADD COLUMN IF NOT EXISTS montant DECIMAL(12, 2);
+      ALTER TABLE consultations ADD COLUMN IF NOT EXISTS reference VARCHAR(20);
+      ALTER TABLE examens ADD COLUMN IF NOT EXISTS reference VARCHAR(20);
     `);
     await client.query(`
       DO $$

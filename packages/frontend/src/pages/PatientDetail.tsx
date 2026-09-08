@@ -42,17 +42,26 @@ export default function PatientDetail() {
   const loadAll = async () => {
     try {
       const pid = Number(id);
+      // Only the patient itself is critical — every clinical sub-list is
+      // best-effort: a failing tab (server error, missing column, rights)
+      // must not take the whole page down ("Patient non trouvé").
+      const safe = (p: Promise<any>) => p.catch(() => ({ data: [] as any }));
       const [p, h, r, v, al, pa, pr, va, n, alt, ord, med, attr] = await Promise.all([
-        getPatient(pid), getPatientHistorique(pid), getRendezVous({ patient_id: id }),
-        getVitaux(pid), getAllergies(pid), getPathologies(pid), getPrescriptions(pid),
-        getVaccinations(pid), getNotes(pid), getAlertes(pid), getOrdonnances(pid), getMedecins(),
-        getAttributions({ patient_id: pid }).catch(() => ({ data: [] as AttributionRow[] })),
+        getPatient(pid),
+        safe(getPatientHistorique(pid)), safe(getRendezVous({ patient_id: id })),
+        safe(getVitaux(pid)), safe(getAllergies(pid)), safe(getPathologies(pid)), safe(getPrescriptions(pid)),
+        safe(getVaccinations(pid)), safe(getNotes(pid)), safe(getAlertes(pid)), safe(getOrdonnances(pid)), safe(getMedecins()),
+        safe(getAttributions({ patient_id: pid })),
       ]);
       setPatient(p.data); setHist(h.data); setRdvs(r.data); setVitauxData(v.data);
       setAllergiesData(al.data); setPathologiesData(pa.data); setPrescriptionsData(pr.data);
       setVaccinationsData(va.data); setNotesData(n.data); setAlertesData(alt.data);
       setOrdonnancesData(ord.data); setMedecins(med.data); setAttributions(attr.data);
-    } catch (err) { console.error(err); }
+    } catch (err) {
+      console.error(err);
+      // Patient fetch itself failed → show the "not found" state.
+      setPatient(null);
+    }
     finally { setLoading(false); }
   };
 
