@@ -15,11 +15,9 @@ const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const brandingUploadDir = path.resolve(__dirname, '../../uploads/branding');
 if (!fs.existsSync(brandingUploadDir)) fs.mkdirSync(brandingUploadDir, { recursive: true });
 
-const logoStorage = multer.diskStorage({
-  destination: (_req, _file, cb) => cb(null, brandingUploadDir),
-  // The filename is overwritten on every upload — only one logo per tenant.
-  filename: (_req, file, cb) => cb(null, `logo${path.extname(file.originalname).toLowerCase()}`),
-});
+// In-memory storage: the logo is persisted as a data-URI in the settings
+// table (survives container restarts on Railway), never on disk.
+const logoStorage = multer.memoryStorage();
 const LOGO_MIMES = ['image/png', 'image/jpeg', 'image/svg+xml', 'image/webp'];
 const logoUpload = multer({
   storage: logoStorage,
@@ -62,39 +60,51 @@ router.get('/branding', asyncHandler(async (_req, res) => {
  * common web image formats. SVG passes through `'image/svg+xml'` which
  * file-type may not detect — we keep the extension+declared-mime guard for
  * that case (validateUpload returns 400 if no magic bytes found).
+ *
+ * Storage: the image is stored as a base64 data-URI in the `settings` table
+ * (logo_url row), NOT on disk. Railway/container hosts wipe the filesystem on
+ * every deploy — a file under /uploads/branding died with the old container
+ * while the DB kept pointing at it (permanent 404). A data-URI survives
+ * restarts and works in every consumer (<img src>, favicon link, print HTML).
  */
 router.post('/logo', authenticate, authorize('admin'), logoUpload.single('file'), validateUpload(LOGO_MIMES), asyncHandler(async (req: AuthRequest, res: Response): Promise<void> => {
   if (!req.file) { res.status(400).json({ error: 'Fichier requis' }); return; }
 
-  const url = `/uploads/branding/${req.file.filename}`;
+  const dataUri = `data:${req.file.mimetype};base64,${req.file.buffer.toString('base64')}`;
   await prisma.setting.upsert({
     where: { cle: 'logo_url' },
-    create: { cle: 'logo_url', valeur: url, categorie: 'branding', description: 'URL du logo de l\'établissement' },
-    update: { valeur: url, updatedAt: new Date() },
+    create: { cle: 'logo_url', valeur: dataUri, categorie: 'branding', description: 'Logo de l\'établissement (data-URI)' },
+    update: { valeur: dataUri, updatedAt: new Date() },
   });
+
+  // Best-effort cleanup of a leftover file from the old disk-based flow so
+  // /uploads/branding doesn't keep stale copies around.
+  try {
+    const legacy = path.join(brandingUploadDir, `logo${path.extname(req.file.originalname).toLowerCase()}`);
+    if (fs.existsSync(legacy)) fs.unlinkSync(legacy);
+  } catch { /* non-fatal */ }
 
   await logAudit({
     userId: req.user!.id,
     action: 'update',
     tableName: 'settings',
-    details: `logo_url updated to ${url} (${req.file.size} bytes, ${req.file.mimetype})`,
+    details: `logo_url updated to data-URI (${req.file.size} bytes, ${req.file.mimetype})`,
   });
 
   invalidateCache();
-  res.json({ logo_url: url });
+  res.json({ logo_url: dataUri });
 }));
 
 /**
- * Remove the logo. Admin-only. Deletes the file on disk and clears the setting.
+ * Remove the logo. Admin-only. Clears the setting (image lives in the DB
+ * now; legacy files on disk are removed best-effort).
  */
 router.delete('/logo', authenticate, authorize('admin'), asyncHandler(async (req: AuthRequest, res: Response) => {
-  const current = await prisma.setting.findUnique({ where: { cle: 'logo_url' }, select: { valeur: true } });
-  if (current?.valeur) {
-    const filePath = path.resolve(__dirname, '../..', current.valeur.replace(/^\//, ''));
-    if (filePath.startsWith(brandingUploadDir) && fs.existsSync(filePath)) {
-      try { fs.unlinkSync(filePath); } catch (err) { console.warn('[LOGO] unlink failed:', err); }
+  try {
+    for (const f of fs.readdirSync(brandingUploadDir)) {
+      if (f.startsWith('logo')) fs.unlinkSync(path.join(brandingUploadDir, f));
     }
-  }
+  } catch { /* dir may not exist */ }
   await prisma.setting.upsert({
     where: { cle: 'logo_url' },
     create: { cle: 'logo_url', valeur: '', categorie: 'branding' },

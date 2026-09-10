@@ -56,8 +56,14 @@ export default function NotificationsBell() {
         setCount(c => c + 1);
         setItems(prev => [n, ...prev].slice(0, 20));
       });
-      // Connection failures are non-fatal — polling covers them.
-      socket.on('connect_error', () => { /* silent — polling fills the gap */ });
+      // Connection failures are non-fatal — polling covers them. But an auth
+      // rejection (expired/invalid token) must stop the reconnect loop:
+      // otherwise socket.io retries forever with a dead token, spamming
+      // "WebSocket closed before established" in the console after every
+      // session expiry. The axios 401 interceptor handles the redirect.
+      socket.on('connect_error', (err) => {
+        if (err?.message?.includes('Token')) socket?.disconnect();
+      });
     } catch { /* socket.io may fail to init in some environments — ignore */ }
     return () => { socket?.disconnect(); };
   }, []);

@@ -96,13 +96,15 @@ export async function loadEstablishment(): Promise<Establishment> {
   };
 }
 
-// Resolves to an absolute logo URL the browser will fetch when the print
-// preview opens. The DB stores `/uploads/branding/logo.png` (relative);
-// `serverOrigin` (e.g. https://hospital.example.com) is prepended so the
-// printed HTML works when opened/saved outside the app.
+// Resolves to a logo URL the browser will fetch when the print preview
+// opens. The DB may store a relative path (`/uploads/branding/logo.png`,
+// legacy disk flow) or a data-URI (current flow — survives container
+// restarts). Relative paths get `serverOrigin` prepended so the printed
+// HTML works when opened/saved outside the app; data-URIs and absolute
+// URLs pass through untouched.
 function logoSrc(logoUrl: string | null, serverOrigin: string): string | null {
   if (!logoUrl) return null;
-  if (/^https?:\/\//.test(logoUrl)) return logoUrl;
+  if (/^(https?:\/\/|data:)/.test(logoUrl)) return logoUrl;
   return serverOrigin.replace(/\/$/, '') + logoUrl;
 }
 

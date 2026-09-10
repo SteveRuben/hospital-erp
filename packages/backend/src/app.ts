@@ -114,7 +114,10 @@ app.use(helmet({
       styleSrc: ["'self'", "'unsafe-inline'", "https://fonts.googleapis.com", "https://cdn.jsdelivr.net"],
       fontSrc: ["'self'", "https://fonts.gstatic.com", "https://cdn.jsdelivr.net"],
       imgSrc: ["'self'", "data:", "blob:"],
-      connectSrc: ["'self'", "https://fonts.googleapis.com", "https://fonts.gstatic.com", "https://cdn.jsdelivr.net"],
+      // 'self' covers same-origin ws/wss upgrades (Socket.IO on Railway serves
+      // the frontend itself); wss: explicitly allows cross-origin realtime if
+      // FRONTEND_URL/VITE_API_URL ever splits from the API host.
+      connectSrc: ["'self'", "wss:", "https://fonts.googleapis.com", "https://fonts.gstatic.com", "https://cdn.jsdelivr.net"],
       frameSrc: ["'none'"],
       objectSrc: ["'none'"],
       baseUri: ["'self'"],

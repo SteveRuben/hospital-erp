@@ -61,6 +61,13 @@ export default function Chat() {
     });
     // Liste des canaux à rafraîchir (nouveau message / lecture) même canal fermé.
     socket.on('channels_dirty', () => { refreshChannels(); });
+    // Auth rejection (expired token after session timeout): stop the infinite
+    // reconnect loop — the axios interceptor already redirects to /login.
+    // Without this, socket.io retries forever with the dead token and floods
+    // the console with "WebSocket closed before established".
+    socket.on('connect_error', (err: any) => {
+      if (err?.message?.includes('Token')) socket.disconnect();
+    });
     return () => { socket.disconnect(); socketRef.current = null; };
     // activeId / refreshChannels intentionally not in deps — we manage subscription explicitly below.
     // eslint-disable-next-line react-hooks/exhaustive-deps
